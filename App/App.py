@@ -21,6 +21,8 @@ import setproctitle
 from screeninfo import get_monitors
 from encryption.main import build_encryption_ui
 
+print("Привет всем!")
+
 class Init():
     def get_screen_size(self):
         m = get_monitors()[0]
@@ -67,6 +69,7 @@ class Init():
 
         # Настройка окна — только ядро
         page.title            = "Xopilot-NN+ AI+ 2.0"
+        page.window.icon      = "./Icons/Xopilot-icon-apk.ico"
         page.window.width     = w
         page.window.height    = h
         page.window.min_width = w
