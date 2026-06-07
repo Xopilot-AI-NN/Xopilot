@@ -7,12 +7,19 @@
 """
 
 
+
 import flet as ft
 
-def get_chat_component():
-    return ft.ListView(
+def build_chat(controls: list) -> ft.Container:
+    return ft.Container(
         expand=True,
-        spacing=10,
-        auto_scroll=True,
-        padding=10
+        bgcolor="#00c753",
+        border_radius=8,
+        border=ft.border.Border.all(2, "#d9ffe6"),
+        content=ft.ListView(
+            expand=True,
+            spacing=20,
+            padding=ft.padding.Padding.all(4),
+            controls=controls,
+        ),
     )
