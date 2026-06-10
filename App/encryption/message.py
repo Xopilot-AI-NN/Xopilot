@@ -25,17 +25,12 @@ def build_message(text: str) -> ft.Container:
 
     return ft.Container(
         padding=ft.padding.Padding.symmetric(horizontal=12, vertical=9),
-        border_radius=14,
-        bgcolor="#66d9ffe6",
-        blur=6,
-        shadow=ft.BoxShadow(
-            blur_radius=10,
-            spread_radius=0,
-            color="#33000000",
-            offset=ft.Offset(0, 2),
-        ),
+        border_radius=20,
+        bgcolor=ft.Colors.WHITE_70,
+        blur=1,
         content=ft.Text(
             "" if spans else text,
+            font_family="Google Sans",
             spans=spans,
             color=ft.Colors.BLACK,
             size=14,

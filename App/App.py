@@ -77,6 +77,11 @@ class Init():
         page.window.visible   = False
         page.update()
 
+        # Шрифт
+        page.fonts = {
+            "Google Sans": "./fonts/GoogleSans-Regular.ttf"
+        }
+
         # Монтируем первый интерфейс
         page.add(build_encryption_ui(page))
         page.update()
