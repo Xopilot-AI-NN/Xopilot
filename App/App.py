@@ -19,9 +19,9 @@ import platform
 import flet as ft
 import setproctitle
 from screeninfo import get_monitors
-from encryption.main import build_encryption_ui
+from app.main import build_app_ui
 
-print("Привет всем!")
+
 
 class Init():
     def get_screen_size(self):
@@ -32,6 +32,14 @@ class Init():
         sw, sh = self.get_screen_size()
         w = max(int(sw * 0.1), 380)
         h = max(int(sh * 0.15), 652)
+
+        if platform.system() != "Windows":
+            # Linux/Wayland не даёт точно позиционировать окно
+            # (как на Windows через animate_position), поэтому вместо
+            # узкого вертикального виджета делаем широкое горизонтальное
+            # окно — ширина и высота меняются местами и удваиваются.
+            w, h = h * 2, w * 2
+
         return w, h
 
     async def animate_position(self, page: ft.Page):
@@ -82,8 +90,8 @@ class Init():
             "Google Sans": "./fonts/GoogleSans-Regular.ttf"
         }
 
-        # Монтируем первый интерфейс
-        page.add(build_encryption_ui(page))
+        # Монтируем интерфейс
+        page.add(build_app_ui(page))
         page.update()
 
         # Анимация — только ядро решает
