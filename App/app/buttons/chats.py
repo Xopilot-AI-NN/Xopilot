@@ -1,16 +1,17 @@
 """
-Файл: /App/app/buttons/settings.py
+Файл: /App/app/buttons/chats.py
 Разработчик: DenBroLiik
 Версия: 2.0.0
-Описание: __кнопка настройки__
-        клеится в меню снизу чатов
+Описание: __кнопка чатов__
+        клеится сверху в меню, рядом с кнопками меню и рабочих пространств
+        открывает список чатов
 """
 
 
 import flet as ft
 
 
-def build_settings_button(on_click=None) -> ft.Container:
+def build_chats_button(on_click=None) -> ft.Container:
     return ft.Container(
         width=30,
         height=30,
@@ -19,7 +20,7 @@ def build_settings_button(on_click=None) -> ft.Container:
         bgcolor="#ff6666ff",
         alignment=ft.alignment.Alignment.CENTER,
         content=ft.Icon(
-            ft.Icons.SETTINGS,
+            ft.Icons.CHAT_BUBBLE_OUTLINE,
             color=ft.Colors.WHITE,
             size=15,
         ),
