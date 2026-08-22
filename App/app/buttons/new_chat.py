@@ -1,12 +1,10 @@
 """
-Файл: /App/app/buttons/menu.py
-Разработчик: DenBroLiik
+Файл: /App/app/buttons/new_chat.py
+Разработчик: DenBroLiik, Claude
 Версия: 2.0.0
-Описание: __кнопка меню__
-        клеится в окне сверху слева от чата
-        при клике открывает меню.
-        Умеет сама пересчитывать свой размер (используется рейлом
-        при динамическом ресайзе) — диапазоны размеров хранятся тут же.
+Описание: __кнопка нового чата__
+        клеится в меню слева от чата, сразу под кнопкой меню
+        начинает новый диалог
 """
 
 import flet as ft
@@ -17,7 +15,7 @@ ICON_MIN = 14
 ICON_MAX = 26
 
 
-def build_menu_button(on_click=None, size: int = 40, icon_size: int = 20) -> ft.Container:
+def build_new_chat_button(on_click=None, size: int = 40, icon_size: int = 20) -> ft.Container:
     button = ft.Container(
         width=size,
         height=size,
@@ -28,7 +26,7 @@ def build_menu_button(on_click=None, size: int = 40, icon_size: int = 20) -> ft.
         ink=True,
         animate=ft.Animation(duration=150, curve=ft.AnimationCurve.EASE_OUT),
         content=ft.Icon(
-            ft.Icons.MENU,
+            ft.Icons.ADD_COMMENT,
             color=ft.Colors.WHITE,
             size=icon_size,
         ),
@@ -43,8 +41,7 @@ def build_menu_button(on_click=None, size: int = 40, icon_size: int = 20) -> ft.
     return button
 
 
-def resize_menu_button(button: ft.Container, ratio: float) -> None:
-    """ratio: 0..1 — насколько рейл разросся между RAIL_WIDTH_MIN и RAIL_WIDTH_MAX."""
+def resize_new_chat_button(button: ft.Container, ratio: float) -> None:
     ratio = max(0.0, min(1.0, ratio))
     size = round(SIZE_MIN + (SIZE_MAX - SIZE_MIN) * ratio)
     icon_size = round(ICON_MIN + (ICON_MAX - ICON_MIN) * ratio)
