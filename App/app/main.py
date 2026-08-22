@@ -31,16 +31,10 @@ def build_app_ui(page: ft.Page) -> ft.Control:
     prompt_container = build_prompt_container(prompt, on_send)
     chat = build_chat(chat_messages)
 
-    def toggle_menu(_):
-        menu_overlay.visible = not menu_overlay.visible
-        page.update()
+    async def handle_menu_toggle(e):
+        await toggle_menu()
 
-    def close_menu(_):
-        menu_overlay.visible = False
-        page.update()
-
-    menu_overlay = build_menu_overlay(on_close=close_menu)
-
-    menu = build_menu(on_menu_click=toggle_menu)
+    menu = build_menu(on_menu_click=handle_menu_toggle)
+    menu_overlay, toggle_menu = build_menu_overlay(menu, page)
 
     return build_background_layout(chat, prompt_container, menu, menu_overlay)
