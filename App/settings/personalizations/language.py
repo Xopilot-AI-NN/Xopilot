@@ -1,8 +1,9 @@
 """
 Файл: /App/settings/personalizations/language.py
-Разработчик: DenBroLiik
-Версия: 2.0.0
-Описание: __Выбор языка интерфейса__
-        клеится в окне персонализации ниже переключателя темы.
-        Меняет язык UI приложения.
+Описание: __Совместимый модуль языка__.
+           Реализация кнопки находится в папке personalizations/buttons.
 """
+
+from .buttons.language import build_language_select
+
+__all__ = ["build_language_select"]
