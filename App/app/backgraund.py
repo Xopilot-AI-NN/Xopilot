@@ -30,15 +30,19 @@ def build_background_layout(
         spacing=8,
         controls=[
             menu,
-            ft.Column(
+            ft.Stack(
                 expand=True,
-                spacing=8,
                 controls=[
                     chat,
-                    ft.Row(
-                        controls=[
-                            prompt_container,
-                        ],
+                    ft.Container(
+                        left=0,
+                        right=0,
+                        bottom=8,
+                        padding=ft.padding.Padding.only(
+                            left=100,
+                            right=100,
+                        ),
+                        content=prompt_container,
                     ),
                 ],
             ),

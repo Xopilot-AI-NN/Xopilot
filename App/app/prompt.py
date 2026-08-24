@@ -32,7 +32,24 @@ def build_prompt() -> ft.TextField:
     )
 
 
-def build_prompt_container(prompt: ft.TextField, on_send) -> ft.Container:
+def build_prompt_container(
+    prompt: ft.TextField,
+    on_send,
+    on_add_material=None,
+    attachments: ft.Control | None = None,
+) -> ft.Container:
+    input_row = ft.Row(
+        expand=True,
+        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        spacing=8,
+        controls=[
+            build_add_material_button(on_click=on_add_material),
+            prompt,
+            build_live_button(),
+            build_send_button(on_send),
+        ],
+    )
+
     return ft.Container(
         expand=True,
         border_radius=10,
@@ -43,15 +60,12 @@ def build_prompt_container(prompt: ft.TextField, on_send) -> ft.Container:
             colors=["#00c753", "#0083e8"],
         ),
         padding=ft.padding.Padding.symmetric(horizontal=8, vertical=4),
-        content=ft.Row(
+        content=ft.Column(
             expand=True,
-            vertical_alignment=ft.CrossAxisAlignment.CENTER,
-            spacing=8,
+            spacing=4,
             controls=[
-                build_add_material_button(),
-                prompt,
-                build_live_button(),
-                build_send_button(on_send),
+                attachments or ft.Container(height=0),
+                input_row,
             ],
         ),
     )

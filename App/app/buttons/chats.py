@@ -9,10 +9,10 @@
 
 import flet as ft
 
-SIZE_MIN = 28
-SIZE_MAX = 50
-ICON_MIN = 14
-ICON_MAX = 26
+SIZE_MIN = 44
+SIZE_MAX = 54
+ICON_MIN = 22
+ICON_MAX = 28
 
 
 def build_chats_button(on_click=None, size: int = 40, icon_size: int = 20) -> ft.Container:

@@ -27,6 +27,48 @@
 
 import flet as ft
 
+from . import files as file_utils
+
+
+def build_user_message(text: str, files: list[ft.FilePickerFile] | None = None) -> ft.Container:
+    content = []
+    if files:
+        content.append(
+            ft.Column(
+                spacing=4,
+                controls=[
+                    ft.Row(
+                        spacing=5,
+                        controls=[
+                            ft.Icon(ft.Icons.ATTACH_FILE, size=16, color="#087f8c"),
+                            ft.Text(
+                                f"{file.name} ({file_utils.format_file_size(file.size)})",
+                                size=12,
+                                color="#123b43",
+                            ),
+                        ],
+                    )
+                    for file in files
+                ],
+            )
+        )
+    content.append(
+        ft.Text(text, font_family="Google Sans", color=ft.Colors.BLACK, size=14)
+    )
+
+    bubble = ft.Container(
+        padding=ft.padding.Padding.symmetric(horizontal=12, vertical=9),
+        border_radius=20,
+        bgcolor="#e6ffffff",
+        blur=2,
+        content=ft.Column(spacing=6, controls=content),
+    )
+    return ft.Container(
+        alignment=ft.alignment.Alignment.CENTER_RIGHT,
+        padding=ft.padding.Padding.only(left=40),
+        content=bubble,
+    )
+
 def messages() -> list[ft.Control]:
     def ai_message(text: str) -> ft.Container:
         author = "Zephyr"
@@ -61,28 +103,8 @@ def messages() -> list[ft.Control]:
             content=bubble,
         )
 
-    def user_message(text: str) -> ft.Container:
-        bubble = ft.Container(
-            padding=ft.padding.Padding.symmetric(horizontal=12, vertical=9),
-            border_radius=20,
-            bgcolor="#e6ffffff",
-            blur=2,
-            content=ft.Text(
-                text,
-                font_family="Google Sans",
-                color=ft.Colors.BLACK,
-                size=14,
-            ),
-        )
-
-        return ft.Container(
-            alignment=ft.alignment.Alignment.CENTER_RIGHT,
-            padding=ft.padding.Padding.only(left=40),
-            content=bubble,
-        )
-
     return [
         ai_message("Zephyr: Чем займёмся сегодня?"),
-        user_message("Продолжим оформление приложения."),
+        build_user_message("Продолжим оформление приложения."),
         ai_message("Zephyr: Готов. Поддержу стиль, компоненты и логику в одном аккуратном интерфейсе."),
     ]
