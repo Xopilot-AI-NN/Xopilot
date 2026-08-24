@@ -9,6 +9,7 @@
 
 
 import flet as ft
+import platform
 
 def build_background() -> ft.Container:
     return ft.Container(
@@ -24,6 +25,9 @@ def build_background_layout(
 ) -> ft.Container:
     bg = build_background()
     bg.padding = ft.padding.Padding.all(10)
+    linux_layout = platform.system() == "Linux"
+    input_side_margin = 100 if linux_layout else 0
+    input_bottom_margin = 8 if linux_layout else 0
 
     main_row = ft.Row(
         expand=True,
@@ -37,10 +41,10 @@ def build_background_layout(
                     ft.Container(
                         left=0,
                         right=0,
-                        bottom=8,
+                        bottom=input_bottom_margin,
                         padding=ft.padding.Padding.only(
-                            left=100,
-                            right=100,
+                            left=input_side_margin,
+                            right=input_side_margin,
                         ),
                         content=prompt_container,
                     ),

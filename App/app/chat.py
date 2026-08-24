@@ -18,8 +18,8 @@ def build_chat(controls: list) -> ft.Container:
         border=ft.border.Border.all(2, "#d9ffe6"),
         content=ft.ListView(
             expand=True,
-            spacing=20,
-            padding=ft.padding.Padding.all(4),
+            spacing=12,
+            padding=ft.padding.Padding.only(left=4, top=4, right=4, bottom=96),
             controls=controls,
         ),
     )

@@ -51,7 +51,6 @@ def build_prompt_container(
     )
 
     return ft.Container(
-        expand=True,
         border_radius=10,
         border=ft.border.Border.all(2, "#d9ffe6"),
         gradient=ft.LinearGradient(
@@ -61,7 +60,6 @@ def build_prompt_container(
         ),
         padding=ft.padding.Padding.symmetric(horizontal=8, vertical=4),
         content=ft.Column(
-            expand=True,
             spacing=4,
             controls=[
                 attachments or ft.Container(height=0),
