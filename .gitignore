@@ -1,2 +1,4 @@
 repomix-output.xml
 Архив*.*
+__pycache__
+*.pyc
