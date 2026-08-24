@@ -42,9 +42,9 @@ from .buttons.settings import build_settings_button, resize_settings_button
 from .buttons.workspaces import build_workspaces_button, resize_workspaces_button
 from .buttons.chats import build_chats_button, resize_chats_button
 
-RAIL_WIDTH_DEFAULT = 104 if platform.system() != "Windows" else 76
-RAIL_WIDTH_MIN = 44
-RAIL_WIDTH_MAX = 130
+RAIL_WIDTH_DEFAULT = 76 if platform.system() != "Windows" else 70
+RAIL_WIDTH_MIN = 56
+RAIL_WIDTH_MAX = 100
 PANEL_WIDTH = 280
 PANEL_ANIMATION_MS = 220
 LABEL_WIDTH = 170
@@ -63,11 +63,17 @@ def build_menu(
     on_chats_click=None,
     on_settings_click=None,
 ) -> ft.Container:
-    menu_btn = build_menu_button(on_click=on_menu_click)
-    new_chat_btn = build_new_chat_button(on_click=on_new_chat_click)
-    workspaces_btn = build_workspaces_button(on_click=on_workspaces_click)
-    chats_btn = build_chats_button(on_click=on_chats_click)
-    settings_btn = build_settings_button(on_click=on_settings_click)
+    menu_btn = build_menu_button(on_click=on_menu_click, size=50, icon_size=26)
+    new_chat_btn = build_new_chat_button(
+        on_click=on_new_chat_click, size=50, icon_size=26
+    )
+    workspaces_btn = build_workspaces_button(
+        on_click=on_workspaces_click, size=50, icon_size=26
+    )
+    chats_btn = build_chats_button(on_click=on_chats_click, size=50, icon_size=26)
+    settings_btn = build_settings_button(
+        on_click=on_settings_click, size=50, icon_size=26
+    )
 
     for button in (menu_btn, new_chat_btn, workspaces_btn, chats_btn, settings_btn):
         button.gradient = BRAND_GRADIENT
@@ -88,7 +94,7 @@ def build_menu(
         blur=14,
         border_radius=8,
         border=ft.border.Border.all(2, "#d9ffe6"),
-        padding=ft.padding.Padding.symmetric(horizontal=1, vertical=8),
+        padding=ft.padding.Padding.symmetric(horizontal=0, vertical=8),
         opacity=1,
         animate_opacity=200,
         size_change_interval=80,
