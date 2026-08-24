@@ -27,49 +27,139 @@
 
 import flet as ft
 
-from . import files as file_utils
+from . import material as file_utils
+from .buttons.message_actions import build_message_actions
 
 
-def build_user_message(text: str, files: list[ft.FilePickerFile] | None = None) -> ft.Container:
+def build_user_message(
+    text: str,
+    files: list[ft.FilePickerFile] | None = None,
+    on_action=None,
+    quote: str | None = None,
+    reply_to: str | None = None,
+) -> ft.Container:
     content = []
+    if reply_to:
+        content.append(
+            ft.Container(
+                bgcolor="#dff8f3",
+                border=ft.border.Border.only(left=ft.BorderSide(3, "#087f8c")),
+                padding=ft.padding.Padding.only(left=8, top=5, right=8, bottom=5),
+                content=ft.Column(
+                    spacing=2,
+                    controls=[
+                        ft.Text("Ответ на сообщение", size=10, color="#087f8c", weight=ft.FontWeight.BOLD),
+                        ft.Text(reply_to, size=12, color="#47747a", max_lines=2),
+                    ],
+                ),
+            )
+        )
+    if quote:
+        content.append(
+            ft.Container(
+                bgcolor="#f1fffb",
+                border=ft.border.Border.only(left=ft.BorderSide(3, "#20b486")),
+                padding=ft.padding.Padding.only(left=8, top=5, right=8, bottom=5),
+                content=ft.Text(quote, size=12, color="#47747a", italic=True, max_lines=3),
+            )
+        )
     if files:
         content.append(
             ft.Column(
                 spacing=4,
                 controls=[
-                    ft.Row(
-                        spacing=5,
-                        controls=[
-                            ft.Icon(ft.Icons.ATTACH_FILE, size=16, color="#087f8c"),
-                            ft.Text(
-                                f"{file.name} ({file_utils.format_file_size(file.size)})",
-                                size=12,
-                                color="#123b43",
-                            ),
-                        ],
+                    ft.Container(
+                        bgcolor="#dff8f3",
+                        border_radius=8,
+                        padding=ft.padding.Padding.all(4),
+                        content=ft.Row(
+                            spacing=6,
+                            tight=True,
+                            controls=[
+                                (
+                                    ft.Image(
+                                        src=file.path or "",
+                                        width=44,
+                                        height=44,
+                                        fit=ft.BoxFit.COVER,
+                                        border_radius=6,
+                                    )
+                                    if file_utils.is_image_file(file)
+                                    else ft.Icon(
+                                        file_utils.file_icon(file),
+                                        size=30,
+                                        color="#087f8c",
+                                    )
+                                ),
+                                ft.Column(
+                                    spacing=0,
+                                    tight=True,
+                                    controls=[
+                                        ft.Text(file.name, size=12, color="#123b43", no_wrap=True),
+                                        ft.Text(
+                                            file_utils.format_file_size(file.size),
+                                            size=10,
+                                            color="#47747a",
+                                        ),
+                                    ],
+                                ),
+                            ],
+                        ),
                     )
                     for file in files
                 ],
             )
         )
-    content.append(
-        ft.Text(text, font_family="Google Sans", color=ft.Colors.BLACK, size=14)
+    content.append(ft.Text(text, font_family="Google Sans", color=ft.Colors.BLACK, size=14))
+
+    actions = (
+        build_message_actions(text, files, on_action, True)
+        if on_action
+        else ft.Container()
     )
+    actions.opacity = 0
+    actions.animate_opacity = 180
 
     bubble = ft.Container(
         padding=ft.padding.Padding.symmetric(horizontal=12, vertical=9),
         border_radius=20,
         bgcolor="#e6ffffff",
         blur=2,
-        content=ft.Column(spacing=6, controls=content),
+        content=ft.Column(
+            spacing=6,
+            controls=[
+                *content,
+            ],
+        ),
     )
-    return ft.Container(
+    footer = ft.Row(
+        alignment=ft.MainAxisAlignment.END,
+        controls=[
+            ft.Container(
+                margin=ft.margin.Margin.only(top=2),
+                content=actions,
+            )
+        ],
+    )
+    message = ft.Container(
         alignment=ft.alignment.Alignment.CENTER_RIGHT,
         padding=ft.padding.Padding.only(left=40),
-        content=bubble,
+        content=ft.Column(
+            horizontal_alignment=ft.CrossAxisAlignment.END,
+            spacing=0,
+            controls=[bubble, footer],
+        ),
     )
+    message.data = text
 
-def messages() -> list[ft.Control]:
+    def handle_hover(e: ft.Event[ft.Container]):
+        actions.opacity = 1 if e.data == "true" or e.data is True else 0
+        actions.update()
+
+    message.on_hover = handle_hover
+    return message
+
+def messages(on_action=None) -> list[ft.Control]:
     def ai_message(text: str) -> ft.Container:
         author = "Zephyr"
         spans = None
@@ -83,28 +173,73 @@ def messages() -> list[ft.Control]:
                 ft.TextSpan(text[len(author):]),
             ]
 
+        bubble_content = ft.Column(
+            spacing=4,
+            controls=[
+                ft.Text(
+                    "" if spans else text,
+                    font_family="Google Sans",
+                    spans=spans,
+                    color=ft.Colors.BLACK,
+                    size=14,
+                ),
+            ],
+        )
         bubble = ft.Container(
             padding=ft.padding.Padding.symmetric(horizontal=12, vertical=9),
             border_radius=20,
             bgcolor="#e6ffffff",
             blur=2,
-            content=ft.Text(
-                "" if spans else text,
-                font_family="Google Sans",
-                spans=spans,
-                color=ft.Colors.BLACK,
-                size=14,
-            ),
+            content=bubble_content,
         )
 
-        return ft.Container(
+        actions = (
+            build_message_actions(text, None, on_action, False)
+            if on_action
+            else ft.Container()
+        )
+        actions.opacity = 0
+        actions.animate_opacity = 180
+        footer = ft.Row(
+            alignment=ft.MainAxisAlignment.START,
+            controls=[
+                ft.Container(
+                    margin=ft.margin.Margin.only(top=2),
+                    content=actions,
+                )
+            ],
+        )
+        message = ft.Container(
             alignment=ft.alignment.Alignment.CENTER_LEFT,
             padding=ft.padding.Padding.only(right=40),
-            content=bubble,
+            content=ft.Column(spacing=0, controls=[bubble, footer]),
         )
+
+        def handle_hover(e: ft.Event[ft.Container]):
+            actions.opacity = 1 if e.data == "true" or e.data is True else 0
+            actions.update()
+
+        message.on_hover = handle_hover
+        return message
 
     return [
         ai_message("Zephyr: Чем займёмся сегодня?"),
-        build_user_message("Продолжим оформление приложения."),
+        build_user_message("Продолжим оформление приложения.", on_action=on_action),
+        build_user_message(
+            "Прикрепляю материалы для проверки.",
+            [ft.FilePickerFile(id=1001, name="brief.pdf", size=248832, path="demo/brief.pdf")],
+            on_action=on_action,
+        ),
+        build_user_message(
+            "Да, именно этот вариант стоит оставить.",
+            on_action=on_action,
+            quote="Кнопки действий должны быть доступны прямо у сообщения.",
+        ),
+        build_user_message(
+            "Добавлю это в следующую версию.",
+            [ft.FilePickerFile(id=1002, name="screen.png", size=1572864, path="./Icons/Xopilot-icon-apk.png")],
+            on_action=on_action,
+            reply_to="Пришли, пожалуйста, текущий экран приложения.",
+        ),
         ai_message("Zephyr: Готов. Поддержу стиль, компоненты и логику в одном аккуратном интерфейсе."),
     ]
