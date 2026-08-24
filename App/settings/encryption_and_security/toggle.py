@@ -1,8 +1,9 @@
 """
 Файл: /App/settings/encryption_and_security/toggle.py
-Разработчик: DenBroLiik
-Версия: 2.0.0
-Описание: __Переключатель шифрования__
-        клеится в окне настроек шифрования.
-        Включает / выключает шифрование истории чатов.
+Описание: __Совместимый модуль шифрования__.
+           Реализация кнопки находится в папке encryption_and_security/buttons.
 """
+
+from .buttons.toggle import build_encryption_toggle
+
+__all__ = ["build_encryption_toggle"]

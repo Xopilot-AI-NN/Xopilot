@@ -1,8 +1,9 @@
 """
 Файл: /App/settings/history/clear_button.py
-Разработчик: DenBroLiik
-Версия: 2.0.0
-Описание: __Кнопка очистки истории__
-        клеится в нижней части окна истории.
-        Удаляет все сохранённые диалоги из data/.
+Описание: __Совместимый модуль очистки истории__.
+           Реализация кнопки находится в папке history/buttons.
 """
+
+from .buttons.clear import build_clear_button
+
+__all__ = ["build_clear_button"]

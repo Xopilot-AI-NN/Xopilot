@@ -42,13 +42,14 @@ def build_user_message(
     if reply_to:
         content.append(
             ft.Container(
-                bgcolor="#dff8f3",
-                border=ft.border.Border.only(left=ft.BorderSide(3, "#087f8c")),
-                padding=ft.padding.Padding.only(left=8, top=5, right=8, bottom=5),
+                bgcolor="#effffc",
+                border=ft.border.Border.all(1, "#087f8c"),
+                border_radius=12,
+                padding=ft.padding.Padding.only(left=8, top=6, right=8, bottom=6),
                 content=ft.Column(
                     spacing=2,
                     controls=[
-                        ft.Text("Ответ на сообщение", size=10, color="#087f8c", weight=ft.FontWeight.BOLD),
+                        ft.Text("ОТВЕТ НА СООБЩЕНИЕ", size=9, color="#087f8c", weight=ft.FontWeight.BOLD),
                         ft.Text(reply_to, size=12, color="#47747a", max_lines=2),
                     ],
                 ),
@@ -57,57 +58,25 @@ def build_user_message(
     if quote:
         content.append(
             ft.Container(
-                bgcolor="#f1fffb",
-                border=ft.border.Border.only(left=ft.BorderSide(3, "#20b486")),
-                padding=ft.padding.Padding.only(left=8, top=5, right=8, bottom=5),
-                content=ft.Text(quote, size=12, color="#47747a", italic=True, max_lines=3),
+                bgcolor="#effffc",
+                border=ft.border.Border.all(1, "#20b486"),
+                border_radius=12,
+                padding=ft.padding.Padding.only(left=8, top=6, right=8, bottom=6),
+                content=ft.Column(
+                    spacing=2,
+                    controls=[
+                        ft.Text("ЦИТАТА", size=9, color="#20b486", weight=ft.FontWeight.BOLD),
+                        ft.Text(quote, size=12, color="#47747a", italic=True, max_lines=3),
+                    ],
+                ),
             )
         )
     if files:
         content.append(
-            ft.Column(
-                spacing=4,
-                controls=[
-                    ft.Container(
-                        bgcolor="#dff8f3",
-                        border_radius=8,
-                        padding=ft.padding.Padding.all(4),
-                        content=ft.Row(
-                            spacing=6,
-                            tight=True,
-                            controls=[
-                                (
-                                    ft.Image(
-                                        src=file.path or "",
-                                        width=44,
-                                        height=44,
-                                        fit=ft.BoxFit.COVER,
-                                        border_radius=6,
-                                    )
-                                    if file_utils.is_image_file(file)
-                                    else ft.Icon(
-                                        file_utils.file_icon(file),
-                                        size=30,
-                                        color="#087f8c",
-                                    )
-                                ),
-                                ft.Column(
-                                    spacing=0,
-                                    tight=True,
-                                    controls=[
-                                        ft.Text(file.name, size=12, color="#123b43", no_wrap=True),
-                                        ft.Text(
-                                            file_utils.format_file_size(file.size),
-                                            size=10,
-                                            color="#47747a",
-                                        ),
-                                    ],
-                                ),
-                            ],
-                        ),
-                    )
-                    for file in files
-                ],
+            ft.Row(
+                spacing=6,
+                tight=True,
+                controls=[file_utils.build_file_tile(file) for file in files],
             )
         )
     content.append(ft.Text(text, font_family="Google Sans", color=ft.Colors.BLACK, size=14))

@@ -19,6 +19,12 @@ from .material import build_file_attachments, file_from_path
 from .message import build_user_message, messages as build_messages
 from .prompt import build_prompt, build_prompt_container
 from .menu import build_menu, build_menu_overlay
+from .chats import build_chats_dialog
+from .workspace_browser import build_workspaces_dialog
+try:
+    from ..settings.main import build_settings_dialog
+except ImportError:
+    from settings.main import build_settings_dialog
 
 
 def build_app_ui(page: ft.Page) -> ft.Control:
@@ -27,6 +33,17 @@ def build_app_ui(page: ft.Page) -> ft.Control:
 
     prompt = build_prompt()
     selected_files = []
+    chat_items = [
+        ("Продолжение оформления", "Сегодня · 12 сообщений", True),
+        ("Идеи для локального ИИ", "Вчера · 8 сообщений", False),
+        ("Материалы проекта Xopilot", "18 февраля · 24 сообщения", False),
+        ("Настройка интерфейса", "12 февраля · 16 сообщений", False),
+    ]
+    workspace_items = [
+        ("Xopilot", "Основной проект", ft.Icons.AUTO_AWESOME),
+        ("Локальный ИИ", "Модели и эксперименты", ft.Icons.SMART_TOY_OUTLINED),
+        ("Дизайн приложения", "Макеты и материалы", ft.Icons.PALETTE_OUTLINED),
+    ]
     editing_message = None
     attachment_strip = build_file_attachments(selected_files, lambda _: None)
     file_picker = ft.FilePicker()
@@ -116,11 +133,13 @@ def build_app_ui(page: ft.Page) -> ft.Control:
             )
             message.data = text
             chat_list.controls.append(message)
+            chat_items.insert(0, (text[:32] or "Новый чат", "Только что · 1 сообщение", True))
         prompt.value = ""
         selected_files.clear()
         prompt.update()
         page.run_task(refresh_attachments)
         chat_list.update()
+        await asyncio.sleep(0.08)
         await chat_list.scroll_to(offset=-1, duration=250)
 
     chat_messages = build_messages(on_action=handle_message_action)
@@ -135,7 +154,33 @@ def build_app_ui(page: ft.Page) -> ft.Control:
     async def handle_menu_toggle(e):
         await toggle_menu()
 
-    menu = build_menu(on_menu_click=handle_menu_toggle)
-    menu_overlay, toggle_menu = build_menu_overlay(menu, page)
+    def open_settings(_):
+        page.show_dialog(build_settings_dialog(page, cast(ft.ListView, chat.content)))
+
+    def open_chats(_):
+        page.show_dialog(build_chats_dialog(page, cast(ft.ListView, chat.content), chat_items))
+
+    def open_workspaces(_):
+        page.show_dialog(build_workspaces_dialog(page, workspace_items))
+
+    menu = build_menu(
+        on_menu_click=handle_menu_toggle,
+        on_settings_click=open_settings,
+        on_chats_click=open_chats,
+        on_workspaces_click=open_workspaces,
+    )
+    menu_overlay, toggle_menu = build_menu_overlay(
+        menu,
+        page,
+        on_settings_click=open_settings,
+        on_chats_click=open_chats,
+        on_workspaces_click=open_workspaces,
+    )
+
+    async def scroll_chat_to_bottom():
+        await asyncio.sleep(0.15)
+        await cast(ft.ListView, chat.content).scroll_to(offset=-1)
+
+    page.run_task(scroll_chat_to_bottom)
 
     return build_background_layout(chat, prompt_container, menu, menu_overlay)

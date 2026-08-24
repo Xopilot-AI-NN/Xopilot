@@ -29,28 +29,38 @@ def build_background_layout(
     input_side_margin = 100 if linux_layout else 0
     input_bottom_margin = 8 if linux_layout else 0
 
+    input_area = ft.Container(
+        padding=ft.padding.Padding.only(
+            left=input_side_margin,
+            right=input_side_margin,
+        ),
+        content=prompt_container,
+    )
+
+    main_column = ft.Column(
+        expand=True,
+        spacing=0,
+        controls=[
+            chat,
+            ft.Container(
+                margin=ft.margin.Margin.only(bottom=input_bottom_margin),
+                content=input_area,
+            ),
+        ],
+    )
+
+    main_content = ft.Container(
+        expand=True,
+        bgcolor="#00c753",
+        border_radius=8,
+        border=ft.border.Border.all(2, "#d9ffe6"),
+        content=main_column,
+    )
+
     main_row = ft.Row(
         expand=True,
         spacing=8,
-        controls=[
-            menu,
-            ft.Stack(
-                expand=True,
-                controls=[
-                    chat,
-                    ft.Container(
-                        left=0,
-                        right=0,
-                        bottom=input_bottom_margin,
-                        padding=ft.padding.Padding.only(
-                            left=input_side_margin,
-                            right=input_side_margin,
-                        ),
-                        content=prompt_container,
-                    ),
-                ],
-            ),
-        ],
+        controls=[menu, main_content],
     )
 
     if menu_overlay is not None:

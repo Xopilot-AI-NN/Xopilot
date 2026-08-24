@@ -1,8 +1,9 @@
 """
 Файл: /App/settings/personalizations/theme.py
-Разработчик: DenBroLiik
-Версия: 2.0.0
-Описание: __Переключатель темы__
-        клеится в окне персонализации.
-        Переключает светлую / тёмную тему оформления.
+Описание: __Совместимый модуль темы__.
+           Реализация кнопки находится в папке personalizations/buttons.
 """
+
+from .buttons.theme import build_theme_switch
+
+__all__ = ["build_theme_switch"]

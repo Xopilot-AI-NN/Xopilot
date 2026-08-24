@@ -13,13 +13,11 @@ import flet as ft
 def build_chat(controls: list) -> ft.Container:
     return ft.Container(
         expand=True,
-        bgcolor="#00c753",
-        border_radius=8,
-        border=ft.border.Border.all(2, "#d9ffe6"),
+        bgcolor=ft.Colors.TRANSPARENT,
         content=ft.ListView(
             expand=True,
             spacing=12,
-            padding=ft.padding.Padding.only(left=4, top=4, right=4, bottom=96),
+            padding=ft.padding.Padding.only(left=4, top=4, right=4, bottom=12),
             controls=controls,
         ),
     )

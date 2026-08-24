@@ -30,6 +30,47 @@ def file_icon(file: ft.FilePickerFile):
         return ft.Icons.INSERT_DRIVE_FILE_OUTLINED
 
 
+def build_file_tile(file: ft.FilePickerFile) -> ft.Container:
+        preview = (
+                ft.Image(
+                        src=file.path or "",
+                        width=42,
+                        height=42,
+                        fit=ft.BoxFit.COVER,
+                        border_radius=12,
+                )
+                if is_image_file(file)
+                else ft.Icon(file_icon(file), size=34, color="#087f8c")
+        )
+        return ft.Container(
+                width=96,
+                height=94,
+                bgcolor="#dff8f3",
+                border=ft.border.Border.all(1, "#7DEED5"),
+                border_radius=16,
+                padding=ft.padding.Padding.all(5),
+                content=ft.Column(
+                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                        spacing=3,
+                        controls=[
+                                preview,
+                                ft.Text(
+                                        file.name,
+                                        size=10,
+                                        color="#123b43",
+                                        max_lines=1,
+                                        text_align=ft.TextAlign.CENTER,
+                                ),
+                                ft.Text(
+                                        format_file_size(file.size),
+                                        size=9,
+                                        color="#47747a",
+                                ),
+                        ],
+                ),
+        )
+
+
 def format_file_size(size: int) -> str:
         if size < 1024:
                 return f"{size} Б"
@@ -54,59 +95,33 @@ def build_file_attachments(
 ) -> ft.Row:
         chips = []
         for file in files:
-                chips.append(
-                        ft.Container(
-                                bgcolor="#dff8f3",
-                                border=ft.border.Border.all(1, "#7DEED5"),
-                                border_radius=12,
-                                padding=ft.padding.Padding.only(left=10, right=4, top=5, bottom=5),
-                                content=ft.Row(
-                                        spacing=6,
-                                        tight=True,
-                                        controls=[
-                                                (
-                                                        ft.Image(
-                                                                src=file.path or "",
-                                                                width=28,
-                                                                height=28,
-                                                                fit=ft.BoxFit.COVER,
-                                                                border_radius=5,
-                                                        )
-                                                        if is_image_file(file)
-                                                        else ft.Icon(
-                                                                file_icon(file),
-                                                                size=22,
-                                                                color="#087f8c",
-                                                        )
-                                                ),
-                                                ft.Column(
-                                                        spacing=0,
-                                                        tight=True,
-                                                        controls=[
-                                                                ft.Text(file.name, size=12, color="#123b43", no_wrap=True),
-                                                                ft.Text(
-                                                                        format_file_size(file.size),
-                                                                        size=10,
-                                                                        color="#47747a",
-                                                                ),
-                                                        ],
-                                                ),
-                                                ft.IconButton(
-                                                        icon=ft.Icons.CLOSE,
-                                                        icon_size=15,
-                                                        tooltip="Удалить файл",
-                                                        icon_color="#087f8c",
-                                                        on_click=lambda _, selected=file: on_remove(selected),
-                                                ),
-                                        ],
+                tile = build_file_tile(file)
+                tile_content = tile.content or ft.Container()
+                tile.content = ft.Stack(
+                        controls=[
+                                tile_content,
+                                ft.Container(
+                                        alignment=ft.alignment.Alignment.TOP_RIGHT,
+                                        content=ft.IconButton(
+                                                icon=ft.Icons.CLOSE,
+                                                icon_size=13,
+                                                width=24,
+                                                height=24,
+                                                padding=0,
+                                                tooltip="Удалить файл",
+                                                icon_color="#087f8c",
+                                                on_click=lambda _, selected=file: on_remove(selected),
+                                        ),
                                 ),
-                        )
+                        ],
                 )
+                chips.append(tile)
 
         return ft.Row(
                 visible=bool(chips),
                 animate_opacity=180,
                 spacing=6,
+                tight=True,
                 scroll=ft.ScrollMode.AUTO,
                 controls=chips,
         )

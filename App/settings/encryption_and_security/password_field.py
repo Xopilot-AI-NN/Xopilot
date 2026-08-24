@@ -1,8 +1,17 @@
 """
 Файл: /App/settings/encryption_and_security/password_field.py
-Разработчик: DenBroLiik
-Версия: 2.0.0
-Описание: __Поле ввода пароля__
-        клеится в окне настроек шифрования ниже переключателя.
-        Принимает системный пароль linux / пароль учётной записи Windows.
+Описание: __Поле ввода пароля__.
+           Используется для настройки пароля шифрования истории.
 """
+
+import flet as ft
+
+
+def build_password_field() -> ft.TextField:
+    return ft.TextField(
+        label="Пароль шифрования",
+        password=True,
+        can_reveal_password=True,
+        width=330,
+        disabled=True,
+    )

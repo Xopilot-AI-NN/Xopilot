@@ -1,8 +1,9 @@
 """
 Файл: /App/settings/updates/check_button.py
-Разработчик: DenBroLiik
-Версия: 2.0.0
-Описание: __Кнопка проверки обновлений__
-        клеится в окне обновлений ниже статуса.
-        При нажатии обращается к Services/updates для проверки.
+Описание: __Совместимый модуль обновлений__.
+           Реализация кнопки находится в папке updates/buttons.
 """
+
+from .buttons.check import build_check_button
+
+__all__ = ["build_check_button"]

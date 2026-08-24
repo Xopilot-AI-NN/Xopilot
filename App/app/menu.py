@@ -170,7 +170,13 @@ def _overlay_item(
     return row, label_wrapper, label_text
 
 
-def build_menu_overlay(rail: ft.Container, page: ft.Page):
+def build_menu_overlay(
+    rail: ft.Container,
+    page: ft.Page,
+    on_settings_click=None,
+    on_workspaces_click=None,
+    on_chats_click=None,
+):
     is_open = False
 
     menu_row, menu_wrapper, menu_text = _overlay_item(
@@ -268,8 +274,34 @@ def build_menu_overlay(rail: ft.Container, page: ft.Page):
     async def handle_scrim_click(_):
         await toggle()
 
+    async def handle_panel_click(callback, event):
+        await toggle()
+        if callback is not None:
+            callback(event)
+
     new_chat_row.on_click = handle_new_chat_click
     menu_row.on_click = handle_scrim_click
+    async def handle_settings_click(event):
+        if on_settings_click is None:
+            await handle_scrim_click(event)
+        else:
+            await handle_panel_click(on_settings_click, event)
+
+    async def handle_workspaces_click(event):
+        if on_workspaces_click is None:
+            await handle_scrim_click(event)
+        else:
+            await handle_panel_click(on_workspaces_click, event)
+
+    async def handle_chats_click(event):
+        if on_chats_click is None:
+            await handle_scrim_click(event)
+        else:
+            await handle_panel_click(on_chats_click, event)
+
+    settings_row.on_click = handle_settings_click
+    workspaces_row.on_click = handle_workspaces_click
+    chats_row.on_click = handle_chats_click
 
     scrim = ft.Container(
         expand=True,
