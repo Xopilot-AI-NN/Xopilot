@@ -52,12 +52,8 @@ def build_prompt_container(
 
     return ft.Container(
         border_radius=10,
-        border=ft.border.Border.all(2, "#d9ffe6"),
-        gradient=ft.LinearGradient(
-            begin=ft.alignment.Alignment.TOP_LEFT,
-            end=ft.alignment.Alignment.BOTTOM_RIGHT,
-            colors=["#00c753", "#0083e8"],
-        ),
+        border=ft.border.Border.all(2, "#00c753"),
+        bgcolor="#d9ffe6",
         padding=ft.padding.Padding.symmetric(horizontal=8, vertical=4),
         content=ft.Column(
             spacing=4,
