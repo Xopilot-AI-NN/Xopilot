@@ -94,7 +94,7 @@ jobs:
         if: matrix.platform == 'linux'
         run: |
           ZIP_NAME="Xopilot-${BUILD_TYPE}-${VERSION_UNDERSCORE}-Linux.zip"
-          cd dist
+          cd build/linux
           zip -r "../${ZIP_NAME}" .
           echo "ZIP_NAME=${ZIP_NAME}" >> "$GITHUB_ENV"
 
@@ -105,7 +105,7 @@ jobs:
           $ZIP_NAME = "Xopilot-$env:BUILD_TYPE-$env:VERSION_UNDERSCORE-Windows.zip"
 
           Compress-Archive `
-            -Path "dist\*" `
+            -Path "build\windows\*" `
             -DestinationPath $ZIP_NAME
 
           "ZIP_NAME=$ZIP_NAME" | Out-File -FilePath $env:GITHUB_ENV -Append
