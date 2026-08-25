@@ -1,0 +1,21 @@
+[package]
+name = "advanced_xopilot"
+version = "1.0.0"
+edition = "2024"
+
+[lib]
+name = "advanced_xopilot"
+# cdylib — компилируется в нативную библиотеку (.so на Linux / .pyd на Windows),
+# которую Python (Flet UI) импортирует напрямую как модуль через PyO3.
+crate-type = ["cdylib"]
+
+[dependencies]
+# bundled-sqlcipher — вендорит SQLite+SQLCipher+OpenSSL прямо в крейт:
+# не нужно ставить системные библиотеки на Linux/Windows, шифрование БД из коробки.
+rusqlite = { version = "0.40", features = ["bundled-sqlcipher"] }
+pyo3 = { version = "0.29", features = ["extension-module"] }
+
+[profile.release]
+lto = true
+strip = true
+opt-level = "z"  # приоритет — размер/память, не пиковая скорость
