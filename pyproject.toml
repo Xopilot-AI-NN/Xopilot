@@ -1,0 +1,27 @@
+[project]
+name = "Xopilot"
+version = "2.0.0"
+description = "Xopilot AI+ NN+ desktop assistant"
+requires-python = ">=3.10"
+dependencies = [
+	"flet==0.86.5",
+	"screeninfo==0.8.1",
+]
+# зависимости не дублирую — см. предупреждение ниже
+
+[tool.flet]
+org = "ru.xopilot"
+product = "Xopilot"
+company = "Xopilot"
+copyright = "Copyright (c) 2026 Xopilot"
+build_number = 1
+build_version = "2.0.0"
+
+[tool.flet.app]
+path = "App"
+module = "App"
+exclude = ["__pycache__", "*.pyc", "build"]
+
+[tool.flet.splash]
+color = "#0d1117"
+dark_color = "#0d1117"
