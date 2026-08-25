@@ -144,6 +144,4 @@ def build_settings_dialog(
         shape=ft.RoundedRectangleBorder(radius=16),
         inset_padding=ft.padding.Padding.symmetric(horizontal=32, vertical=20),
         barrier_color="#88000000",
-        actions=[ft.TextButton("Закрыть", on_click=lambda _: page.pop_dialog())],
-        actions_alignment=ft.MainAxisAlignment.END,
     )

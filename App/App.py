@@ -17,7 +17,6 @@
 import asyncio
 import platform
 import flet as ft
-import setproctitle
 from screeninfo import get_monitors
 from app.main import build_app_ui
 
@@ -77,7 +76,7 @@ class Init():
 
         # Настройка окна — только ядро
         page.title            = "Xopilot-NN+ AI+ 2.0"
-        page.window.icon      = "./Icons/Xopilot-icon-apk.ico"
+        page.window.icon      = "./Icons/Xopilot-icon-apk.png"
         page.window.width     = w
         page.window.height    = h
         page.window.min_width = w
@@ -102,7 +101,6 @@ class Init():
             page.update()
 
     def __init__(self):
-        setproctitle.setproctitle("Xopilot")
         ft.run(self.main)
 
 Init()
