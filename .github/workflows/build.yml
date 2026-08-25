@@ -59,6 +59,14 @@ jobs:
             libgtk-3-dev \
             liblzma-dev
 
+      - name: Configure Windows UTF-8 console
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          chcp 65001
+          "PYTHONUTF8=1" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "PYTHONIOENCODING=utf-8" | Out-File -FilePath $env:GITHUB_ENV -Append
+
       - name: Determine version
         shell: bash
         run: |
