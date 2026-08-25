@@ -51,9 +51,9 @@ def build_background_layout(
 
     main_content = ft.Container(
         expand=True,
-        bgcolor="#00c753",
+        bgcolor="#d9ffe6",
         border_radius=8,
-        border=ft.border.Border.all(2, "#d9ffe6"),
+        border=ft.border.Border.all(2, "#00c753"),
         content=main_column,
     )
 
