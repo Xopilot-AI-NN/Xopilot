@@ -3,3 +3,4 @@ repomix-output.xml
 __pycache__
 *.pyc
 target
+build
