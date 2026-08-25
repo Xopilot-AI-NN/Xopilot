@@ -95,7 +95,7 @@ jobs:
         run: |
           ZIP_NAME="Xopilot-${BUILD_TYPE}-${VERSION_UNDERSCORE}-Linux.zip"
           cd build/linux
-          zip -r "../${ZIP_NAME}" .
+          zip -r "../../${ZIP_NAME}" .
           echo "ZIP_NAME=${ZIP_NAME}" >> "$GITHUB_ENV"
 
       - name: Create ZIP - Windows
