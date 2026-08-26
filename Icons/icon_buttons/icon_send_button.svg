@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
+  <defs>
+    <linearGradient id="sendGrad" x1="0%" y1="100%" x2="100%" y2="0%"
+                    gradientUnits="userSpaceOnUse">
+      <stop offset="0%"   stop-color="#82B4FF"/>
+      <stop offset="100%" stop-color="#C5B0FF"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Body: outer triangle -->
+  <path
+    d="M22 2L15 22L11 13L2 9L22 2Z"
+    stroke="url(#sendGrad)"
+    stroke-width="1.8"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+
+  <!-- Fold line from center to tip -->
+  <path
+    d="M11 13L22 2"
+    stroke="url(#sendGrad)"
+    stroke-width="1.8"
+    stroke-linecap="round"
+  />
+</svg>

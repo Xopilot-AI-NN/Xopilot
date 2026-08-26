@@ -1,0 +1,144 @@
+name: Build Xopilot
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+      - "dev-*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+            system_name: Linux
+
+          - os: windows-latest
+            platform: windows
+            system_name: Windows
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r App/requirements.txt
+          pip install flet
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.44.8"
+          channel: stable
+          cache: true
+
+      - name: Install Linux build dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang \
+            cmake \
+            ninja-build \
+            pkg-config \
+            libgtk-3-dev \
+            liblzma-dev
+
+      - name: Configure Windows UTF-8 console
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          chcp 65001
+          "PYTHONUTF8=1" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "PYTHONIOENCODING=utf-8" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Determine version
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+
+          if [[ "$TAG" == dev-* ]]; then
+            VERSION="${TAG#dev-}"
+            BUILD_TYPE="Dev"
+          else
+            VERSION="${TAG#v}"
+            BUILD_TYPE="Release"
+          fi
+
+          VERSION_UNDERSCORE="${VERSION//./_}"
+
+          echo "BUILD_TYPE=$BUILD_TYPE" >> "$GITHUB_ENV"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "VERSION_UNDERSCORE=$VERSION_UNDERSCORE" >> "$GITHUB_ENV"
+
+      - name: Build Flet
+        run: |
+          flet build ${{ matrix.platform }}
+
+      - name: Create ZIP - Linux
+        if: matrix.platform == 'linux'
+        run: |
+          ZIP_NAME="Xopilot-${BUILD_TYPE}-${VERSION_UNDERSCORE}-Linux.zip"
+          cd build/linux
+          zip -r "../../${ZIP_NAME}" .
+          echo "ZIP_NAME=${ZIP_NAME}" >> "$GITHUB_ENV"
+
+      - name: Create ZIP - Windows
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $ZIP_NAME = "Xopilot-$env:BUILD_TYPE-$env:VERSION_UNDERSCORE-Windows.zip"
+
+          Compress-Archive `
+            -Path "build\windows\*" `
+            -DestinationPath $ZIP_NAME
+
+          "ZIP_NAME=$ZIP_NAME" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.system_name }}
+          path: ${{ env.ZIP_NAME }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download Linux
+        uses: actions/download-artifact@v8
+        with:
+          name: Linux
+          path: artifacts
+
+      - name: Download Windows
+        uses: actions/download-artifact@v8
+        with:
+          name: Windows
+          path: artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          prerelease: ${{ startsWith(github.ref_name, 'dev-') }}
+          generate_release_notes: true
+          files: |
+            artifacts/*.zip
