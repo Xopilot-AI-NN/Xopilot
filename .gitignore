@@ -1,0 +1,11 @@
+repomix-output.xml
+Архив*.*
+__pycache__
+*.pyc
+target
+*.db
+*.sqlite
+*.sqlite3
+.xopilot_salt
+build
+*.lock
