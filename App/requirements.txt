@@ -1,2 +1,0 @@
-flet==0.86.5
-screeninfo==0.8.1
