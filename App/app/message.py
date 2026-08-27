@@ -9,7 +9,7 @@
         Фото где ИИ может его вставить ввиде ссылки на файл или 
             ссылки интернета и оно также будет отображатся
         Видео где ИИ может вставить ссылку на видео 
-            из youtube и оно также будет воспроизводится
+            из youtube и оно также будет воспроизводиться
 
         делятся на 2 вида
         1. Сообщения от ИИ расположение слева
@@ -21,6 +21,9 @@
         ограничения ширины — текст переносится по словам вместо обрезания,
         а короткие сообщения по-прежнему облегают текст. Отступ с противоположной
         стороны не даёт пузырю растягиваться на всю ширину чата.
+
+        История чата загружается из локальной БД (services.chat_store) — тестовые/демо-сообщения
+        больше не хардкодятся здесь — см. services/chat_store.py::seed_demo_chat_if_empty.
 """
 
 
@@ -128,87 +131,69 @@ def build_user_message(
     message.on_hover = handle_hover
     return message
 
-def messages(on_action=None) -> list[ft.Control]:
-    def ai_message(text: str) -> ft.Container:
-        author = "Zephyr"
-        spans = None
 
-        if text.startswith(author):
-            spans = [
-                ft.TextSpan(
-                    author,
-                    style=ft.TextStyle(weight=ft.FontWeight.BOLD),
-                ),
-                ft.TextSpan(text[len(author):]),
-            ]
+def build_ai_message(text: str, on_action=None) -> ft.Container:
+    """Пузырь сообщения ИИ (слева). Раньше это была внутренняя функция внутри messages(),
+    вынесена на верхний уровень — чтобы рендерить отдельные сообщения из БД, а не только
+    весь демо-список целиком."""
+    author = "Zephyr"
+    spans = None
 
-        bubble_content = ft.Column(
-            spacing=4,
-            controls=[
-                ft.Text(
-                    "" if spans else text,
-                    font_family="Google Sans",
-                    spans=spans,
-                    color=ft.Colors.BLACK,
-                    size=14,
-                ),
-            ],
-        )
-        bubble = ft.Container(
-            padding=ft.padding.Padding.symmetric(horizontal=12, vertical=9),
-            border_radius=20,
-            bgcolor="#e6ffffff",
-            blur=2,
-            content=bubble_content,
-        )
+    if text.startswith(author):
+        spans = [
+            ft.TextSpan(
+                author,
+                style=ft.TextStyle(weight=ft.FontWeight.BOLD),
+            ),
+            ft.TextSpan(text[len(author):]),
+        ]
 
-        actions = (
-            build_message_actions(text, None, on_action, False)
-            if on_action
-            else ft.Container()
-        )
-        actions.opacity = 0
-        actions.animate_opacity = 180
-        footer = ft.Row(
-            alignment=ft.MainAxisAlignment.START,
-            controls=[
-                ft.Container(
-                    margin=ft.margin.Margin.only(top=2),
-                    content=actions,
-                )
-            ],
-        )
-        message = ft.Container(
-            alignment=ft.alignment.Alignment.CENTER_LEFT,
-            padding=ft.padding.Padding.only(right=40),
-            content=ft.Column(spacing=0, controls=[bubble, footer]),
-        )
+    bubble_content = ft.Column(
+        spacing=4,
+        controls=[
+            ft.Text(
+                "" if spans else text,
+                font_family="Google Sans",
+                spans=spans,
+                color=ft.Colors.BLACK,
+                size=14,
+            ),
+        ],
+    )
+    bubble = ft.Container(
+        padding=ft.padding.Padding.symmetric(horizontal=12, vertical=9),
+        border_radius=20,
+        bgcolor="#e6ffffff",
+        blur=2,
+        content=bubble_content,
+    )
 
-        def handle_hover(e: ft.Event[ft.Container]):
-            actions.opacity = 1 if e.data == "true" or e.data is True else 0
-            actions.update()
+    actions = (
+        build_message_actions(text, None, on_action, False)
+        if on_action
+        else ft.Container()
+    )
+    actions.opacity = 0
+    actions.animate_opacity = 180
+    footer = ft.Row(
+        alignment=ft.MainAxisAlignment.START,
+        controls=[
+            ft.Container(
+                margin=ft.margin.Margin.only(top=2),
+                content=actions,
+            )
+        ],
+    )
+    message = ft.Container(
+        alignment=ft.alignment.Alignment.CENTER_LEFT,
+        padding=ft.padding.Padding.only(right=40),
+        content=ft.Column(spacing=0, controls=[bubble, footer]),
+    )
+    message.data = text
 
-        message.on_hover = handle_hover
-        return message
+    def handle_hover(e: ft.Event[ft.Container]):
+        actions.opacity = 1 if e.data == "true" or e.data is True else 0
+        actions.update()
 
-    return [
-        ai_message("Zephyr: Чем займёмся сегодня?"),
-        build_user_message("Продолжим оформление приложения.", on_action=on_action),
-        build_user_message(
-            "Прикрепляю материалы для проверки.",
-            [ft.FilePickerFile(id=1001, name="brief.pdf", size=248832, path="demo/brief.pdf")],
-            on_action=on_action,
-        ),
-        build_user_message(
-            "Да, именно этот вариант стоит оставить.",
-            on_action=on_action,
-            quote="Кнопки действий должны быть доступны прямо у сообщения.",
-        ),
-        build_user_message(
-            "Добавлю это в следующую версию.",
-            [ft.FilePickerFile(id=1002, name="screen.png", size=1572864, path="./Icons/Xopilot-icon-apk.png")],
-            on_action=on_action,
-            reply_to="Пришли, пожалуйста, текущий экран приложения.",
-        ),
-        ai_message("Zephyr: Готов. Поддержу стиль, компоненты и логику в одном аккуратном интерфейсе."),
-    ]
+    message.on_hover = handle_hover
+    return message

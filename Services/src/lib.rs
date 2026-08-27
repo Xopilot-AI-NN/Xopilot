@@ -83,6 +83,10 @@ impl PyDatabase {
     fn list_chats(&self) -> PyResult<Vec<(i64, String, i64)>> {
         self.inner.lock().unwrap().list_chats().map_err(to_py_err)
     }
+
+    fn schema_version(&self) -> PyResult<i32> {
+        self.inner.lock().unwrap().schema_version().map_err(to_py_err)
+    }
 }
 
 /// Точка входа модуля для Python: `import advanced_xopilot` после сборки (`maturin develop` / `cargo build --release` + копирование .so/.pyd рядом с App/).
