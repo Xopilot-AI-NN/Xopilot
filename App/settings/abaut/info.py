@@ -37,6 +37,15 @@ def build_about_row() -> ft.Container:
     )
 
 
+def _info_chip(text: str) -> ft.Container:
+    return ft.Container(
+        bgcolor="#dff8f3",
+        border_radius=10,
+        padding=ft.padding.Padding.symmetric(horizontal=10, vertical=7),
+        content=ft.Text(text, size=11, color="#087f8c"),
+    )
+
+
 def build_about_info() -> ft.Column:
     return ft.Column(
         width=455,
@@ -61,18 +70,22 @@ def build_about_info() -> ft.Column:
             ft.Divider(height=1, color="#b9eee4"),
             ft.Row(
                 spacing=8,
+                wrap=True,
                 controls=[
+                    _info_chip("Версия 2.0.0"),
+                    _info_chip("Python · Mojo · Rust"),
                     ft.Container(
                         bgcolor="#dff8f3",
                         border_radius=10,
                         padding=ft.padding.Padding.symmetric(horizontal=10, vertical=7),
-                        content=ft.Text("Версия 2.0.0", size=11, color="#087f8c"),
-                    ),
-                    ft.Container(
-                        bgcolor="#dff8f3",
-                        border_radius=10,
-                        padding=ft.padding.Padding.symmetric(horizontal=10, vertical=7),
-                        content=ft.Text("Python · Mojo · Rust", size=11, color="#087f8c"),
+                        content=ft.Row(
+                            spacing=4,
+                            tight=True,
+                            controls=[
+                                ft.Icon(ft.Icons.LOCK_OUTLINE, size=13, color="#087f8c"),
+                                ft.Text("БД зашифрована локально", size=11, color="#087f8c"),
+                            ],
+                        ),
                     ),
                 ],
             ),

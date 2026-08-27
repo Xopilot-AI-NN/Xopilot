@@ -16,7 +16,7 @@ from typing import cast
 from .backgraund import build_background_layout
 from .chat import build_chat
 from .material import build_file_attachments, file_from_path
-from .message import build_user_message, messages as build_messages
+from .message import build_user_message, build_ai_message
 from .prompt import build_prompt, build_prompt_container
 from .menu import build_menu, build_menu_overlay
 from .chats import build_chats_dialog
@@ -25,6 +25,20 @@ try:
     from ..settings.main import build_settings_dialog
 except ImportError:
     from settings.main import build_settings_dialog
+try:
+    from ..services.chat_store import (
+        get_or_create_active_chat_id,
+        load_chat_messages,
+        save_user_message,
+        seed_demo_chat_if_empty,
+    )
+except ImportError:
+    from services.chat_store import (
+        get_or_create_active_chat_id,
+        load_chat_messages,
+        save_user_message,
+        seed_demo_chat_if_empty,
+    )
 
 
 def build_app_ui(page: ft.Page) -> ft.Control:
@@ -45,6 +59,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         ("Дизайн приложения", "Макеты и материалы", ft.Icons.PALETTE_OUTLINED),
     ]
     editing_message = None
+    active_chat_id: int | None = None  # заполняется ниже при загрузке истории из БД
     attachment_strip = build_file_attachments(selected_files, lambda _: None)
     file_picker = ft.FilePicker()
     page.services.append(file_picker)
@@ -125,6 +140,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                     )
                     break
             editing_message = None
+            # TODO: редактирование пока не персистится — нужен update_message в db/mod.rs
         else:
             message = build_user_message(
                 text,
@@ -134,6 +150,11 @@ def build_app_ui(page: ft.Page) -> ft.Control:
             message.data = text
             chat_list.controls.append(message)
             chat_items.insert(0, (text[:32] or "Новый чат", "Только что · 1 сообщение", True))
+            if active_chat_id is not None:
+                try:
+                    save_user_message(active_chat_id, text)
+                except Exception:
+                    pass  # БД недоступна (напр., advanced_xopilot ещё не собран) — сообщение останется только в UI на эту сессию
         prompt.value = ""
         selected_files.clear()
         prompt.update()
@@ -142,7 +163,23 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         await asyncio.sleep(0.08)
         await chat_list.scroll_to(offset=-1, duration=250)
 
-    chat_messages = build_messages(on_action=handle_message_action)
+    # История чата грузится из локальной БД. При первом запуске (пустая БД) сеется демо-диалог
+    # напрямую в БД (см. services/chat_store.py) — тестовые сообщения больше не хардкодятся в UI.
+    # Если advanced_xopilot ещё не собран (`maturin develop` в Services/) — чат открывается пустым,
+    # без падения UI.
+    try:
+        seed_demo_chat_if_empty()
+        active_chat_id = get_or_create_active_chat_id()
+        stored_messages = load_chat_messages(active_chat_id)
+    except Exception:
+        stored_messages = []
+
+    chat_messages = [
+        build_user_message(text, on_action=handle_message_action)
+        if role == "user"
+        else build_ai_message(text, on_action=handle_message_action)
+        for role, text in stored_messages
+    ]
     chat = build_chat(chat_messages)
     prompt_container = build_prompt_container(
         prompt,

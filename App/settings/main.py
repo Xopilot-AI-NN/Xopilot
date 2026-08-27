@@ -3,19 +3,20 @@
 Разработчик: DenBroLiik
 Версия: 2.0.0
 Описание: __Главное окно настроек__.
-           Собирает отдельные страницы персонализации, безопасности,
-           истории, обновлений и информации о приложении.
+           Собирает отдельные страницы персонализации, истории, обновлений и информации о приложении.
            Отвечает только за навигацию и общую оболочку окна.
+
+           Страница "Безопасность" убрана: шифрование теперь всегда включено
+           автоматически через OS keyring — ручного тумблера/пароля больше нет,
+           статус шифрования показан плашкой на странице "О приложении".
 """
 
 import flet as ft
-from typing import cast
 
 from .abaut.main import build_about_page
 from .buttons.back import build_back_button
 from .common import section_title
 from .buttons.navigation import build_navigation_button
-from .encryption_and_security.main import build_security_page
 from .history.main import build_history_page
 from .personalizations.main import build_personalizations_page
 from .updates.main import build_updates_page
@@ -38,27 +39,40 @@ def build_settings_dialog(
         status.value = text
         status.update()
 
-    detail_pages = [
-        build_personalizations_page(page, set_status),
-        build_security_page(set_status),
-        build_history_page(chat_list, set_status),
-        build_updates_page(set_status),
-        build_about_page(),
-    ]
-    labels = [
-        ("Внешний вид", ft.Icons.DARK_MODE_OUTLINED),
-        ("Безопасность", ft.Icons.LOCK_OUTLINE),
-        ("История", ft.Icons.HISTORY),
-        ("Обновления", ft.Icons.SYSTEM_UPDATE_OUTLINED),
-        ("О программе", ft.Icons.INFO_OUTLINE),
+    # (лейбл, иконка, подпись на главной странице, сама страница) — один источник правды вместо двух параллельных списков + индексный тернарник
+    sections = [
+        (
+            "Внешний вид",
+            ft.Icons.DARK_MODE_OUTLINED,
+            "Тема оформления и язык интерфейса",
+            build_personalizations_page(page, set_status),
+        ),
+        (
+            "История",
+            ft.Icons.HISTORY,
+            "Удаление и управление сообщениями",
+            build_history_page(chat_list, set_status),
+        ),
+        (
+            "Обновления",
+            ft.Icons.SYSTEM_UPDATE_OUTLINED,
+            "Версия и обновления приложения",
+            build_updates_page(set_status),
+        ),
+        (
+            "О программе",
+            ft.Icons.INFO_OUTLINE,
+            "Версия, описание и разработчик",
+            build_about_page(),
+        ),
     ]
 
     page_title = ft.Text("Настройки", size=20, color="#123b43", weight=ft.FontWeight.BOLD)
     page_host = ft.Column(spacing=0)
 
     def select_page(index: int):
-        page_host.controls = [detail_pages[index]]
-        page_title.value = labels[index][0]
+        page_host.controls = [sections[index][3]]
+        page_title.value = sections[index][0]
         back_button.visible = True
         page.update()
 
@@ -76,20 +90,10 @@ def build_settings_dialog(
                 build_navigation_button(
                     icon,
                     label,
-                    (
-                        "Тема оформления и язык интерфейса"
-                        if index == 0
-                        else "Настройки защиты локальных чатов"
-                        if index == 1
-                        else "Удаление и управление сообщениями"
-                        if index == 2
-                        else "Версия и обновления приложения"
-                        if index == 3
-                        else "Версия, описание и разработчик"
-                    ),
+                    subtitle,
                     lambda _, selected=index: select_page(selected),
                 )
-                for index, (label, icon) in enumerate(labels)
+                for index, (label, icon, subtitle, _page) in enumerate(sections)
             ],
         ],
     )
