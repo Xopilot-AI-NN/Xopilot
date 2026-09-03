@@ -10,8 +10,8 @@
 // из machine-id + локальной соли на диске. Слабее (копирование всей папки сохраняет доступ),
 // но не даёт приложению упасть на машинах без keyring-демона.
 
-use rand::rngs::OsRng;
-use rand::RngCore;
+use rand::rngs::SysRng;
+use rand::TryRng;
 use sha2::{Digest, Sha256};
 use std::path::Path;
 
@@ -48,7 +48,9 @@ fn get_or_create_fallback_key(dir: &Path) -> String {
         Ok(bytes) if bytes.len() == KEY_LEN => bytes,
         _ => {
             let mut salt = [0u8; KEY_LEN];
-            OsRng.fill_bytes(&mut salt);
+            SysRng
+                .try_fill_bytes(&mut salt)
+                .expect("OS randomness unavailable while creating DB key salt");
             let _ = std::fs::create_dir_all(dir);
             let _ = std::fs::write(&salt_path, salt);
             salt.to_vec()
@@ -83,6 +85,8 @@ fn read_machine_id() -> String {
 
 fn generate_hex_key() -> String {
     let mut key = [0u8; KEY_LEN];
-    OsRng.fill_bytes(&mut key);
+    SysRng
+        .try_fill_bytes(&mut key)
+        .expect("OS randomness unavailable while creating DB encryption key");
     hex::encode(key)
 }
