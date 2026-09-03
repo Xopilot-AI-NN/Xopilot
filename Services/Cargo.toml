@@ -17,14 +17,14 @@ rusqlite = { version = "0.40", features = ["bundled-sqlcipher"] }
 pyo3 = { version = "0.29", features = ["extension-module"] }
 
 # хранение ключа шифрования в OS keyring (Windows Credential Manager / Linux Secret Service)
-keyring = "3"
-rand = "0.8"
-sha2 = "0.10"
+keyring = "4"
+rand = "0.10"
+sha2 = "0.11"
 hex = "0.4"
 
 # чтение MachineGuid из реестра для fallback-ветки ключа на Windows
 [target.'cfg(windows)'.dependencies]
-winreg = "0.52"
+winreg = "0.56"
 
 [profile.release]
 lto = true
