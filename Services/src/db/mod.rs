@@ -1,6 +1,6 @@
 // Файл: Services/src/db/mod.rs
 // Модуль локальной БД (SQLCipher-шифрование, WAL).
-// Хранит настройки программы, чаты и сообщения.
+// Хранит настройки программы, чаты и сообщения (с цитатами/ответами/вложениями).
 //
 // СХЕМА ВЕРСИОНИРУЕТСЯ через SQLite `PRAGMA user_version`.
 // Каждое изменение архитектуры/новые настройки в будущем — это новая `if version < N { ... }`
@@ -13,7 +13,20 @@ use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Текущая версия схемы. Повышать при каждом изменении схемы и добавлять ветку в migrate().
-const CURRENT_SCHEMA_VERSION: i32 = 1;
+const CURRENT_SCHEMA_VERSION: i32 = 2;
+
+/// Одно сообщение со всеми полями: цитата/ответ — произвольный текст (не ссылка на другое сообщение по id),
+/// вложения — список (имя_файла, путь_к_файлу).
+#[derive(Debug, Clone)]
+pub struct StoredMessage {
+    pub id: i64,
+    pub role: String,
+    pub content: String,
+    pub quote: Option<String>,
+    pub reply_to: Option<String>,
+    pub attachments: Vec<(String, String)>,
+    pub created_at: i64,
+}
 
 pub struct Database {
     conn: Connection,
@@ -21,7 +34,7 @@ pub struct Database {
 
 impl Database {
     /// Открывает (или создаёт) зашифрованную БД по пути и применяет миграции до актуальной схемы.
-    /// `key` — ключ шифрования (генерируется из пароля пользователя через argon2 на стороне модуля защиты — сюда приходит уже готовый хеш).
+    /// `key` — ключ шифрования (генерируется из OS keyring на стороне модуля защиты — сюда приходит уже готовый хеш).
     pub fn open<P: AsRef<Path>>(path: P, key: &str) -> Result<Self> {
         let conn = Connection::open(path)?;
 
@@ -99,12 +112,29 @@ impl Database {
             )?;
         }
 
-        // Пример будущего шага, когда потребуется новая архитектура/настройки:
-        // if from_version < 2 {
-        //     self.conn.execute_batch("ALTER TABLE ... ; CREATE TABLE ...;")?;
-        // }
+        if from_version < 2 {
+            // Цитаты/ответы хранятся как произвольный текст (не FK на другое сообщение) —
+            // совпадает с тем, как UI уже работает с цитатами/ответами (App/app/message.py).
+            // Вложения — отдельная таблица, потому что их может быть несколько на сообщение.
+            self.conn.execute_batch(
+                "
+                ALTER TABLE messages ADD COLUMN quote TEXT;
+                ALTER TABLE messages ADD COLUMN reply_to TEXT;
 
-        let _ = from_version; // гасится когда появится хотя бы одна ветка выше
+                CREATE TABLE IF NOT EXISTS message_attachments (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    message_id  INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+                    name        TEXT NOT NULL,
+                    path        TEXT NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_attachments_message_id ON message_attachments(message_id);
+                ",
+            )?;
+        }
+
+        // Пример будущего шага:
+        // if from_version < 3 { ... }
 
         Ok(())
     }
@@ -148,15 +178,39 @@ impl Database {
         Ok(self.conn.last_insert_rowid())
     }
 
+    /// Простое сообщение без цитат/вложений — тонкая обёртка над add_message_full.
     pub fn add_message(&self, chat_id: i64, role: &str, content: &str) -> Result<i64> {
-        self.conn.execute(
-            "INSERT INTO messages (chat_id, role, content, created_at) VALUES (?1, ?2, ?3, ?4)",
-            params![chat_id, role, content, now()],
-        )?;
-        Ok(self.conn.last_insert_rowid())
+        self.add_message_full(chat_id, role, content, None, None, &[])
     }
 
-    /// Правит текст уже отправленного сообщения (редактирование в UI). Возвращает Ok(false), если сообщение с таким id не найдено.
+    /// Полная версия: с цитатой/ответом и списком вложений (имя, путь).
+    pub fn add_message_full(
+        &self,
+        chat_id: i64,
+        role: &str,
+        content: &str,
+        quote: Option<&str>,
+        reply_to: Option<&str>,
+        attachments: &[(String, String)],
+    ) -> Result<i64> {
+        self.conn.execute(
+            "INSERT INTO messages (chat_id, role, content, quote, reply_to, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![chat_id, role, content, quote, reply_to, now()],
+        )?;
+        let message_id = self.conn.last_insert_rowid();
+
+        for (name, path) in attachments {
+            self.conn.execute(
+                "INSERT INTO message_attachments (message_id, name, path) VALUES (?1, ?2, ?3)",
+                params![message_id, name, path],
+            )?;
+        }
+
+        Ok(message_id)
+    }
+
+    /// Правит текст уже отправленного сообщения (редактирование в UI). Цитату/ответ/вложения пока не трогает (известное ограничение, будет расширено при необходимости).
+    /// Возвращает Ok(false), если сообщение с таким id не найдено.
     pub fn update_message(&self, message_id: i64, content: &str) -> Result<bool> {
         let affected = self.conn.execute(
             "UPDATE messages SET content = ?1 WHERE id = ?2",
@@ -165,14 +219,35 @@ impl Database {
         Ok(affected > 0)
     }
 
-    pub fn get_messages(&self, chat_id: i64) -> Result<Vec<(i64, String, String, i64)>> {
+    pub fn get_messages(&self, chat_id: i64) -> Result<Vec<StoredMessage>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, role, content, created_at FROM messages WHERE chat_id = ?1 ORDER BY id ASC",
+            "SELECT id, role, content, quote, reply_to, created_at FROM messages WHERE chat_id = ?1 ORDER BY id ASC",
         )?;
         let rows = stmt.query_map(params![chat_id], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            Ok(StoredMessage {
+                id: row.get(0)?,
+                role: row.get(1)?,
+                content: row.get(2)?,
+                quote: row.get(3)?,
+                reply_to: row.get(4)?,
+                attachments: Vec::new(),
+                created_at: row.get(5)?,
+            })
         })?;
-        rows.collect()
+        let mut messages = rows.collect::<Result<Vec<_>>>()?;
+
+        // N+1 на вложения — нормально для локального десктопа и типичного размера чата; при необходимости легко 3аменить на JOIN.
+        let mut attach_stmt = self
+            .conn
+            .prepare("SELECT name, path FROM message_attachments WHERE message_id = ?1 ORDER BY id ASC")?;
+        for message in messages.iter_mut() {
+            let attachments = attach_stmt
+                .query_map(params![message.id], |row| Ok((row.get(0)?, row.get(1)?)))?
+                .collect::<Result<Vec<_>>>()?;
+            message.attachments = attachments;
+        }
+
+        Ok(messages)
     }
 
     pub fn list_chats(&self) -> Result<Vec<(i64, String, i64)>> {

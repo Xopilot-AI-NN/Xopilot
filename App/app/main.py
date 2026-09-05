@@ -158,9 +158,15 @@ def build_app_ui(page: ft.Page) -> ft.Control:
             new_id = None
             if active_chat_id is not None:
                 try:
-                    new_id = save_user_message(active_chat_id, text)
+                    attachments = [
+                        (f.name, f.path) for f in selected_files if getattr(f, "path", None)
+                    ]
+                    new_id = save_user_message(active_chat_id, text, attachments=attachments)
                 except Exception:
                     pass  # БД недоступна (напр., advanced_xopilot ещё не собран) — сообщение останется только в UI на эту сессию
+                    # Цитата/ответ для новых сообщений пока не персистятся отдельно от текста промпта
+                    # (они вставляются как обычный текст в handle_message_action, как и до этого) —
+                    # в БД попадают только структурные quote/reply_to, когда их задаёт сидинг демо-данных.
             message = build_user_message(
                 text,
                 selected_files.copy(),
@@ -184,15 +190,28 @@ def build_app_ui(page: ft.Page) -> ft.Control:
     try:
         seed_demo_chat_if_empty()
         active_chat_id = get_or_create_active_chat_id()
-        stored_messages = load_chat_messages(active_chat_id)  # [(id, role, content), ...]
+        stored_messages = load_chat_messages(active_chat_id)  # [advanced_xopilot.PyMessage, ...]
     except Exception:
         stored_messages = []
 
+    def _rebuild_files(attachments):
+        # attachments: [(name, path), ...] из БД. file_from_path требует реального файла на диске —
+        # если файл перенёсли/удалили, вложение тихо пропадает из рендера.
+        files = [file_from_path(path) for _name, path in attachments]
+        return [f for f in files if f is not None] or None
+
     chat_messages = [
-        build_user_message(content, on_action=handle_message_action, message_id=msg_id)
-        if role == "user"
-        else build_ai_message(content, on_action=handle_message_action, message_id=msg_id)
-        for msg_id, role, content in stored_messages
+        build_user_message(
+            msg.content,
+            files=_rebuild_files(msg.attachments),
+            on_action=handle_message_action,
+            quote=msg.quote,
+            reply_to=msg.reply_to,
+            message_id=msg.id,
+        )
+        if msg.role == "user"
+        else build_ai_message(msg.content, on_action=handle_message_action, message_id=msg.id)
+        for msg in stored_messages
     ]
     chat = build_chat(chat_messages)
     prompt_container = build_prompt_container(
