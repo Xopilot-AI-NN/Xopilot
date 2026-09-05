@@ -12,7 +12,7 @@ mod mcp;
 mod security;
 mod updates;
 
-use db::Database;
+use db::{Database, StoredMessage};
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use std::sync::Mutex;
@@ -20,6 +20,40 @@ use std::sync::Mutex;
 /// Обёртка rusqlite::Error в исключение Python, чтобы ошибки БД красиво ловились на стороне Flet (try/except), а не роняли процесс.
 fn to_py_err(e: rusqlite::Error) -> PyErr {
     PyRuntimeError::new_err(e.to_string())
+}
+
+/// Python-представление одного сообщения из БД. Поля читаются из Python как `msg.id`, `msg.quote` и т.д.
+#[pyclass]
+struct PyMessage {
+    #[pyo3(get)]
+    id: i64,
+    #[pyo3(get)]
+    role: String,
+    #[pyo3(get)]
+    content: String,
+    #[pyo3(get)]
+    quote: Option<String>,
+    #[pyo3(get)]
+    reply_to: Option<String>,
+    /// Список (имя, путь) для каждого вложения.
+    #[pyo3(get)]
+    attachments: Vec<(String, String)>,
+    #[pyo3(get)]
+    created_at: i64,
+}
+
+impl From<StoredMessage> for PyMessage {
+    fn from(m: StoredMessage) -> Self {
+        PyMessage {
+            id: m.id,
+            role: m.role,
+            content: m.content,
+            quote: m.quote,
+            reply_to: m.reply_to,
+            attachments: m.attachments,
+            created_at: m.created_at,
+        }
+    }
 }
 
 /// Python-обёртка над db::Database. Mutex — потому что PyO3-объекты должны быть Sync,
@@ -68,11 +102,28 @@ impl PyDatabase {
         self.inner.lock().unwrap().create_chat(&title).map_err(to_py_err)
     }
 
-    fn add_message(&self, chat_id: i64, role: String, content: String) -> PyResult<i64> {
+    /// quote/reply_to — произвольный текст или None. attachments — список (имя, путь), по умолчанию пустой.
+    #[pyo3(signature = (chat_id, role, content, quote=None, reply_to=None, attachments=vec![]))]
+    fn add_message(
+        &self,
+        chat_id: i64,
+        role: String,
+        content: String,
+        quote: Option<String>,
+        reply_to: Option<String>,
+        attachments: Vec<(String, String)>,
+    ) -> PyResult<i64> {
         self.inner
             .lock()
             .unwrap()
-            .add_message(chat_id, &role, &content)
+            .add_message_full(
+                chat_id,
+                &role,
+                &content,
+                quote.as_deref(),
+                reply_to.as_deref(),
+                &attachments,
+            )
             .map_err(to_py_err)
     }
 
@@ -84,8 +135,13 @@ impl PyDatabase {
             .map_err(to_py_err)
     }
 
-    fn get_messages(&self, chat_id: i64) -> PyResult<Vec<(i64, String, String, i64)>> {
-        self.inner.lock().unwrap().get_messages(chat_id).map_err(to_py_err)
+    fn get_messages(&self, chat_id: i64) -> PyResult<Vec<PyMessage>> {
+        self.inner
+            .lock()
+            .unwrap()
+            .get_messages(chat_id)
+            .map(|messages| messages.into_iter().map(PyMessage::from).collect())
+            .map_err(to_py_err)
     }
 
     fn list_chats(&self) -> PyResult<Vec<(i64, String, i64)>> {
@@ -101,5 +157,6 @@ impl PyDatabase {
 #[pymodule]
 fn advanced_xopilot(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyDatabase>()?;
+    m.add_class::<PyMessage>()?;
     Ok(())
 }
