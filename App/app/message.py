@@ -40,6 +40,7 @@ def build_user_message(
     on_action=None,
     quote: str | None = None,
     reply_to: str | None = None,
+    message_id: int | None = None,
 ) -> ft.Container:
     content = []
     if reply_to:
@@ -85,7 +86,7 @@ def build_user_message(
     content.append(ft.Text(text, font_family="Google Sans", color=ft.Colors.BLACK, size=14))
 
     actions = (
-        build_message_actions(text, files, on_action, True)
+        build_message_actions(text, files, on_action, True, message_id)
         if on_action
         else ft.Container()
     )
@@ -122,7 +123,7 @@ def build_user_message(
             controls=[bubble, footer],
         ),
     )
-    message.data = text
+    message.data = message_id if message_id is not None else text
 
     def handle_hover(e: ft.Event[ft.Container]):
         actions.opacity = 1 if e.data == "true" or e.data is True else 0
@@ -132,7 +133,7 @@ def build_user_message(
     return message
 
 
-def build_ai_message(text: str, on_action=None) -> ft.Container:
+def build_ai_message(text: str, on_action=None, message_id: int | None = None) -> ft.Container:
     """Пузырь сообщения ИИ (слева). Раньше это была внутренняя функция внутри messages(),
     вынесена на верхний уровень — чтобы рендерить отдельные сообщения из БД, а не только
     весь демо-список целиком."""
@@ -169,7 +170,7 @@ def build_ai_message(text: str, on_action=None) -> ft.Container:
     )
 
     actions = (
-        build_message_actions(text, None, on_action, False)
+        build_message_actions(text, None, on_action, False, message_id)
         if on_action
         else ft.Container()
     )
@@ -189,7 +190,7 @@ def build_ai_message(text: str, on_action=None) -> ft.Container:
         padding=ft.padding.Padding.only(right=40),
         content=ft.Column(spacing=0, controls=[bubble, footer]),
     )
-    message.data = text
+    message.data = message_id if message_id is not None else text
 
     def handle_hover(e: ft.Event[ft.Container]):
         actions.opacity = 1 if e.data == "true" or e.data is True else 0

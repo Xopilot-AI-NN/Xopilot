@@ -156,6 +156,15 @@ impl Database {
         Ok(self.conn.last_insert_rowid())
     }
 
+    /// Правит текст уже отправленного сообщения (редактирование в UI). Возвращает Ok(false), если сообщение с таким id не найдено.
+    pub fn update_message(&self, message_id: i64, content: &str) -> Result<bool> {
+        let affected = self.conn.execute(
+            "UPDATE messages SET content = ?1 WHERE id = ?2",
+            params![content, message_id],
+        )?;
+        Ok(affected > 0)
+    }
+
     pub fn get_messages(&self, chat_id: i64) -> Result<Vec<(i64, String, String, i64)>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, role, content, created_at FROM messages WHERE chat_id = ?1 ORDER BY id ASC",

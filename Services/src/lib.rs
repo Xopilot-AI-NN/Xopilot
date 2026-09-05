@@ -76,6 +76,14 @@ impl PyDatabase {
             .map_err(to_py_err)
     }
 
+    fn update_message(&self, message_id: i64, content: String) -> PyResult<bool> {
+        self.inner
+            .lock()
+            .unwrap()
+            .update_message(message_id, &content)
+            .map_err(to_py_err)
+    }
+
     fn get_messages(&self, chat_id: i64) -> PyResult<Vec<(i64, String, String, i64)>> {
         self.inner.lock().unwrap().get_messages(chat_id).map_err(to_py_err)
     }
