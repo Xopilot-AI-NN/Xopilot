@@ -2,7 +2,7 @@
 Файл: /App/services/chat_store.py
 Описание: Высокоуровневый доступ к чатам/сообщениям поверх services.db (Rust БД).
     UI не дёргается с advanced_xopilot напрямую — только через эти функции,
-    чтобы вся логика вокруг активного чата и демо-данных жила в одном месте.
+    чтобы вся бизнес-логика (активный чат, сидинг демо-данных) жила в одном месте.
 
     ОГРАНИЧЕНИЕ: текущая схема messages (id, chat_id, role, content, created_at)
     не хранит вложения/цитаты/ответы-на-сообщение — эти метаданные ещё не
@@ -40,18 +40,24 @@ def get_or_create_active_chat_id() -> int:
     return _active_chat_id
 
 
-def load_chat_messages(chat_id: int) -> List[Tuple[str, str]]:
-    """[(role, content), ...] в хронологическом порядке."""
+def load_chat_messages(chat_id: int) -> List[Tuple[int, str, str]]:
+    """[(id, role, content), ...] в хронологическом порядке. id нужен для редактирования (update_message)."""
     db = get_db()
-    return [(role, content) for (_id, role, content, _created_at) in db.get_messages(chat_id)]
+    return [(msg_id, role, content) for (msg_id, role, content, _created_at) in db.get_messages(chat_id)]
 
 
-def save_user_message(chat_id: int, text: str) -> None:
-    get_db().add_message(chat_id, "user", text)
+def save_user_message(chat_id: int, text: str) -> int:
+    """Сохраняет сообщение пользователя, возвращает id новой строки (нужен в UI для последующего редактирования)."""
+    return get_db().add_message(chat_id, "user", text)
 
 
-def save_ai_message(chat_id: int, text: str) -> None:
-    get_db().add_message(chat_id, "ai", text)
+def save_ai_message(chat_id: int, text: str) -> int:
+    return get_db().add_message(chat_id, "ai", text)
+
+
+def update_message(message_id: int, text: str) -> bool:
+    """Правит текст уже сохранённого сообщения (редактирование в UI)."""
+    return get_db().update_message(message_id, text)
 
 
 def seed_demo_chat_if_empty() -> None:

@@ -8,9 +8,10 @@ def build_message_actions(
     files: list[ft.FilePickerFile] | None,
     on_action,
     can_edit: bool,
+    message_id: int | None = None,
 ) -> ft.Row:
     async def handle_action(action: str):
-        await on_action(action, text, files)
+        await on_action(action, text, files, message_id)
 
     async def on_copy(_):
         await handle_action("copy")

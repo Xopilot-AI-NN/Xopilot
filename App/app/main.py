@@ -31,6 +31,7 @@ try:
         load_chat_messages,
         save_user_message,
         seed_demo_chat_if_empty,
+        update_message,
     )
 except ImportError:
     from services.chat_store import (
@@ -38,6 +39,7 @@ except ImportError:
         load_chat_messages,
         save_user_message,
         seed_demo_chat_if_empty,
+        update_message,
     )
 
 
@@ -58,6 +60,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         ("Локальный ИИ", "Модели и эксперименты", ft.Icons.SMART_TOY_OUTLINED),
         ("Дизайн приложения", "Макеты и материалы", ft.Icons.PALETTE_OUTLINED),
     ]
+    # editing_message: (message_id или None для ещё не сохранённых в БД сообщений, text, files)
     editing_message = None
     active_chat_id: int | None = None  # заполняется ниже при загрузке истории из БД
     attachment_strip = build_file_attachments(selected_files, lambda _: None)
@@ -106,7 +109,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
 
     page.on_keyboard_event = handle_keyboard
 
-    async def handle_message_action(action, text, files):
+    async def handle_message_action(action, text, files, message_id=None):
         nonlocal editing_message
         if action == "copy":
             await page.clipboard.set(text)
@@ -118,7 +121,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
             prompt.value = f"{quoted_text}\n\n"
             await prompt.focus()
         elif action == "edit":
-            editing_message = (text, files or [])
+            editing_message = (message_id, text, files or [])
             prompt.value = text
             await prompt.focus()
         prompt.update()
@@ -130,31 +133,42 @@ def build_app_ui(page: ft.Page) -> ft.Control:
             return
         chat_list = cast(ft.ListView, chat.content)
         if editing_message is not None:
-            original_text, original_files = editing_message
+            original_id, original_text, original_files = editing_message
             for index, control in enumerate(chat_list.controls):
-                if getattr(control, "data", None) == original_text:
+                matches = (
+                    getattr(control, "data", None) == original_id
+                    if original_id is not None
+                    else getattr(control, "data", None) == original_text
+                )
+                if matches:
                     chat_list.controls[index] = build_user_message(
                         text,
                         original_files,
                         on_action=handle_message_action,
+                        message_id=original_id,
                     )
                     break
             editing_message = None
-            # TODO: редактирование пока не персистится — нужен update_message в db/mod.rs
+            if original_id is not None:
+                try:
+                    update_message(original_id, text)
+                except Exception:
+                    pass  # БД недоступна — правка останется только в UI на эту сессию
         else:
+            new_id = None
+            if active_chat_id is not None:
+                try:
+                    new_id = save_user_message(active_chat_id, text)
+                except Exception:
+                    pass  # БД недоступна (напр., advanced_xopilot ещё не собран) — сообщение останется только в UI на эту сессию
             message = build_user_message(
                 text,
                 selected_files.copy(),
                 on_action=handle_message_action,
+                message_id=new_id,
             )
-            message.data = text
             chat_list.controls.append(message)
             chat_items.insert(0, (text[:32] or "Новый чат", "Только что · 1 сообщение", True))
-            if active_chat_id is not None:
-                try:
-                    save_user_message(active_chat_id, text)
-                except Exception:
-                    pass  # БД недоступна (напр., advanced_xopilot ещё не собран) — сообщение останется только в UI на эту сессию
         prompt.value = ""
         selected_files.clear()
         prompt.update()
@@ -170,15 +184,15 @@ def build_app_ui(page: ft.Page) -> ft.Control:
     try:
         seed_demo_chat_if_empty()
         active_chat_id = get_or_create_active_chat_id()
-        stored_messages = load_chat_messages(active_chat_id)
+        stored_messages = load_chat_messages(active_chat_id)  # [(id, role, content), ...]
     except Exception:
         stored_messages = []
 
     chat_messages = [
-        build_user_message(text, on_action=handle_message_action)
+        build_user_message(content, on_action=handle_message_action, message_id=msg_id)
         if role == "user"
-        else build_ai_message(text, on_action=handle_message_action)
-        for role, text in stored_messages
+        else build_ai_message(content, on_action=handle_message_action, message_id=msg_id)
+        for msg_id, role, content in stored_messages
     ]
     chat = build_chat(chat_messages)
     prompt_container = build_prompt_container(
