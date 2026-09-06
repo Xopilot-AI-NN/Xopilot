@@ -14,6 +14,7 @@
 import flet as ft
 
 from .abaut.main import build_about_page
+from .account.main import build_account_page
 from .buttons.back import build_back_button
 from .common import section_title
 from .buttons.navigation import build_navigation_button
@@ -32,6 +33,7 @@ BRAND_GRADIENT = ft.LinearGradient(
 def build_settings_dialog(
     page: ft.Page,
     chat_list: ft.ListView | None = None,
+    start_section: int | None = None,
 ) -> ft.AlertDialog:
     status = ft.Text("Изменения применяются сразу", size=11, color="#dff8f3")
 
@@ -41,6 +43,12 @@ def build_settings_dialog(
 
     # (лейбл, иконка, подпись на главной странице, сама страница) — один источник правды вместо двух параллельных списков + индексный тернарник
     sections = [
+        (
+            "Аккаунт",
+            ft.Icons.PERSON_OUTLINE,
+            "Профиль, тариф и статистика ИИ",
+            build_account_page(),
+        ),
         (
             "Внешний вид",
             ft.Icons.DARK_MODE_OUTLINED,
@@ -100,9 +108,12 @@ def build_settings_dialog(
     page_host.controls = [home_page]
     back_button = build_back_button(show_home)
 
+    if start_section is not None:
+        select_page(start_section)
+
     content = ft.Column(
-        width=650,
-        height=500,
+        width=750,
+        height=600,
         spacing=0,
         scroll=ft.ScrollMode.AUTO,
         controls=[

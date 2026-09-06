@@ -12,13 +12,13 @@ from .info import build_about_info, build_about_row
 
 def build_about_page() -> ft.Column:
     return ft.Column(
+        width=455,
+        alignment=ft.MainAxisAlignment.START,
+        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
         spacing=2,
         controls=[
             section_title("О приложении"),
             build_about_row(),
-            ft.Container(
-                padding=ft.padding.Padding.only(left=47, right=10, bottom=8),
-                content=build_about_info(),
-            ),
+            build_about_info(),
         ],
     )

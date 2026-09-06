@@ -15,6 +15,7 @@ def build_about_row() -> ft.Container:
         content=ft.Row(
             spacing=11,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            alignment=ft.MainAxisAlignment.CENTER,
             controls=[
                 ft.Container(
                     width=36,
@@ -25,7 +26,6 @@ def build_about_row() -> ft.Container:
                     content=ft.Icon(ft.Icons.INFO_OUTLINE, size=19, color="#087f8c"),
                 ),
                 ft.Column(
-                    expand=True,
                     spacing=2,
                     controls=[
                         ft.Text("Xopilot-NN+ AI+ 2.0", size=13, color="#123b43"),
