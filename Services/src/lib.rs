@@ -5,6 +5,7 @@
 // Описание: Rust-библиотека (cdylib) с PyO3-биндингом для Flet/Python UI.
 //              Шифрование — всегда включено, ключ берётся автоматически из OS keyring (security::get_or_create_db_key).
 //              cloud_sync / mcp / updates — заглушки под фазу 2.
+//              Рабочий ИИ больше НЕ здесь — переехали на LiteRT-LM (App/services/llm.py, чистый Python).
 
 mod ai;
 mod cloud_sync;
@@ -13,7 +14,6 @@ mod mcp;
 mod security;
 mod updates;
 
-use ai::llm::LocalLlm;
 use ai::SentimentClassifier;
 use db::{Database, StoredMessage};
 use pyo3::exceptions::PyRuntimeError;
@@ -179,57 +179,11 @@ impl PySentimentClassifier {
     }
 }
 
-/// Python-обёртка над рабочим локальным ИИ (candle/candelabra, GGUF из локального файла в App/data/models/).
-#[pyclass]
-struct PyLlm {
-    inner: Mutex<Option<LocalLlm>>,
-}
-
-#[pymethods]
-impl PyLlm {
-    #[new]
-    fn new() -> Self {
-        PyLlm {
-            inner: Mutex::new(None),
-        }
-    }
-
-    /// Загружает модель из локального GGUF-файла. Возвращает архитектуру из метаданных GGUF (напр., "phi3").
-    /// Блокирующий вызов (загрузка в память) — вызывающий Python-код должен вызывать через фоновый поток.
-    /// GIL отпускается (allow_threads) на время загрузки, чтобы UI-поток ОС не вис целиком.
-    fn load(&self, py: Python<'_>, model_path: String, tokenizer_repo: String) -> PyResult<String> {
-        py.detach(|| {
-            let llm = LocalLlm::load(&model_path, &tokenizer_repo)
-                .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
-            let arch = llm.architecture();
-            *self.inner.lock().unwrap() = Some(llm);
-            Ok(arch)
-        })
-    }
-
-    fn is_loaded(&self) -> bool {
-        self.inner.lock().unwrap().is_some()
-    }
-
-    /// prompt уже должен быть отформатирован под шаблон конкретной модели (services/llm.py).
-    fn generate(&self, py: Python<'_>, prompt: String, max_tokens: usize) -> PyResult<String> {
-        py.detach(|| {
-            let mut guard = self.inner.lock().unwrap();
-            let llm = guard
-                .as_mut()
-                .ok_or_else(|| PyRuntimeError::new_err("Модель не загружена — вызовите load() сначала"))?;
-            llm.generate(&prompt, max_tokens)
-                .map_err(|e| PyRuntimeError::new_err(e.to_string()))
-        })
-    }
-}
-
 /// Точка входа модуля для Python: `import advanced_xopilot` после сборки (`maturin develop` / `cargo build --release` + копирование .so/.pyd рядом с App/).
 #[pymodule]
 fn advanced_xopilot(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyDatabase>()?;
     m.add_class::<PyMessage>()?;
     m.add_class::<PySentimentClassifier>()?;
-    m.add_class::<PyLlm>()?;
     Ok(())
 }
