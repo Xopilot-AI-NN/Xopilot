@@ -288,6 +288,11 @@ def build_app_ui(page: ft.Page) -> ft.Control:
     def open_settings(_):
         page.show_dialog(build_settings_dialog(page, cast(ft.ListView, chat.content)))
 
+    def open_account(_):
+        page.show_dialog(
+            build_settings_dialog(page, cast(ft.ListView, chat.content), start_section=0)
+        )
+
     def open_chats(_):
         page.show_dialog(build_chats_dialog(page, cast(ft.ListView, chat.content), chat_items))
 
@@ -299,6 +304,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         on_settings_click=open_settings,
         on_chats_click=open_chats,
         on_workspaces_click=open_workspaces,
+        on_account_click=open_account,
     )
     menu_overlay, toggle_menu = build_menu_overlay(
         menu,
@@ -306,6 +312,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         on_settings_click=open_settings,
         on_chats_click=open_chats,
         on_workspaces_click=open_workspaces,
+        on_account_click=open_account,
     )
 
     async def scroll_chat_to_bottom():

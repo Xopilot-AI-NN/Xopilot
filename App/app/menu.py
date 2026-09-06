@@ -36,6 +36,7 @@ import asyncio
 import flet as ft
 import platform
 
+from .buttons.account import build_account_button, resize_account_button
 from .buttons.menu import build_menu_button, resize_menu_button
 from .buttons.new_chat import build_new_chat_button, resize_new_chat_button
 from .buttons.settings import build_settings_button, resize_settings_button
@@ -62,6 +63,7 @@ def build_menu(
     on_workspaces_click=None,
     on_chats_click=None,
     on_settings_click=None,
+    on_account_click=None,
 ) -> ft.Container:
     menu_btn = build_menu_button(on_click=on_menu_click, size=50, icon_size=26)
     new_chat_btn = build_new_chat_button(
@@ -74,8 +76,11 @@ def build_menu(
     settings_btn = build_settings_button(
         on_click=on_settings_click, size=50, icon_size=26
     )
+    account_btn = build_account_button(
+        on_click=on_account_click, size=50, icon_size=26
+    )
 
-    for button in (menu_btn, new_chat_btn, workspaces_btn, chats_btn, settings_btn):
+    for button in (menu_btn, new_chat_btn, workspaces_btn, chats_btn, settings_btn, account_btn):
         button.gradient = BRAND_GRADIENT
         button.border = ft.border.Border.all(2, "#FFFFFF")
 
@@ -87,6 +92,7 @@ def build_menu(
         resize_workspaces_button(workspaces_btn, ratio)
         resize_chats_button(chats_btn, ratio)
         resize_settings_button(settings_btn, ratio)
+        resize_account_button(account_btn, ratio)
 
     return ft.Container(
         width=RAIL_WIDTH_DEFAULT,
@@ -109,7 +115,11 @@ def build_menu(
                     horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                     controls=[menu_btn, new_chat_btn, workspaces_btn, chats_btn],
                 ),
-                settings_btn,
+                ft.Column(
+                    spacing=6,
+                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                    controls=[settings_btn, account_btn],
+                ),
             ],
         ),
     )
@@ -176,6 +186,7 @@ def build_menu_overlay(
     on_settings_click=None,
     on_workspaces_click=None,
     on_chats_click=None,
+    on_account_click=None,
 ):
     is_open = False
 
@@ -194,6 +205,9 @@ def build_menu_overlay(
     settings_row, settings_wrapper, settings_text = _overlay_item(
         ft.Icons.SETTINGS, "Настройки"
     )
+    account_row, account_wrapper, account_text = _overlay_item(
+        ft.Icons.PERSON, "Аккаунт"
+    )
 
     wrappers = (
         menu_wrapper,
@@ -201,8 +215,9 @@ def build_menu_overlay(
         workspaces_wrapper,
         chats_wrapper,
         settings_wrapper,
+        account_wrapper,
     )
-    texts = (menu_text, new_chat_text, workspaces_text, chats_text, settings_text)
+    texts = (menu_text, new_chat_text, workspaces_text, chats_text, settings_text, account_text)
 
     panel = ft.Container(
         width=RAIL_WIDTH_DEFAULT,
@@ -235,7 +250,11 @@ def build_menu_overlay(
                     horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
                     controls=[menu_row, new_chat_row, workspaces_row, chats_row],
                 ),
-                settings_row,
+                ft.Column(
+                    spacing=8,
+                    horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+                    controls=[settings_row, account_row],
+                ),
             ],
         ),
     )
@@ -287,6 +306,12 @@ def build_menu_overlay(
         else:
             await handle_panel_click(on_settings_click, event)
 
+    async def handle_account_click(event):
+        if on_account_click is None:
+            await handle_scrim_click(event)
+        else:
+            await handle_panel_click(on_account_click, event)
+
     async def handle_workspaces_click(event):
         if on_workspaces_click is None:
             await handle_scrim_click(event)
@@ -300,6 +325,7 @@ def build_menu_overlay(
             await handle_panel_click(on_chats_click, event)
 
     settings_row.on_click = handle_settings_click
+    account_row.on_click = handle_account_click
     workspaces_row.on_click = handle_workspaces_click
     chats_row.on_click = handle_chats_click
 
