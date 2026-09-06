@@ -22,6 +22,23 @@ rand = "0.10"
 sha2 = "0.11"
 hex = "0.4"
 
+# tract-onnx — чистый Rust ONNX-рантайм без внешней C++ библиотеки (как rusqlite bundled) —
+# проще собирать/кросс-компилировать под Linux/Windows, чем ort (обёртка над ONNX Runtime).
+tract-onnx = "0.21"
+
+# candelabra — чистый Rust (candle) загрузчик/инференс GGUF-моделей (Phi/Gemma/Qwen/LLaMA и т.д.), без llama.cpp/C++.
+# ГГУФ-файл кладёт сам в App/data/models/ (вручную, без автоскачивания) — только токенизатор (маленький) тянется с Hugging Face автоматически.
+#
+# ВАЖНО: candelabra 0.2.0 с crates.io сам пинит tokenizers = "0.19", а этот tokenizers
+# не умеет парсить tokenizer.json современных моделей (напр. Phi-4-mini-instruct) — известный
+# баг форматов Rust-крейта tokenizers ("data did not match any variant of untagged enum
+# ModelWrapper"), проверено отдельным тестом: 0.19.1 падает, 0.21.4 — читает нормально.
+# Раз crates.io-версия не даёт поднять tokenizers, используем локальную копию (vendor/candelabra)
+# с tokenizers, поднятым до "0.21" — сам код candelabra не менялся, только версия зависимости.
+candelabra = { path = "vendor/candelabra" }
+tokenizers = "0.21"
+anyhow = "1"
+
 # чтение MachineGuid из реестра для fallback-ветки ключа на Windows
 [target.'cfg(windows)'.dependencies]
 winreg = "0.56"
