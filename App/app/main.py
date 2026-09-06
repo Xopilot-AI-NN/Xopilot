@@ -29,6 +29,7 @@ try:
     from ..services.chat_store import (
         get_or_create_active_chat_id,
         load_chat_messages,
+        save_ai_message,
         save_user_message,
         seed_demo_chat_if_empty,
         update_message,
@@ -37,10 +38,19 @@ except ImportError:
     from services.chat_store import (
         get_or_create_active_chat_id,
         load_chat_messages,
+        save_ai_message,
         save_user_message,
         seed_demo_chat_if_empty,
         update_message,
     )
+try:
+    from ..services.ai import classify_sentiment, reply_for_sentiment
+except ImportError:
+    from services.ai import classify_sentiment, reply_for_sentiment
+try:
+    from ..services.llm import generate_reply, is_model_loaded, list_local_models, load_model
+except ImportError:
+    from services.llm import generate_reply, is_model_loaded, list_local_models, load_model
 
 
 def build_app_ui(page: ft.Page) -> ft.Control:
@@ -62,6 +72,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
     ]
     # editing_message: (message_id или None для ещё не сохранённых в БД сообщений, text, files)
     editing_message = None
+    is_sending = False  # защита от повторного Enter/клика, пока предыдущая отправка (вкл. инференс ИИ) ещё идёт
     active_chat_id: int | None = None  # заполняется ниже при загрузке истории из БД
     attachment_strip = build_file_attachments(selected_files, lambda _: None)
     file_picker = ft.FilePicker()
@@ -127,61 +138,111 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         prompt.update()
 
     async def on_send(e):
-        nonlocal editing_message
+        nonlocal editing_message, is_sending
+        if is_sending:
+            return  # уже идёт отправка (напр., генерация ИИ) — игнорируем повторный Enter/клик, чтобы не дублировать
         text = prompt.value or ""
         if not text.strip() and not selected_files:
             return
-        chat_list = cast(ft.ListView, chat.content)
-        if editing_message is not None:
-            original_id, original_text, original_files = editing_message
-            for index, control in enumerate(chat_list.controls):
-                matches = (
-                    getattr(control, "data", None) == original_id
-                    if original_id is not None
-                    else getattr(control, "data", None) == original_text
-                )
-                if matches:
-                    chat_list.controls[index] = build_user_message(
-                        text,
-                        original_files,
-                        on_action=handle_message_action,
-                        message_id=original_id,
+        is_sending = True
+        try:
+            chat_list = cast(ft.ListView, chat.content)
+            sent_files = selected_files.copy()
+            should_reply = False
+
+            if editing_message is not None:
+                original_id, original_text, original_files = editing_message
+                for index, control in enumerate(chat_list.controls):
+                    matches = (
+                        getattr(control, "data", None) == original_id
+                        if original_id is not None
+                        else getattr(control, "data", None) == original_text
                     )
-                    break
-            editing_message = None
-            if original_id is not None:
-                try:
-                    update_message(original_id, text)
-                except Exception:
-                    pass  # БД недоступна — правка останется только в UI на эту сессию
-        else:
-            new_id = None
-            if active_chat_id is not None:
-                try:
-                    attachments = [
-                        (f.name, f.path) for f in selected_files if getattr(f, "path", None)
-                    ]
-                    new_id = save_user_message(active_chat_id, text, attachments=attachments)
-                except Exception:
-                    pass  # БД недоступна (напр., advanced_xopilot ещё не собран) — сообщение останется только в UI на эту сессию
+                    if matches:
+                        chat_list.controls[index] = build_user_message(
+                            text,
+                            original_files,
+                            on_action=handle_message_action,
+                            message_id=original_id,
+                        )
+                        break
+                editing_message = None
+                if original_id is not None:
+                    try:
+                        update_message(original_id, text)
+                    except Exception:
+                        pass  # БД недоступна — правка останется только в UI на эту сессию
+            else:
+                new_id = None
+                if active_chat_id is not None:
+                    try:
+                        attachments = [
+                            (f.name, f.path) for f in sent_files if getattr(f, "path", None)
+                        ]
+                        new_id = save_user_message(active_chat_id, text, attachments=attachments)
+                    except Exception:
+                        pass  # БД недоступна (напр., advanced_xopilot ещё не собран) — сообщение останется только в UI на эту сессию
                     # Цитата/ответ для новых сообщений пока не персистятся отдельно от текста промпта
                     # (они вставляются как обычный текст в handle_message_action, как и до этого) —
                     # в БД попадают только структурные quote/reply_to, когда их задаёт сидинг демо-данных.
-            message = build_user_message(
-                text,
-                selected_files.copy(),
-                on_action=handle_message_action,
-                message_id=new_id,
-            )
-            chat_list.controls.append(message)
-            chat_items.insert(0, (text[:32] or "Новый чат", "Только что · 1 сообщение", True))
-        prompt.value = ""
-        selected_files.clear()
-        prompt.update()
-        page.run_task(refresh_attachments)
-        chat_list.update()
-        await asyncio.sleep(0.08)
-        await chat_list.scroll_to(offset=-1, duration=250)
+                message = build_user_message(
+                    text,
+                    sent_files,
+                    on_action=handle_message_action,
+                    message_id=new_id,
+                )
+                chat_list.controls.append(message)
+                chat_items.insert(0, (text[:32] or "Новый чат", "Только что · 1 сообщение", True))
+                should_reply = True
+
+            # Сразу очищаем поле ввода и показываем отправленное сообщение — ДО генерации ответа ИИ.
+            # Раньше это делалось после инференса — поле висело непустым на время генерации,
+            # из-за чего Enter казался сломанным, а повторные нажатия дублировали отправку.
+            prompt.value = ""
+            selected_files.clear()
+            prompt.update()
+            page.run_task(refresh_attachments)
+            chat_list.update()
+            await asyncio.sleep(0.08)
+            await chat_list.scroll_to(offset=-1, duration=250)
+
+            if not should_reply:
+                return
+
+            # Рабочий ИИ: если GGUF-модель положена в App/data/models/ — отвечает она (ленивая загрузка на первое сообщение).
+            # Иначе — откат на тестовый ONNX-классификатор тональности (пункт 5 плана).
+            # Загрузка/генерация идут в фоновом потоке (asyncio.to_thread) — UI не замирает на время инференса.
+            reply_text = None
+            try:
+                if not is_model_loaded():
+                    available = list_local_models()
+                    if available:
+                        await asyncio.to_thread(load_model, available[0])
+                if is_model_loaded():
+                    reply_text = await asyncio.to_thread(generate_reply, text)
+            except Exception:
+                reply_text = None
+
+            if reply_text is None:
+                result = classify_sentiment(text)
+                if result is not None:
+                    label, _score = result
+                    reply_text = reply_for_sentiment(label)
+
+            if reply_text:
+                ai_id = None
+                if active_chat_id is not None:
+                    try:
+                        ai_id = save_ai_message(active_chat_id, reply_text)
+                    except Exception:
+                        pass
+                chat_list.controls.append(
+                    build_ai_message(reply_text, on_action=handle_message_action, message_id=ai_id)
+                )
+                chat_list.update()
+                await chat_list.scroll_to(offset=-1, duration=200)
+        finally:
+            is_sending = False
 
     # История чата грузится из локальной БД. При первом запуске (пустая БД) сеется демо-диалог
     # напрямую в БД (см. services/chat_store.py) — тестовые сообщения больше не хардкодятся в UI.

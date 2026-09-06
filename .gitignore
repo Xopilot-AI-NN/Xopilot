@@ -7,5 +7,6 @@ target
 *.sqlite
 *.sqlite3
 .xopilot_salt
+*.gguf
 build
 *.lock
