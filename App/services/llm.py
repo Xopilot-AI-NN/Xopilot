@@ -1,79 +1,83 @@
 """
-Файл: /App/services/llm.py
-Описание: Рабочий локальный ИИ — обёртка над advanced_xopilot.PyLlm (candle/candelabra, GGUF).
-
-    GGUF-файл НЕ скачивается автоматически — клади его вручную в App/data/models/.
-    Токенизатор (маленький tokenizer.json) тянется с Hugging Face автоматически.
-
-    Загрузка/генерация — блокирующие вызовы, вызывающий код должен запускать через
-    asyncio.to_thread(...), иначе UI замрёт на время загрузки/генерации.
+Файл: App/services/llm.py
+Рабочий локальный ИИ через LiteRT-LM (Google, litert-lm-api). Чистый Python, без Rust.
+.litertlm НЕ скачивается автоматически — клади в App/data/models/.
+Пример (Gemma 4 E2B, мультимодальная):
+huggingface.co/litert-community/gemma-4-E2B-it-litert-lm
+Блокирующие вызовы — через asyncio.to_thread. Мультимодальность ещё не подключена.
 """
 
 import glob
 import os
+import time
 from typing import List, Optional
 
 try:
-    import advanced_xopilot  # type: ignore
+    from .stats import record_generation
+except ImportError:
+    from services.stats import record_generation  # type: ignore
+
+try:
+    import litert_lm
 
     _IMPORT_ERROR: Optional[Exception] = None
-except Exception as exc:  # noqa: BLE001 — модуль может быть ещё не собран
-    advanced_xopilot = None  # type: ignore
+except Exception as exc:  # noqa: BLE001
+    litert_lm = None  # type: ignore
     _IMPORT_ERROR = exc
 
 
 MODELS_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "models")
-
-# модель по умолчанию — Phi-4-mini-instruct, Q4_K_M (~2.5 ГБ), комфортно вмещается в 6 ГБ.
-# Файл надо положить вручную в MODELS_DIR (см. bartowski/microsoft_Phi-4-mini-instruct-GGUF на HF).
-DEFAULT_FILENAME = "microsoft_Phi-4-mini-instruct-Q4_K_M.gguf"
-DEFAULT_TOKENIZER_REPO = "microsoft/Phi-4-mini-instruct"
+DEFAULT_FILENAME = "gemma-4-E2B-it.litertlm"
 DEFAULT_SYSTEM_PROMPT = "Ты — Zephyr, полезный ассистент в Xopilot. Отвечай кратко и по делу."
 
-_llm = None
+_engine = None
+_conversation = None
+_loaded_filename = None
 
 
-def _get_llm():
-    global _llm
-    if _llm is None:
-        if advanced_xopilot is None:
-            raise RuntimeError(
-                "advanced_xopilot не собран — выполните `maturin develop` в Services/"
-            ) from _IMPORT_ERROR
-        _llm = advanced_xopilot.PyLlm()
-    return _llm
-
-
-def list_local_models() -> List[str]:
-    """Имена .gguf-файлов, уже лежащих в App/data/models/."""
+def list_local_models():
     os.makedirs(MODELS_DIR, exist_ok=True)
-    return sorted(os.path.basename(p) for p in glob.glob(os.path.join(MODELS_DIR, "*.gguf")))
+    return sorted(os.path.basename(p) for p in glob.glob(os.path.join(MODELS_DIR, "*.litertlm")))
 
 
-def is_model_loaded() -> bool:
-    try:
-        return _get_llm().is_loaded()
-    except Exception:
-        return False
+def is_model_loaded():
+    return _engine is not None and _conversation is not None
 
 
-def load_model(filename: str = DEFAULT_FILENAME, tokenizer_repo: str = DEFAULT_TOKENIZER_REPO) -> str:
-    """Загружает модель из App/data/models/<filename>. Возвращает архитектуру (напр. "phi3").
-    Блокирующий вызов — вызывать через asyncio.to_thread из UI.
-    """
+def load_model(filename=DEFAULT_FILENAME, system_prompt=DEFAULT_SYSTEM_PROMPT):
+    global _engine, _conversation, _loaded_filename
+
+    if litert_lm is None:
+        raise RuntimeError("litert_lm не установлен — выполните pip install litert-lm-api") from _IMPORT_ERROR
+
     path = os.path.join(MODELS_DIR, filename)
     if not os.path.isfile(path):
-        raise FileNotFoundError(
-            f"Файл модели не найден: {path}. Положите .gguf в App/data/models/"
-        )
-    return _get_llm().load(path, tokenizer_repo)
+        raise FileNotFoundError(f"Файл модели не найден: {path}. Положите .litertlm в App/data/models/")
+
+    if _conversation is not None:
+        _conversation.close()
+    if _engine is not None:
+        _engine.close()
+
+    _engine = litert_lm.Engine(path, backend=litert_lm.Backend.CPU())
+    _conversation = _engine.create_conversation(system_message=system_prompt)
+    _loaded_filename = filename
+    return filename
 
 
-def generate_reply(prompt_text: str, system_prompt: str = DEFAULT_SYSTEM_PROMPT, max_tokens: int = 256) -> str:
-    """prompt_text — сырое сообщение пользователя. Шаблон phi-3-chat собирается здесь —
-    подходит для Phi-3/Phi-4 (текущий дефолт). Для других семейств (Gemma/Qwen и т.д.) шаблон
-    иной — это будет нужно учесть отдельно при смене модели.
-    Блокирующий вызов — вызывать через asyncio.to_thread из UI.
-    """
-    formatted = f"<|system|>{system_prompt}<|end|><|user|>{prompt_text}<|end|><|assistant|>"
-    return _get_llm().generate(formatted, max_tokens)
+def _extract_text(result):
+    try:
+        parts = result.get("content") or []
+        return "".join(part.get("text", "") for part in parts if isinstance(part, dict))
+    except AttributeError:
+        return str(result)
+
+
+def generate_reply(prompt_text, max_tokens=256):
+    if _conversation is None:
+        raise RuntimeError("Модель не загружена — вызовите load_model()")
+    started = time.monotonic()
+    result = _conversation.send_message(prompt_text, max_output_tokens=max_tokens)
+    text = _extract_text(result).strip()
+    record_generation(text, time.monotonic() - started)
+    return text

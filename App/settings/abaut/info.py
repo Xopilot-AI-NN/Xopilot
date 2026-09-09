@@ -28,8 +28,8 @@ def build_about_row() -> ft.Container:
                 ft.Column(
                     spacing=2,
                     controls=[
-                        ft.Text("Xopilot-NN+ AI+ 2.0", size=13, color="#123b43"),
-                        ft.Text("Чаты, материалы и AI · DenBroLiik", size=11, color="#47747a"),
+                        ft.Text("Xopilot-NN+ AI+ 2.0", size=13, color="#123b43", text_align=ft.TextAlign.CENTER),
+                        ft.Text("Чаты, материалы и AI · DenBroLiik", size=11, color="#47747a", text_align=ft.TextAlign.CENTER),
                     ],
                 ),
             ],
@@ -58,6 +58,7 @@ def build_about_info() -> ft.Column:
                 size=13,
                 color="#123b43",
                 max_lines=2,
+                text_align=ft.TextAlign.CENTER,
             ),
             ft.Text(
                 "Локальная модель и зашифрованная история помогают "
@@ -66,6 +67,7 @@ def build_about_info() -> ft.Column:
                 size=11,
                 color="#47747a",
                 max_lines=2,
+                text_align=ft.TextAlign.CENTER,
             ),
             ft.Divider(height=1, color="#b9eee4"),
             ft.Row(
@@ -89,7 +91,12 @@ def build_about_info() -> ft.Column:
                     ),
                 ],
             ),
-            ft.Text("Windows · Linux · Flet", size=11, color="#47747a"),
-            ft.Text("Релиз: 1 февраля 2026 г. · Разработчик: DenBroLiik", size=11, color="#47747a"),
+            ft.Text("Windows · Linux · Flet", size=11, color="#47747a", text_align=ft.TextAlign.CENTER),
+            ft.Text(
+                "Релиз: 1 февраля 2026 г. · Разработчик: DenBroLiik",
+                size=11,
+                color="#47747a",
+                text_align=ft.TextAlign.CENTER,
+            ),
         ],
     )

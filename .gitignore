@@ -8,5 +8,7 @@ target
 *.sqlite3
 .xopilot_salt
 *.gguf
+*.litertlm
+*.xnnpack_cache
 build
 *.lock

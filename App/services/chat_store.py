@@ -123,3 +123,7 @@ def seed_demo_chat_if_empty() -> None:
 
     global _active_chat_id
     _active_chat_id = chat_id
+
+def clear_chat_messages(chat_id):
+    """Стирает все сообщения чата из БД (вложения — каскадно). Сам чат остаётся."""
+    get_db().clear_chat_messages(chat_id)
