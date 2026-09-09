@@ -154,6 +154,14 @@ impl PyDatabase {
     fn schema_version(&self) -> PyResult<i32> {
         self.inner.lock().unwrap().schema_version().map_err(to_py_err)
     }
+
+    fn total_message_count(&self) -> PyResult<i64> {
+        self.inner.lock().unwrap().total_message_count().map_err(to_py_err)
+    }
+
+    fn clear_chat_messages(&self, chat_id: i64) -> PyResult<()> {
+        self.inner.lock().unwrap().clear_chat_messages(chat_id).map_err(to_py_err)
+    }
 }
 
 /// Python-обёртка над тестовым ONNX-классификатором тональности (пункт 5 плана).

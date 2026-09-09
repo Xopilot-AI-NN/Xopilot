@@ -9,7 +9,7 @@ import flet as ft
 def build_navigation_button(icon, label: str, subtitle: str, on_click) -> ft.Container:
     return ft.Container(
         height=74,
-        padding=ft.padding.Padding.symmetric(horizontal=14, vertical=10),
+        padding=12,
         border_radius=12,
         ink=True,
         on_click=on_click,
@@ -33,7 +33,7 @@ def build_navigation_button(icon, label: str, subtitle: str, on_click) -> ft.Con
                         ft.Text(subtitle, size=12, color="#47747a", max_lines=2),
                     ],
                 ),
-                ft.Icon(ft.Icons.CHEVRON_RIGHT, color="#47747a"),
+                ft.Icon(ft.Icons.CHEVRON_RIGHT, color="#47747a", opacity=0.4),
             ],
         ),
     )

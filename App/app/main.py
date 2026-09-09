@@ -48,9 +48,9 @@ try:
 except ImportError:
     from services.ai import classify_sentiment, reply_for_sentiment
 try:
-    from ..services.llm import generate_reply, is_model_loaded, list_local_models, load_model
+    from ..services.llm import DEFAULT_FILENAME, generate_reply, is_model_loaded, list_local_models, load_model
 except ImportError:
-    from services.llm import generate_reply, is_model_loaded, list_local_models, load_model
+    from services.llm import DEFAULT_FILENAME, generate_reply, is_model_loaded, list_local_models, load_model
 
 
 def build_app_ui(page: ft.Page) -> ft.Control:
@@ -217,7 +217,9 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                 if not is_model_loaded():
                     available = list_local_models()
                     if available:
-                        await asyncio.to_thread(load_model, available[0])
+                        # если лежит несколько файлов -- предпочитаем дефолтный, а не первый по алфавиту
+                        chosen = DEFAULT_FILENAME if DEFAULT_FILENAME in available else available[0]
+                        await asyncio.to_thread(load_model, chosen)
                 if is_model_loaded():
                     reply_text = await asyncio.to_thread(generate_reply, text)
             except Exception:
@@ -240,6 +242,9 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                     build_ai_message(reply_text, on_action=handle_message_action, message_id=ai_id)
                 )
                 chat_list.update()
+                # та же пауза, что и после сообщения пользователя выше -- без неё scroll_to считал старую
+                # высоту списка до того, как Flet успевал перемерить новый пузырь, и останавливался не доезжая
+                await asyncio.sleep(0.08)
                 await chat_list.scroll_to(offset=-1, duration=200)
         finally:
             is_sending = False
@@ -286,11 +291,11 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         await toggle_menu()
 
     def open_settings(_):
-        page.show_dialog(build_settings_dialog(page, cast(ft.ListView, chat.content)))
+        page.show_dialog(build_settings_dialog(page, cast(ft.ListView, chat.content), chat_id=active_chat_id))
 
     def open_account(_):
         page.show_dialog(
-            build_settings_dialog(page, cast(ft.ListView, chat.content), start_section=0)
+            build_settings_dialog(page, cast(ft.ListView, chat.content), start_section=0, chat_id=active_chat_id)
         )
 
     def open_chats(_):
@@ -317,7 +322,8 @@ def build_app_ui(page: ft.Page) -> ft.Control:
 
     async def scroll_chat_to_bottom():
         await asyncio.sleep(0.15)
-        await cast(ft.ListView, chat.content).scroll_to(offset=-1)
+        # duration=0 -- без анимации, иначе при старте был виден резкий прыжок вниз (как Android RecyclerView)
+        await cast(ft.ListView, chat.content).scroll_to(offset=-1, duration=0)
 
     page.run_task(scroll_chat_to_bottom)
 

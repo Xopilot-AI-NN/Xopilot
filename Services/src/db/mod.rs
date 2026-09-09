@@ -258,6 +258,19 @@ impl Database {
         rows.collect()
     }
 
+    /// Удаляет все сообщения чата (вложения удалятся каскадно через FK). Сам чат остаётся.
+    pub fn clear_chat_messages(&self, chat_id: i64) -> Result<()> {
+        self.conn
+            .execute("DELETE FROM messages WHERE chat_id = ?1", params![chat_id])?;
+        Ok(())
+    }
+
+    /// Общее число сообщений во всех чатах — для статистики на странице «Аккаунт».
+    pub fn total_message_count(&self) -> Result<i64> {
+        self.conn
+            .query_row("SELECT COUNT(*) FROM messages", [], |row| row.get(0))
+    }
+
     /// Текущая версия схемы этой ОТКРЫТОЙ БД (полезно для диагностики/UI «O приложении»).
     pub fn schema_version(&self) -> Result<i32> {
         self.conn

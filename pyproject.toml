@@ -6,6 +6,7 @@ requires-python = ">=3.10"
 dependencies = [
 	"flet==0.86.5",
 	"screeninfo==0.8.1",
+	"litert-lm-api",
 ]
 # зависимости не дублирую — см. предупреждение ниже
 

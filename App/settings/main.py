@@ -34,6 +34,7 @@ def build_settings_dialog(
     page: ft.Page,
     chat_list: ft.ListView | None = None,
     start_section: int | None = None,
+    chat_id: int | None = None,
 ) -> ft.AlertDialog:
     status = ft.Text("Изменения применяются сразу", size=11, color="#dff8f3")
 
@@ -59,7 +60,7 @@ def build_settings_dialog(
             "История",
             ft.Icons.HISTORY,
             "Удаление и управление сообщениями",
-            build_history_page(chat_list, set_status),
+            build_history_page(chat_list, set_status, chat_id),
         ),
         (
             "Обновления",

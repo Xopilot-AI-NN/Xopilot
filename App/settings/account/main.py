@@ -1,12 +1,18 @@
 """
 Файл: /App/settings/account/main.py
 Описание: __Страница «Аккаунт»__.
-           Отображает информацию о профиле пользователя и муляж статистики использования ИИ.
+           Профиль пока муляж (облачный аккаунт — фаза 2), а статистика теперь реальная —
+           читается из локальной БД через services/stats.py (сообщения точные, токены/часы — приближённые).
 """
 
 import flet as ft
 
 from ..common import section_title
+
+try:
+    from ...services.stats import get_stats
+except ImportError:
+    from services.stats import get_stats
 
 def _stat_card(icon, label: str, value: str, color: str = "#087f8c") -> ft.Container:
     return ft.Container(
@@ -26,7 +32,14 @@ def _stat_card(icon, label: str, value: str, color: str = "#087f8c") -> ft.Conta
         )
     )
 
+def _format_tokens(n: int) -> str:
+    if n >= 1000:
+        return f"{n / 1000:.1f}k"
+    return str(n)
+
+
 def build_account_page() -> ft.Column:
+    stats = get_stats()
     # Изображение профиля (муляж)
     avatar = ft.Container(
         width=80,
@@ -58,8 +71,8 @@ def build_account_page() -> ft.Column:
                     spacing=4,
                     controls=[
                         ft.Text("Developer", size=18, color="#123b43", weight=ft.FontWeight.BOLD),
-                        ft.Text("Тариф: Xopilot AI+ Unlimited", size=12, color="#087f8c", weight=ft.FontWeight.W_500),
-                        ft.Text("ID пользователя: #4829103", size=10, color="#47747a"),
+                        ft.Text("Локальный режим (без облака)", size=12, color="#087f8c", weight=ft.FontWeight.W_500),
+                        ft.Text("Аккаунт появится в фазе 2 (облако)", size=10, color="#47747a"),
                     ]
                 )
             ]
@@ -77,9 +90,9 @@ def build_account_page() -> ft.Column:
                 spacing=8,
                 wrap=True,
                 controls=[
-                    _stat_card(ft.Icons.CHAT_BUBBLE_ROUNDED, "Всего сообщений", "1,248"),
-                    _stat_card(ft.Icons.TOKEN, "Токенов потрачено", "412.5k"),
-                    _stat_card(ft.Icons.ACCESS_TIME_FILLED_ROUNDED, "Часов с ИИ", "42.5"),
+                    _stat_card(ft.Icons.CHAT_BUBBLE_ROUNDED, "Всего сообщений", f"{stats['messages']:,}".replace(",", " ")),
+                    _stat_card(ft.Icons.TOKEN, "Токенов потрачено", _format_tokens(stats['tokens'])),
+                    _stat_card(ft.Icons.ACCESS_TIME_FILLED_ROUNDED, "Часов с ИИ", f"{stats['hours']:.1f}"),
                 ]
             ),
             ft.Container(height=10),
@@ -87,7 +100,7 @@ def build_account_page() -> ft.Column:
             ft.Container(
                 padding=ft.padding.Padding.all(4),
                 content=ft.Text(
-                    "Данная статистика обновляется раз в сутки и сохраняется локально в вашей базе данных для обеспечения конфиденциальности.",
+                    "Статистика считается в реальном времени и хранится локально в вашей базе данных. Токены приближённые (по словам ответа, без токенизатора модели).",
                     size=11,
                     color="#47747a",
                     italic=True,
