@@ -12,3 +12,4 @@ target
 *.xnnpack_cache
 build
 *.lock
+DEV.md
