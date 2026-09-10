@@ -8,11 +8,7 @@
 Версия: 2.0.0
 Описание:
     Ядро приложения.
-    Отвечает за обработку сервисов упровлением по нажатию клавишь
-        а также интерфейса и видом окна
 """
-
-
 
 import asyncio
 import ctypes
@@ -21,7 +17,7 @@ import flet as ft
 from screeninfo import get_monitors
 from ctypes import wintypes
 from app.main import build_app_ui
-
+from services.stats import start_app_session, persist_app_session
 
 
 class Init():
@@ -35,20 +31,10 @@ class Init():
             return 0, 0, sw, sh
 
         class Rect(ctypes.Structure):
-            _fields_ = [
-                ("left", ctypes.c_long),
-                ("top", ctypes.c_long),
-                ("right", ctypes.c_long),
-                ("bottom", ctypes.c_long),
-            ]
+            _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long), ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
 
         class MonitorInfo(ctypes.Structure):
-            _fields_ = [
-                ("cbSize", ctypes.c_ulong),
-                ("rcMonitor", Rect),
-                ("rcWork", Rect),
-                ("dwFlags", ctypes.c_ulong),
-            ]
+            _fields_ = [("cbSize", ctypes.c_ulong), ("rcMonitor", Rect), ("rcWork", Rect), ("dwFlags", ctypes.c_ulong)]
 
         monitor_info = MonitorInfo()
         monitor_info.cbSize = ctypes.sizeof(MonitorInfo)
@@ -66,10 +52,6 @@ class Init():
         if platform.system() == "Windows":
             w, h = 380, 652
         else:
-            # Linux/Wayland не даёт точно позиционировать окно
-            # (как на Windows через animate_position), поэтому вместо
-            # узкого вертикального виджета делаем широкое горизонтальное
-            # окно — ширина и высота меняются местами и удваиваются.
             w, h = h * 2, w * 2
 
         return w, h
@@ -79,16 +61,16 @@ class Init():
         w = int(page.window.width or 0)
         h = int(page.window.height or 0)
 
-        target_top  = work_bottom - h - 10
+        target_top = work_bottom - h - 10
         target_left = work_right - w - 10
 
-        page.window.left    = target_left
-        page.window.top     = work_bottom
+        page.window.left = target_left
+        page.window.top = work_bottom
         page.window.visible = True
         page.update()
 
         for i in range(21):
-            t    = i / 20
+            t = i / 20
             ease = 1 - (1 - t) ** 2
             page.window.top = int(work_bottom + (target_top - work_bottom) * ease)
             page.update()
@@ -105,28 +87,33 @@ class Init():
             await asyncio.sleep(0.015)
 
     async def main(self, page: ft.Page):
+        start_app_session()
+
+        async def persist_loop():
+            while True:
+                await asyncio.sleep(30)
+                try:
+                    persist_app_session()
+                except Exception:
+                    pass
+
         w, h = self.auto_screen_size()
 
-        # Настройка окна — только ядро
-        page.title            = "Xopilot-NN+ AI+ 2.0"
-        page.window.icon      = "./Icons/Xopilot-icon-apk.png"
-        page.window.width     = w
-        page.window.height    = h
+        page.title = "Xopilot-NN+ AI+ 2.0"
+        page.window.icon = "./Icons/Xopilot-icon-apk.png"
+        page.window.width = w
+        page.window.height = h
         page.window.min_width = w
         page.window.max_width = w
-        page.window.visible   = False
+        page.window.visible = False
         page.update()
 
-        # Шрифт
-        page.fonts = {
-            "Google Sans": "./fonts/GoogleSans-Regular.ttf"
-        }
+        page.fonts = {"Google Sans": "./fonts/GoogleSans-Regular.ttf"}
 
-        # Монтируем интерфейс
         page.add(build_app_ui(page))
         page.update()
+        page.run_task(persist_loop)
 
-        # Анимация — только ядро решает
         if platform.system() == "Windows":
             await self.animate_position(page)
         else:
@@ -135,5 +122,6 @@ class Init():
 
     def __init__(self):
         ft.run(self.main)
+
 
 Init()

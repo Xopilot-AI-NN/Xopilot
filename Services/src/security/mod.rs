@@ -10,8 +10,8 @@
 // из machine-id + локальной соли на диске. Слабее (копирование всей папки сохраняет доступ),
 // но не даёт приложению упасть на машинах без keyring-демона.
 
-use rand::rngs::SysRng;
 use rand::TryRng;
+use rand::rngs::SysRng;
 use sha2::{Digest, Sha256};
 use std::path::Path;
 
@@ -74,8 +74,8 @@ fn read_machine_id() -> String {
 
 #[cfg(target_os = "windows")]
 fn read_machine_id() -> String {
-    use winreg::enums::HKEY_LOCAL_MACHINE;
     use winreg::RegKey;
+    use winreg::enums::HKEY_LOCAL_MACHINE;
 
     RegKey::predef(HKEY_LOCAL_MACHINE)
         .open_subkey("SOFTWARE\\Microsoft\\Cryptography")

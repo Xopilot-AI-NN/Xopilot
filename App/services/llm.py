@@ -9,7 +9,6 @@ huggingface.co/litert-community/gemma-4-E2B-it-litert-lm
 
 import glob
 import os
-import time
 from typing import List, Optional
 
 try:
@@ -76,8 +75,8 @@ def _extract_text(result):
 def generate_reply(prompt_text, max_tokens=256):
     if _conversation is None:
         raise RuntimeError("Модель не загружена — вызовите load_model()")
-    started = time.monotonic()
+
     result = _conversation.send_message(prompt_text, max_output_tokens=max_tokens)
     text = _extract_text(result).strip()
-    record_generation(text, time.monotonic() - started)
+    record_generation(text)
     return text

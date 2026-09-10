@@ -36,6 +36,7 @@ def build_settings_dialog(
     start_section: int | None = None,
     chat_id: int | None = None,
 ) -> ft.AlertDialog:
+    # Создаёт окно настроек и переключает его разделы.
     status = ft.Text("Изменения применяются сразу", size=11, color="#dff8f3")
 
     def set_status(text: str):
@@ -48,7 +49,7 @@ def build_settings_dialog(
             "Аккаунт",
             ft.Icons.PERSON_OUTLINE,
             "Профиль, тариф и статистика ИИ",
-            build_account_page(),
+            build_account_page(page),
         ),
         (
             "Внешний вид",
@@ -80,12 +81,14 @@ def build_settings_dialog(
     page_host = ft.Column(spacing=0)
 
     def select_page(index: int):
+        # Открывает выбранный раздел настроек.
         page_host.controls = [sections[index][3]]
         page_title.value = sections[index][0]
         back_button.visible = True
         page.update()
 
     def show_home(_=None):
+        # Возвращает список разделов настроек.
         page_host.controls = [home_page]
         page_title.value = "Настройки"
         back_button.visible = False
