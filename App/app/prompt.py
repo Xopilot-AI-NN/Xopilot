@@ -16,9 +16,11 @@ from .buttons.live import build_live_button
 from .buttons.send import build_send_button
 
 
-def build_prompt() -> ft.TextField:
+def build_prompt(on_submit=None) -> ft.TextField:
     return ft.TextField(
+        on_submit=on_submit,
         multiline=True,
+        shift_enter=True,
         min_lines=1,
         max_lines=3,
         border_radius=10,
