@@ -77,6 +77,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
     editing_message = None
     is_sending = False  # защита от повторного Enter/клика, пока предыдущая отправка (вкл. инференс ИИ) ещё идёт
     active_chat_id: int | None = None  # заполняется ниже при загрузке истории из БД
+    chat: ft.Container
     attachment_strip = build_file_attachments(selected_files, lambda _: None)
     file_picker = ft.FilePicker()
     page.services.append(file_picker)
@@ -195,7 +196,8 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                     on_action=handle_message_action,
                     message_id=new_id,
                 )
-                chat_list.controls.append(message)
+                # Реверс-список: низ визуала == controls[0], новое сообщение вставляем в начало.
+                chat_list.controls.insert(0, message)
                 chat_items.insert(0, (text[:32] or "Новый чат", "Только что · 1 сообщение", True))
                 should_reply = True
 
@@ -207,8 +209,8 @@ def build_app_ui(page: ft.Page) -> ft.Control:
             prompt.update()
             page.run_task(refresh_attachments)
             chat_list.update()
+            # Реверс-список: новое сообщение уже внизу (индекс 0), скролл не нужен.
             await asyncio.sleep(0.08)
-            await chat_list.scroll_to(offset=-1, duration=250)
 
             if not should_reply:
                 return
@@ -242,14 +244,9 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                         ai_id = save_ai_message(active_chat_id, reply_text)
                     except Exception:
                         pass
-                chat_list.controls.append(
-                    build_ai_message(reply_text, on_action=handle_message_action, message_id=ai_id)
-                )
+                # Реверс-список: ответ ИИ тоже вставляется в начало (низ визуала).
+                chat_list.controls.insert(0, build_ai_message(reply_text, on_action=handle_message_action, message_id=ai_id))
                 chat_list.update()
-                # та же пауза, что и после сообщения пользователя выше -- без неё scroll_to считал старую
-                # высоту списка до того, как Flet успевал перемерить новый пузырь, и останавливался не доезжая
-                await asyncio.sleep(0.08)
-                await chat_list.scroll_to(offset=-1, duration=200)
         finally:
             is_sending = False
 
@@ -263,6 +260,16 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         stored_messages = load_chat_messages(active_chat_id)  # [advanced_xopilot.PyMessage, ...]
     except Exception:
         stored_messages = []
+
+    # Ленивая подгрузка истории: виджетами строим только последние MESSAGE_PAGE_SIZE сообщений,
+    # остальные догружаются порциями при прокрутке вверх (см. on_chat_scroll). ListView с
+    # build_controls_on_demand и так строит только видимые элементы, но сам список controls
+    # держать полным незачем.
+    MESSAGE_PAGE_SIZE = 30
+    stored_messages.reverse()  # реверс один раз здесь, чтобы ниже не слайсить с конца
+    older_messages = stored_messages[MESSAGE_PAGE_SIZE:]
+    stored_messages = stored_messages[:MESSAGE_PAGE_SIZE]
+    _loading_older = False  # защита от повторной догрузки, пока Flutter не перемерил список
 
     def _rebuild_files(attachments):
         # attachments: [(name, path), ...] из БД. file_from_path требует реального файла на диске —
@@ -283,7 +290,47 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         else build_ai_message(msg.content, on_action=handle_message_action, message_id=msg.id)
         for msg in stored_messages
     ]
-    chat = build_chat(chat_messages)
+
+    async def on_chat_scroll(e: ft.OnScrollEvent):
+        """Догрузка старых сообщений при прокрутке вверх.
+
+        В реверс-списке pixels=0 -- низ (новейшие сообщения), а max_scroll_extent --
+        верх, где лежат старейшие из загруженных. Дошли почти до верха -- вставляем
+        следующую порцию в КОНЕЦ списка controls (визуально -- выше): позиции уже
+        отрисованных элементов относительно нижнего якоря не меняются, прыжка нет.
+        """
+        nonlocal older_messages, _loading_older
+        if _loading_older or not older_messages:
+            return
+        near_top = (
+            e.max_scroll_extent <= 0  # контент ещё не скроллится (короткие сообщения) -- добираем, пока не заполнит экран
+            or e.pixels >= e.max_scroll_extent - e.viewport_dimension - 48
+        )
+        if not near_top:
+            return
+        _loading_older = True
+        batch, older_messages = older_messages[:MESSAGE_PAGE_SIZE], older_messages[MESSAGE_PAGE_SIZE:]
+        chat_list = cast(ft.ListView, chat.content)
+        chat_list.controls.extend(
+            build_user_message(
+                msg.content,
+                files=_rebuild_files(msg.attachments),
+                on_action=handle_message_action,
+                quote=msg.quote,
+                reply_to=msg.reply_to,
+                message_id=msg.id,
+            )
+            if msg.role == "user"
+            else build_ai_message(msg.content, on_action=handle_message_action, message_id=msg.id)
+            for msg in batch
+        )
+        chat_list.update()
+        # пока Dart-сторона не перемерила выросший max_scroll_extent, события скролла
+        # ещё рапортуют "почти наверху" -- короткая защита от повторной догрузки
+        await asyncio.sleep(0.2)
+        _loading_older = False
+
+    chat = build_chat(chat_messages, on_scroll=on_chat_scroll)
     prompt_container = build_prompt_container(
         prompt,
         on_send,
@@ -324,11 +371,6 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         on_account_click=open_account,
     )
 
-    async def scroll_chat_to_bottom():
-        await asyncio.sleep(0.15)
-        # duration=0 -- без анимации, иначе при старте был виден резкий прыжок вниз (как Android RecyclerView)
-        await cast(ft.ListView, chat.content).scroll_to(offset=-1, duration=0)
-
-    page.run_task(scroll_chat_to_bottom)
-
+    # Реверс-список стоит на последнем сообщении сам по себе (индекс 0 == низ),
+    # стартовый scroll_to больше не нужен.
     return build_background_layout(chat, prompt_container, menu, menu_overlay)
