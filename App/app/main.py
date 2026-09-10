@@ -57,7 +57,10 @@ def build_app_ui(page: ft.Page) -> ft.Control:
     page.padding = 0
     page.bgcolor = "#b3f2ff"
 
-    prompt = build_prompt()
+    async def submit_prompt(e):
+        await on_send(e)
+
+    prompt = build_prompt(on_submit=submit_prompt)
     selected_files = []
     chat_items = [
         ("Продолжение оформления", "Сегодня · 12 сообщений", True),
@@ -115,8 +118,6 @@ def build_app_ui(page: ft.Page) -> ft.Control:
     async def handle_keyboard(e: ft.KeyboardEvent):
         if e.ctrl and e.key.lower() == "v":
             await paste_files()
-        elif e.key.lower() == "enter" and not e.shift:
-            await on_send(e)
 
     page.on_keyboard_event = handle_keyboard
 
@@ -144,10 +145,13 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         text = prompt.value or ""
         if not text.strip() and not selected_files:
             return
+        sent_files = selected_files.copy()
+        prompt.value = ""
+        selected_files.clear()
+        prompt.update()
         is_sending = True
         try:
             chat_list = cast(ft.ListView, chat.content)
-            sent_files = selected_files.copy()
             should_reply = False
 
             if editing_message is not None:
