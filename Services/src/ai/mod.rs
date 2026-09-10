@@ -12,8 +12,22 @@ use tract_onnx::prelude::*;
 
 /// Порядок СОВПАДАЕТ с VOCAB в generate_sentiment_model.py: 0-7 позитив, 8-15 негатив.
 const VOCAB: [&str; 16] = [
-    "хорошо", "отлично", "супер", "круто", "нравится", "спасибо", "класс", "рад",
-    "плохо", "ужасно", "проблема", "ошибка", "жаль", "грустно", "бесит", "разочарован",
+    "хорошо",
+    "отлично",
+    "супер",
+    "круто",
+    "нравится",
+    "спасибо",
+    "класс",
+    "рад",
+    "плохо",
+    "ужасно",
+    "проблема",
+    "ошибка",
+    "жаль",
+    "грустно",
+    "бесит",
+    "разочарован",
 ];
 
 /// Индекс класса -> метка (порядок задан в generate_sentiment_model.py: 0=negative, 1=neutral, 2=positive).
@@ -51,7 +65,8 @@ impl SentimentClassifier {
     /// Возвращает (метка_класса, уверенность 0..1).
     pub fn classify(&self, text: &str) -> TractResult<(String, f32)> {
         let features = Self::vectorize(text);
-        let input: Tensor = tract_ndarray::Array2::from_shape_vec((1, 16), features.to_vec())?.into();
+        let input: Tensor =
+            tract_ndarray::Array2::from_shape_vec((1, 16), features.to_vec())?.into();
 
         let outputs = self.model.run(tvec!(input.into()))?;
         let probabilities = outputs[0].to_array_view::<f32>()?;
