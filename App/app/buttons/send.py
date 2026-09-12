@@ -18,6 +18,7 @@ def build_send_button(on_click) -> ft.Container:
         border=ft.border.Border.all(2, "#ffffff"),
         bgcolor="#ff6666ff",
         alignment=ft.alignment.Alignment.CENTER,
+        tooltip="Отправить сообщение",
         content=ft.Image(
             src="Icons/icon_buttons/icon_send_button.svg",
             width=20,
