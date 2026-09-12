@@ -2,7 +2,7 @@
 Файл: /App/app/buttons/live.py
 Разработчик: DenBroLiik
 Версия: 2.0.0
-Описание: __кнопка разговора в реальном времени__
+Описание: __кнопка голосового разговора Live__
         клеится в строке для ввода от кнопки отправить
 """
 
@@ -18,8 +18,9 @@ def build_live_button(on_click=None) -> ft.Container:
         border=ft.border.Border.all(2, "#ffffff"),
         bgcolor="#ff6666ff",
         alignment=ft.alignment.Alignment.CENTER,
+        tooltip="Live — голосовой разговор",
         content=ft.Icon(
-            ft.Icons.MIC,
+            ft.Icons.GRAPHIC_EQ,
             color=ft.Colors.WHITE,
             size=20,
         ),
