@@ -24,6 +24,7 @@ def build_account_button(on_click=None, size: int = 40, icon_size: int = 20) -> 
         alignment=ft.alignment.Alignment.CENTER,
         ink=True,
         animate=ft.Animation(duration=150, curve=ft.AnimationCurve.EASE_OUT),
+        tooltip="Аккаунт",
         content=ft.Icon(
             ft.Icons.PERSON,
             color=ft.Colors.WHITE,

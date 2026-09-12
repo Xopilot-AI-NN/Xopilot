@@ -20,6 +20,7 @@ def build_add_material_button(on_click=None) -> ft.Container:
         border=ft.border.Border.all(2, "#ffffff"),
         bgcolor="#ff6666ff",
         alignment=ft.alignment.Alignment.CENTER,
+        tooltip="Добавить материал",
         content=ft.Icon(
             ft.Icons.ADD,
             color=ft.Colors.WHITE,

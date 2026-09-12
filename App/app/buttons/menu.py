@@ -27,6 +27,7 @@ def build_menu_button(on_click=None, size: int = 40, icon_size: int = 20) -> ft.
         alignment=ft.alignment.Alignment.CENTER,
         ink=True,
         animate=ft.Animation(duration=150, curve=ft.AnimationCurve.EASE_OUT),
+        tooltip="Меню",
         content=ft.Icon(
             ft.Icons.MENU,
             color=ft.Colors.WHITE,
