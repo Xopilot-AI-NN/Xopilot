@@ -16,10 +16,17 @@
   `backgraund.py`, `prompt.py`, `workspace_browser.py`, `progress.py`,
   `buttons/` — переиспользуемые кнопки. Сюда — только UI-код, без прямых
   вызовов БД/сети (это через `services/`).
+  `voice_input.py` — кнопка диктовки, таймер, отмена и вставка текста в черновик.
+  `live_conversation.py` — голосовой разговор, состояния слушания/ответа и завершение;
+  кнопки диктовки и Live разделены в `buttons/microphone.py` и `buttons/live.py`.
 - `services/` — Python-слой бизнес-логики: `db.py` (обёртка над Rust-модулем
   `advanced_xopilot`), `ai.py`, `llm.py` (LiteRT-LM, локальная модель),
   `chat_store.py`, `stats.py`. Любой вызов нативного модуля — в try/except,
   чтобы UI открывался, даже если `advanced_xopilot` ещё не собран.
+  `microphone.py` — захват звука через sounddevice/PortAudio в памяти;
+  распознавание речи выполняется в отдельном conversation в `llm.py`.
+  `live_audio.py` — выделение реплик по паузам через WebRTC VAD;
+  `speech_output.py` — локальная озвучка и её прерывание (eSpeak NG / SAPI / say).
 - `core/` — **устаревшая папка**, переименована в `services/`. Новые файлы
   сюда не класть, оставшийся мусор дочистить и удалить каталог.
 - `settings/` — экраны настроек. Конвенция подпапки на один раздел настроек:

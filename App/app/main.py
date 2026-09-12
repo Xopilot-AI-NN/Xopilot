@@ -18,6 +18,8 @@ from .chat import build_chat
 from .material import build_file_attachments, file_from_path
 from .message import build_user_message, build_ai_message
 from .prompt import build_prompt, build_prompt_container
+from .voice_input import VoiceInput
+from .live_conversation import LiveConversation
 from .menu import build_menu, build_menu_overlay
 from .chats import build_chats_dialog
 from .workspace_browser import build_workspaces_dialog
@@ -77,10 +79,48 @@ def build_app_ui(page: ft.Page) -> ft.Control:
     editing_message = None
     is_sending = False  # защита от повторного Enter/клика, пока предыдущая отправка (вкл. инференс ИИ) ещё идёт
     active_chat_id: int | None = None  # заполняется ниже при загрузке истории из БД
+    chat_context = []  # Текстовый контекст Live, включая сообщения текущей сессии без БД.
     chat: ft.Container
     attachment_strip = build_file_attachments(selected_files, lambda _: None)
     file_picker = ft.FilePicker()
     page.services.append(file_picker)
+
+    async def add_live_message(role, text):
+        chat_list = cast(ft.ListView, chat.content)
+        if not chat_list.controls:
+            chat_context.clear()
+        message_id = None
+        if active_chat_id is not None:
+            save = save_user_message if role == "user" else save_ai_message
+            try:
+                message_id = await asyncio.to_thread(save, active_chat_id, text)
+            except Exception as exc:
+                raise RuntimeError("Не удалось сохранить голосовую реплику в чат.") from exc
+        chat_context.append({"role": role, "content": text, "id": message_id})
+        build = build_user_message if role == "user" else build_ai_message
+        chat_list.controls.insert(0, build(text, on_action=handle_message_action, message_id=message_id))
+        chat_list.update()
+
+    async def add_live_user_message(text):
+        await add_live_message("user", text)
+
+    async def add_live_ai_message(text):
+        await add_live_message("ai", text)
+
+    voice_input = VoiceInput(page, prompt, lambda: is_sending or live.busy)
+    live = LiveConversation(
+        page,
+        is_busy=lambda: is_sending or voice_input.busy,
+        get_history=lambda: [dict(item) for item in chat_context],
+        on_user_message=add_live_user_message,
+        on_ai_message=add_live_ai_message,
+    )
+
+    async def close_voice_modes(e):
+        await asyncio.gather(voice_input.close(e), live.close(e))
+
+    page.on_disconnect = close_voice_modes
+    page.on_close = close_voice_modes
 
     async def refresh_attachments(animated: bool = False):
         rendered = build_file_attachments(selected_files, remove_file)
@@ -141,8 +181,8 @@ def build_app_ui(page: ft.Page) -> ft.Control:
 
     async def on_send(e):
         nonlocal editing_message, is_sending
-        if is_sending:
-            return  # уже идёт отправка (напр., генерация ИИ) — игнорируем повторный Enter/клик, чтобы не дублировать
+        if is_sending or voice_input.busy or live.busy:
+            return  # Не отправляем незавершённую диктовку и не дублируем запросы.
         text = prompt.value or ""
         if not text.strip() and not selected_files:
             return
@@ -153,6 +193,8 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         is_sending = True
         try:
             chat_list = cast(ft.ListView, chat.content)
+            if not chat_list.controls:
+                chat_context.clear()
             should_reply = False
 
             if editing_message is not None:
@@ -172,6 +214,12 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                         )
                         break
                 editing_message = None
+                for item in chat_context:
+                    if (original_id is not None and item.get("id") == original_id) or (
+                        original_id is None and item["role"] == "user" and item["content"] == original_text
+                    ):
+                        item["content"] = text
+                        break
                 if original_id is not None:
                     try:
                         update_message(original_id, text)
@@ -196,6 +244,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                     on_action=handle_message_action,
                     message_id=new_id,
                 )
+                chat_context.append({"role": "user", "content": text, "id": new_id})
                 # Реверс-список: низ визуала == controls[0], новое сообщение вставляем в начало.
                 chat_list.controls.insert(0, message)
                 chat_items.insert(0, (text[:32] or "Новый чат", "Только что · 1 сообщение", True))
@@ -227,7 +276,10 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                         chosen = DEFAULT_FILENAME if DEFAULT_FILENAME in available else available[0]
                         await asyncio.to_thread(load_model, chosen)
                 if is_model_loaded():
-                    reply_text = await asyncio.to_thread(generate_reply, text)
+                    reply_text = await asyncio.to_thread(
+                        generate_reply, text,
+                        history=[dict(item) for item in chat_context[:-1]],
+                    )
             except Exception:
                 reply_text = None
 
@@ -246,6 +298,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                         pass
                 # Реверс-список: ответ ИИ тоже вставляется в начало (низ визуала).
                 chat_list.controls.insert(0, build_ai_message(reply_text, on_action=handle_message_action, message_id=ai_id))
+                chat_context.append({"role": "ai", "content": reply_text, "id": ai_id})
                 chat_list.update()
         finally:
             is_sending = False
@@ -260,6 +313,10 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         stored_messages = load_chat_messages(active_chat_id)  # [advanced_xopilot.PyMessage, ...]
     except Exception:
         stored_messages = []
+
+    chat_context.extend(
+        {"role": msg.role, "content": msg.content, "id": msg.id} for msg in stored_messages
+    )
 
     # Ленивая подгрузка истории: виджетами строим только последние MESSAGE_PAGE_SIZE сообщений,
     # остальные догружаются порциями при прокрутке вверх (см. on_chat_scroll). ListView с
@@ -336,6 +393,10 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         on_send,
         on_add_material=on_add_material,
         attachments=attachment_strip,
+        voice_button=voice_input.button,
+        voice_status=voice_input.status,
+        live_button=live.button,
+        live_status=live.status,
     )
 
     async def handle_menu_toggle(e):

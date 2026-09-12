@@ -12,7 +12,7 @@
 import flet as ft
 
 from .buttons.add_material import build_add_material_button
-from .buttons.live import build_live_button
+from .buttons.microphone import build_microphone_button
 from .buttons.send import build_send_button
 
 
@@ -39,6 +39,10 @@ def build_prompt_container(
     on_send,
     on_add_material=None,
     attachments: ft.Control | None = None,
+    voice_button: ft.Control | None = None,
+    voice_status: ft.Control | None = None,
+    live_button: ft.Control | None = None,
+    live_status: ft.Control | None = None,
 ) -> ft.Container:
     input_row = ft.Row(
         expand=True,
@@ -47,7 +51,8 @@ def build_prompt_container(
         controls=[
             build_add_material_button(on_click=on_add_material),
             prompt,
-            build_live_button(),
+            voice_button if voice_button is not None else build_microphone_button(),
+            *([live_button] if live_button is not None else []),
             build_send_button(on_send),
         ],
     )
@@ -61,6 +66,8 @@ def build_prompt_container(
             spacing=4,
             controls=[
                 attachments or ft.Container(height=0),
+                voice_status if voice_status is not None else ft.Container(height=0),
+                live_status if live_status is not None else ft.Container(height=0),
                 input_row,
             ],
         ),
