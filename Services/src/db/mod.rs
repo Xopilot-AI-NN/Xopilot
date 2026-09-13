@@ -265,6 +265,11 @@ impl Database {
         Ok(())
     }
 
+    /// Удаляет ровно одно сообщение; связанные вложения удаляются через FK.
+    pub fn delete_message(&self, message_id: i64) -> Result<bool> {
+        Ok(self.conn.execute("DELETE FROM messages WHERE id = ?1", params![message_id])? > 0)
+    }
+
     /// Общее число сообщений во всех чатах — для статистики на странице «Аккаунт».
     pub fn total_message_count(&self) -> Result<i64> {
         self.conn

@@ -33,7 +33,8 @@ try:
         load_chat_messages,
         save_ai_message,
         save_user_message,
-        seed_demo_chat_if_empty,
+        cleanup_legacy_messages,
+        list_chat_items,
         update_message,
     )
 except ImportError:
@@ -42,13 +43,10 @@ except ImportError:
         load_chat_messages,
         save_ai_message,
         save_user_message,
-        seed_demo_chat_if_empty,
+        cleanup_legacy_messages,
+        list_chat_items,
         update_message,
     )
-try:
-    from ..services.ai import classify_sentiment, reply_for_sentiment
-except ImportError:
-    from services.ai import classify_sentiment, reply_for_sentiment
 try:
     from ..services.llm import DEFAULT_FILENAME, generate_reply, is_model_loaded, list_local_models, load_model
 except ImportError:
@@ -64,12 +62,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
 
     prompt = build_prompt(on_submit=submit_prompt)
     selected_files = []
-    chat_items = [
-        ("Продолжение оформления", "Сегодня · 12 сообщений", True),
-        ("Идеи для локального ИИ", "Вчера · 8 сообщений", False),
-        ("Материалы проекта Xopilot", "18 февраля · 24 сообщения", False),
-        ("Настройка интерфейса", "12 февраля · 16 сообщений", False),
-    ]
+    chat_items = []
     workspace_items = [
         ("Xopilot", "Основной проект", ft.Icons.AUTO_AWESOME),
         ("Локальный ИИ", "Модели и эксперименты", ft.Icons.SMART_TOY_OUTLINED),
@@ -237,7 +230,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                         pass  # БД недоступна (напр., advanced_xopilot ещё не собран) — сообщение останется только в UI на эту сессию
                     # Цитата/ответ для новых сообщений пока не персистятся отдельно от текста промпта
                     # (они вставляются как обычный текст в handle_message_action, как и до этого) —
-                    # в БД попадают только структурные quote/reply_to, когда их задаёт сидинг демо-данных.
+                    # структурные поля quote/reply_to уже сохранённых сообщений сохраняются отдельно.
                 message = build_user_message(
                     text,
                     sent_files,
@@ -247,7 +240,6 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                 chat_context.append({"role": "user", "content": text, "id": new_id})
                 # Реверс-список: низ визуала == controls[0], новое сообщение вставляем в начало.
                 chat_list.controls.insert(0, message)
-                chat_items.insert(0, (text[:32] or "Новый чат", "Только что · 1 сообщение", True))
                 should_reply = True
 
             # Сразу очищаем поле ввода и показываем отправленное сообщение — ДО генерации ответа ИИ.
@@ -264,30 +256,21 @@ def build_app_ui(page: ft.Page) -> ft.Control:
             if not should_reply:
                 return
 
-            # Рабочий ИИ: если GGUF-модель положена в App/data/models/ — отвечает она (ленивая загрузка на первое сообщение).
-            # Иначе — откат на тестовый ONNX-классификатор тональности (пункт 5 плана).
-            # Загрузка/генерация идут в фоновом потоке (asyncio.to_thread) — UI не замирает на время инференса.
-            reply_text = None
+            # Только реальная локальная модель. Ошибка не превращается в выдуманный ответ.
             try:
                 if not is_model_loaded():
                     available = list_local_models()
-                    if available:
-                        # если лежит несколько файлов -- предпочитаем дефолтный, а не первый по алфавиту
-                        chosen = DEFAULT_FILENAME if DEFAULT_FILENAME in available else available[0]
-                        await asyncio.to_thread(load_model, chosen)
-                if is_model_loaded():
-                    reply_text = await asyncio.to_thread(
-                        generate_reply, text,
-                        history=[dict(item) for item in chat_context[:-1]],
-                    )
-            except Exception:
-                reply_text = None
-
-            if reply_text is None:
-                result = classify_sentiment(text)
-                if result is not None:
-                    label, _score = result
-                    reply_text = reply_for_sentiment(label)
+                    if not available:
+                        raise RuntimeError("Локальная модель не найдена. Добавьте файл .litertlm в App/data/models/.")
+                    chosen = DEFAULT_FILENAME if DEFAULT_FILENAME in available else available[0]
+                    await asyncio.to_thread(load_model, chosen)
+                reply_text = await asyncio.to_thread(
+                    generate_reply, text,
+                    history=[dict(item) for item in chat_context[:-1]],
+                )
+            except Exception as exc:
+                page.show_dialog(ft.SnackBar(ft.Text(f"Не удалось получить ответ ИИ: {exc}")))
+                return
 
             if reply_text:
                 ai_id = None
@@ -303,12 +286,12 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         finally:
             is_sending = False
 
-    # История чата грузится из локальной БД. При первом запуске (пустая БД) сеется демо-диалог
-    # напрямую в БД (см. services/chat_store.py) — тестовые сообщения больше не хардкодятся в UI.
-    # Если advanced_xopilot ещё не собран (`maturin develop` в Services/) — чат открывается пустым,
-    # без падения UI.
+    # Удаляем известные старые заглушки один раз. Новая база начинает с пустого чата.
     try:
-        seed_demo_chat_if_empty()
+        cleanup_legacy_messages()
+    except Exception as exc:
+        page.show_dialog(ft.SnackBar(ft.Text(f"Не удалось очистить старые тестовые сообщения: {exc}")))
+    try:
         active_chat_id = get_or_create_active_chat_id()
         stored_messages = load_chat_messages(active_chat_id)  # [advanced_xopilot.PyMessage, ...]
     except Exception:
@@ -411,6 +394,10 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         )
 
     def open_chats(_):
+        try:
+            chat_items[:] = list_chat_items()
+        except Exception:
+            chat_items.clear()
         page.show_dialog(build_chats_dialog(page, cast(ft.ListView, chat.content), chat_items))
 
     def open_workspaces(_):

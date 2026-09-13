@@ -31,7 +31,7 @@ except Exception as exc:  # noqa: BLE001
 
 MODELS_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "models")
 DEFAULT_FILENAME = "gemma-4-E2B-it.litertlm"
-DEFAULT_SYSTEM_PROMPT = "Ты — Zephyr, полезный ассистент в Xopilot. Отвечай кратко и по делу."
+DEFAULT_SYSTEM_PROMPT = "Ты — Zephyr, полезный ассистент в Xopilot. Отвечай по делу и с подробностью, необходимой для запроса."
 
 _engine = None
 _conversation = None
@@ -111,14 +111,14 @@ def _extract_text(result):
         return str(result)
 
 
-def generate_reply(prompt_text, max_tokens=256, history=None):
+def generate_reply(prompt_text, history=None):
     with _engine_lock:
         if litert_lm is None:
             raise RuntimeError("litert_lm не установлен — выполните pip install litert-lm-api") from _IMPORT_ERROR
         if _conversation is None:
             raise RuntimeError("Модель не загружена — вызовите load_model()")
         if history is None:
-            result = _conversation.send_message(prompt_text, max_output_tokens=max_tokens)
+            result = _conversation.send_message(prompt_text)
         else:
             engine = _engine
             if engine is None:
@@ -127,8 +127,10 @@ def generate_reply(prompt_text, max_tokens=256, history=None):
                 system_message=DEFAULT_SYSTEM_PROMPT,
                 messages=_recent_messages(history),
             ) as conversation:
-                result = conversation.send_message(prompt_text, max_output_tokens=max_tokens)
+                result = conversation.send_message(prompt_text)
     text = _extract_text(result).strip()
+    if not text:
+        raise RuntimeError("Модель не вернула ответ. Повторите запрос.")
     record_generation(text)
     return text
 
@@ -217,21 +219,16 @@ def transcribe_audio(wav_bytes: bytes, cancelled: threading.Event) -> str:
 
 
 def _recent_messages(history):
-    """Ограничить историю для контекста локальной модели, сохранив свежие реплики."""
+    """Передать текстовую историю без искусственного обрезания числа реплик и символов."""
     messages = []
-    remaining = 6000
-    for item in reversed(history[-12:]):
+    for item in history:
         text = str(item.get("content") or "")
         if not text.strip():
             continue
-        text = text[-remaining:]
-        messages.insert(0, {
+        messages.append({
             "role": "user" if item["role"] == "user" else "model",
             "content": [{"type": "text", "text": text}],
         })
-        remaining -= len(text)
-        if remaining <= 0:
-            break
     return messages
 
 
@@ -266,14 +263,14 @@ def generate_live_reply(history, cancelled: threading.Event) -> str:
         with engine.create_conversation(
             system_message=(
                 "Ты — Zephyr, голосовой собеседник в Xopilot. Веди естественный разговор, "
-                "учитывай предыдущие реплики. Отвечай на языке собеседника кратко, обычно "
-                "одним-тремя предложениями. Ответ будет прочитан вслух: пиши обычным текстом "
-                "без Markdown и длинных списков. Если вопрос непонятен, попроси уточнить."
+                "учитывай предыдущие реплики. Отвечай на языке собеседника с подробностью, "
+                "необходимой для его запроса. Ответ будет прочитан вслух: пиши обычным текстом "
+                "без Markdown. Если вопрос непонятен, попроси уточнить."
             ),
             messages=messages,
             **_conversation_kwargs(lm, thinking_disabled=True),
         ) as conversation:
-            result = _send_cancellable(conversation, current, cancelled, max_output_tokens=512)
+            result = _send_cancellable(conversation, current, cancelled)
         text = _extract_text(result).strip()
         if not text:
             raise RuntimeError("Модель не вернула ответ. Повторите вопрос.")

@@ -138,6 +138,10 @@ impl PyDatabase {
             .map_err(to_py_err)
     }
 
+    fn delete_message(&self, message_id: i64) -> PyResult<bool> {
+        self.inner.lock().unwrap().delete_message(message_id).map_err(to_py_err)
+    }
+
     fn get_messages(&self, chat_id: i64) -> PyResult<Vec<PyMessage>> {
         self.inner
             .lock()
