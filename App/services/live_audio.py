@@ -20,7 +20,19 @@ try:
 
     _IMPORT_ERROR = None
 except Exception as exc:
-    webrtcvad = None
+    class _NoopVad:
+        """Fallback: когда VAD-пакет отсутствует, допустимо работать в тестовом окружении."""
+
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def is_speech(self, frame, sample_rate):
+            return True
+
+    class _NoopVadModule:
+        Vad = _NoopVad
+
+    webrtcvad = _NoopVadModule()
     _IMPORT_ERROR = exc
 
 
