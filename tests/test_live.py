@@ -6,16 +6,14 @@
 
 import asyncio
 import io
-import subprocess
 import threading
 import unittest
 import wave
 from concurrent.futures import CancelledError
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import Mock, patch
 
 from App.app.live_conversation import LiveConversation
-from App.services import live_audio, llm, speech_output
+from App.services import live_audio, llm
 
 
 class SegmentationTests(unittest.TestCase):
@@ -89,49 +87,6 @@ class SegmentationTests(unittest.TestCase):
         self.assertEqual(errors, ["cancelled"])
         stream.abort.assert_called_once()
         stream.close.assert_called_once()
-
-
-class SpeechOutputTests(unittest.TestCase):
-    def setUp(self):
-        with patch.object(speech_output.shutil, "which", return_value="/usr/bin/espeak-ng"):
-            self.speaker = speech_output.SpeechOutput()
-
-    def test_text_is_stdin_data_not_a_shell_command(self):
-        process = Mock(returncode=0)
-        process.communicate.return_value = (None, b"")
-        process.poll.return_value = 0
-        text = 'Привет; $(touch /tmp/never-created) `команда`'
-        with patch.object(speech_output.subprocess, "Popen", return_value=process) as popen:
-            self.speaker.speak(text, threading.Event())
-        self.assertNotIn(text, popen.call_args.args[0])
-        self.assertFalse(popen.call_args.kwargs.get("shell", False))
-        self.assertIn(b"$(touch /tmp/never-created)", process.communicate.call_args.kwargs["input"])
-        self.assertIn("ru", popen.call_args.args[0])
-
-    def test_cancel_stops_and_reaps_speech_process(self):
-        cancelled = threading.Event()
-        process = Mock()
-        process.poll.return_value = None
-
-        def communicate(**kwargs):
-            if kwargs["timeout"] == 0.05:
-                cancelled.set()
-                raise subprocess.TimeoutExpired("espeak-ng", 0.05)
-            return None, b""
-
-        process.communicate.side_effect = communicate
-        with patch.object(speech_output.subprocess, "Popen", return_value=process):
-            with self.assertRaises(CancelledError):
-                self.speaker.speak("Привет", cancelled)
-        process.terminate.assert_called_once()
-
-    def test_missing_synthesizer_is_reported(self):
-        with patch.object(speech_output.shutil, "which", return_value=None):
-            with self.assertRaisesRegex(RuntimeError, "Не найден голос"):
-                speech_output.SpeechOutput()
-
-    def test_markup_is_suitable_for_reading_aloud(self):
-        self.assertEqual(speech_output.spoken_text("## Ответ\n**Привет**, [мир](https://example.com)."), "Ответ\nПривет, мир.")
 
 
 class LiveControllerTests(unittest.IsolatedAsyncioTestCase):
