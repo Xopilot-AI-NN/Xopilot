@@ -9,6 +9,7 @@ dependencies = [
 	"litert-lm-api>=0.17.0",
 	"sounddevice==0.5.5",
 	"webrtcvad-wheels==2.0.14",
+	"piper-tts==1.8.0",
 ]
 # зависимости не дублирую — см. предупреждение ниже
 

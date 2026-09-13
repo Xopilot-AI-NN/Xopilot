@@ -21,6 +21,7 @@ from .buttons.navigation import build_navigation_button
 from .history.main import build_history_page
 from .personalizations.main import build_personalizations_page
 from .updates.main import build_updates_page
+from .voice.main import build_voice_page
 
 
 BRAND_GRADIENT = ft.LinearGradient(
@@ -58,6 +59,12 @@ def build_settings_dialog(
             build_personalizations_page(page, set_status),
         ),
         (
+            "Голос Live",
+            ft.Icons.RECORD_VOICE_OVER,
+            "COVE, Miku и Maple · русский и английский",
+            build_voice_page(page, set_status),
+        ),
+        (
             "История",
             ft.Icons.HISTORY,
             "Удаление и управление сообщениями",
@@ -78,7 +85,7 @@ def build_settings_dialog(
     ]
 
     page_title = ft.Text("Настройки", size=20, color="#123b43", weight=ft.FontWeight.BOLD)
-    page_host = ft.Column(spacing=0)
+    page_host = ft.Column(spacing=0, expand=True)
 
     def select_page(index: int):
         # Открывает выбранный раздел настроек.

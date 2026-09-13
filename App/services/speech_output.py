@@ -1,36 +1,15 @@
 """
 Файл: App/services/speech_output.py
 Разработчик: DenBroLiik
-Описание: Локальная озвучка через eSpeak NG, Windows SAPI или macOS say.
-    Текст передаётся через stdin без shell; отмена завершает процесс озвучки.
+Описание: Озвучка выбранным голосом Live на русском и английском.
+    Выбор читается перед каждой репликой; в памяти остаются только модели её профиля.
 """
 
-import base64
-import json
-import platform
 import re
-import shutil
-import subprocess
-import time
 from concurrent.futures import CancelledError
 
-
-_WINDOWS_SCRIPT = r"""
-$ErrorActionPreference = 'Stop'
-[Console]::InputEncoding = [System.Text.Encoding]::UTF8
-$request = [Console]::In.ReadToEnd() | ConvertFrom-Json
-Add-Type -AssemblyName System.Speech
-$speaker = New-Object System.Speech.Synthesis.SpeechSynthesizer
-try {
-    $voice = $speaker.GetInstalledVoices() | Where-Object {
-        $_.Enabled -and $_.VoiceInfo.Culture.TwoLetterISOLanguageName -eq $request.language
-    } | Select-Object -First 1
-    if ($null -eq $voice) { throw 'Install a system speech voice for the requested language.' }
-    $speaker.SelectVoice($voice.VoiceInfo.Name)
-    $speaker.SetOutputToDefaultAudioDevice()
-    $speaker.Speak($request.text)
-} finally { $speaker.Dispose() }
-"""
+from .piper_voice import PiperSpeechVoice
+from .voice_settings import get_selected_voice, require_voice
 
 
 def spoken_text(text):
@@ -42,31 +21,34 @@ def spoken_text(text):
     return text.strip()
 
 
-class SpeechOutput:
-    def __init__(self):
-        self.system = platform.system()
-        self.executable = shutil.which("espeak-ng") or shutil.which("espeak")
-        if self.executable:
-            self.backend = "espeak"
-        elif self.system == "Windows" and shutil.which("powershell.exe"):
-            self.executable = shutil.which("powershell.exe")
-            self.backend = "sapi"
-        elif self.system == "Darwin" and shutil.which("say"):
-            self.executable = shutil.which("say")
-            self.backend = "say"
+def speech_segments(text, last_language="ru"):
+    """Язык по предложениям; латинское имя внутри русской фразы не меняет голос."""
+    segments = []
+    for part in re.split(r"(?<=[.!?])\s+|\n+", text):
+        part = part.strip()
+        if not part:
+            continue
+        if re.search(r"[А-Яа-яЁё]", part):
+            language = "ru"
+        elif re.search(r"[A-Za-z]", part):
+            language = "en"
         else:
-            raise RuntimeError("Не найден голос для Live. Установите eSpeak NG и добавьте его в PATH.")
+            language = last_language
+        last_language = language
+        if segments and segments[-1][0] == language:
+            segments[-1] = (language, f"{segments[-1][1]} {part}")
+        else:
+            segments.append((language, part))
+    return segments
 
-    def _command(self, text):
-        language = "ru" if re.search(r"[А-Яа-яЁё]", text) else "en"
-        if self.backend == "espeak":
-            return [self.executable, "-b", "1", "-v", language, "-s", "175", "--stdin"], text.encode("utf-8")
-        if self.backend == "sapi":
-            script = base64.b64encode(_WINDOWS_SCRIPT.encode("utf-16-le")).decode("ascii")
-            return [self.executable, "-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand", script], json.dumps(
-                {"text": text, "language": language}, ensure_ascii=False,
-            ).encode("utf-8")
-        return [self.executable, "-v", "Milena" if language == "ru" else "Samantha"], text.encode("utf-8")
+
+class SpeechOutput:
+    def __init__(self, voice_id=None):
+        self._fixed_voice_id = voice_id
+        self._voices = {}
+        self._last_language = "ru"
+        self.profile = require_voice(voice_id if voice_id is not None else get_selected_voice())
+        self.backend = "piper"
 
     def speak(self, text, cancelled):
         if cancelled.is_set():
@@ -74,36 +56,18 @@ class SpeechOutput:
         text = spoken_text(text)
         if not text:
             return
-        command, payload = self._command(text)
-        process = subprocess.Popen(
-            command,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if self.system == "Windows" else 0,
-        )
-        deadline = time.monotonic() + 120
-        try:
-            while True:
-                if cancelled.is_set():
-                    raise CancelledError()
-                if time.monotonic() >= deadline:
-                    raise RuntimeError("Озвучка не завершилась вовремя. Перезапустите Live.")
-                try:
-                    _, stderr = process.communicate(input=payload, timeout=0.05)
-                    break
-                except subprocess.TimeoutExpired:
-                    payload = None
+        # Снимок на всю реплику: смена настройки не меняет тембр посреди ответа.
+        voice_id = self._fixed_voice_id if self._fixed_voice_id is not None else get_selected_voice()
+        profile = require_voice(voice_id)
+        if profile.id != self.profile.id:
+            self._voices.clear()
+            self.profile = profile
+        for language, part in speech_segments(text, self._last_language):
             if cancelled.is_set():
                 raise CancelledError()
-            if process.returncode:
-                detail = stderr.decode("utf-8", errors="replace").strip()[-300:]
-                raise RuntimeError(f"Не удалось озвучить ответ. Проверьте системный голос и устройство вывода. {detail}")
-        finally:
-            if process.poll() is None:
-                process.terminate()
-                try:
-                    process.communicate(timeout=1)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.communicate()
+            if language not in self._voices:
+                self._voices[language] = PiperSpeechVoice(profile.variant(language))
+            if cancelled.is_set():
+                raise CancelledError()
+            self._voices[language].speak(part, cancelled)
+            self._last_language = language
