@@ -2,7 +2,7 @@
 Файл: /App/services/chat_store.py
 Описание: Высокоуровневый доступ к чатам/сообщениям поверх services.db (Rust БД).
     UI не дёргается с advanced_xopilot напрямую — только через эти функции,
-    чтобы вся бизнес-логика (активный чат, сидинг демо-данных) жила в одном месте.
+    чтобы вся бизнес-логика (активный чат, очистка старых заглушек) жила в одном месте.
 
     Сообщения теперь несут quote/reply_to/attachments (схема v2). Вложение хранятся как
     (имя, путь_к_файлу) — файл должен реально существовать на диске по этому пути,
@@ -10,12 +10,13 @@
 """
 
 import os
+import json
 from typing import List, Optional, Tuple
 
 try:
-    from .db import get_db, _app_data_dir
+    from .db import get_db
 except ImportError:
-    from services.db import get_db, _app_data_dir  # type: ignore
+    from services.db import get_db  # type: ignore
 
 
 _active_chat_id: Optional[int] = None
@@ -66,63 +67,89 @@ def update_message(message_id: int, text: str) -> bool:
     return get_db().update_message(message_id, text)
 
 
-def seed_demo_chat_if_empty() -> None:
-    """Наполняет БД примером диалога ОДИН РАЗ — только если во всей БД ещё нет ни одного чата.
-    Тестовые сообщения теперь живут здесь, в БД — а не захардкожены в UI-коде (App/app/message.py).
+_LEGACY_CLEANUP_KEY = "legacy_demo_messages_removed_v1"
+_LEGACY_REPLIES = {
+    "Понимаю, звучит не очень. Чем могу помочь?",
+    "Принято. Продолжаем?",
+    "Здорово! Рад, что всё идёт хорошо.",
+}
+_LEGACY_DEMO = (
+    ("ai", "Zephyr: Чем займёмся сегодня?", None, None),
+    ("user", "Продолжим оформление приложения.", None, None),
+    ("user", "Прикрепляю материалы для проверки.", None, None),
+    ("user", "Да, именно этот вариант стоит оставить.", "Zephyr: Чем займёмся сегодня?", None),
+    ("user", "Добавлю это в следующую версию.", None, "Прикрепляю материалы для проверки."),
+    ("ai", "Zephyr: Готов. Поддержу стиль, компоненты и логику в одном аккуратном интерфейсе.", None, None),
+)
 
-    ПРИМЕЧАНИЕ: точный текст исходного хардкоженного демо (до моего вмешательства) не сохранился —
-    это новый пример, показывающий те же возможности (цитата, ответ, вложение).
+
+def _is_legacy_demo_prefix(title, messages):
+    if title != "Продолжение оформления" or len(messages) < len(_LEGACY_DEMO):
+        return False
+    for index, (message, expected) in enumerate(zip(messages, _LEGACY_DEMO)):
+        if (message.role, message.content, message.quote, message.reply_to) != expected:
+            return False
+        attachments = message.attachments
+        if index == 2:
+            if attachments and (len(attachments) != 1 or attachments[0][0] != "demo_attachment.txt"
+                                or os.path.basename(attachments[0][1]) != "demo_attachment.txt"):
+                return False
+        elif attachments:
+            return False
+    return True
+
+
+def cleanup_legacy_messages():
+    """Разовая очистка точного демо-префикса и трёх ответов старого классификатора.
+
+    Пользовательские сообщения с такими же словами, изменённый демо-диалог и все
+    последующие реальные реплики сохраняются. Файлы пользователя не удаляются.
     """
     db = get_db()
-    if db.list_chats():
-        return
+    if db.get_setting(_LEGACY_CLEANUP_KEY) == "1":
+        return 0
+    delete = getattr(db, "delete_message", None)
+    if delete is None:
+        # Старые сборки нативного модуля продолжают открывать историю. После
+        # обновления модуля очистка повторится, поскольку маркер ещё не записан.
+        return 0
+    ids = set()
+    by_id = {}
+    for chat_id, title, _ in db.list_chats():
+        messages = db.get_messages(chat_id)
+        by_id.update((message.id, message) for message in messages)
+        if _is_legacy_demo_prefix(title, messages):
+            ids.update(message.id for message in messages[:len(_LEGACY_DEMO)])
+        ids.update(message.id for message in messages
+                   if message.role == "ai" and message.content in _LEGACY_REPLIES
+                   and not message.quote and not message.reply_to and not message.attachments)
 
-    chat_id = db.create_chat("Продолжение оформления")
+    def signature(message):
+        return json.dumps([message.role, message.content, message.quote, message.reply_to,
+                           message.attachments], ensure_ascii=False)
 
-    db.add_message(chat_id, "ai", "Zephyr: Чем займёмся сегодня?")
-    db.add_message(chat_id, "user", "Продолжим оформление приложения.")
+    pending_key = _LEGACY_CLEANUP_KEY + ".pending"
+    pending = json.loads(db.get_setting(pending_key) or "{}")
+    # После частичного сбоя продолжаем только неизменённые строки прежнего плана.
+    # Это важно для демо-префикса: после удаления его начала он уже не совпадёт целиком.
+    for key, expected in pending.items():
+        message = by_id.get(int(key))
+        if message is not None and signature(message) == expected:
+            ids.add(message.id)
+    if ids:
+        db.set_setting(pending_key, json.dumps({str(i): signature(by_id[i]) for i in ids}, ensure_ascii=False))
+    deleted = sum(bool(delete(message_id)) for message_id in sorted(ids))
+    db.set_setting(_LEGACY_CLEANUP_KEY, "1")
+    db.set_setting(pending_key, "")
+    return deleted
 
-    # пример вложения — реальный файл на диске, иначе Flet не отрисует превью
-    demo_file_path = os.path.join(_app_data_dir(), "demo_attachment.txt")
-    try:
-        with open(demo_file_path, "w", encoding="utf-8") as f:
-            f.write("Пример материала для проверки.\n")
-    except OSError:
-        demo_file_path = None
 
-    db.add_message(
-        chat_id,
-        "user",
-        "Прикрепляю материалы для проверки.",
-        None,
-        None,
-        [("demo_attachment.txt", demo_file_path)] if demo_file_path else [],
-    )
+def list_chat_items():
+    """Реальные названия и количество сообщений для списка чатов."""
+    db = get_db()
+    return [(title or "Новый чат", f"Сообщений: {len(db.get_messages(chat_id))}", False)
+            for chat_id, title, _ in db.list_chats()]
 
-    # пример цитаты
-    db.add_message(
-        chat_id,
-        "user",
-        "Да, именно этот вариант стоит оставить.",
-        "Zephyr: Чем займёмся сегодня?",
-        None,
-        [],
-    )
-
-    # пример ответа на сообщение
-    db.add_message(
-        chat_id,
-        "user",
-        "Добавлю это в следующую версию.",
-        None,
-        "Прикрепляю материалы для проверки.",
-        [],
-    )
-
-    db.add_message(chat_id, "ai", "Zephyr: Готов. Поддержу стиль, компоненты и логику в одном аккуратном интерфейсе.")
-
-    global _active_chat_id
-    _active_chat_id = chat_id
 
 def clear_chat_messages(chat_id):
     """Стирает все сообщения чата из БД (вложения — каскадно). Сам чат остаётся."""

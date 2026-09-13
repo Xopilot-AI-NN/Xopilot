@@ -7,14 +7,6 @@
 import flet as ft
 
 
-CHAT_ITEMS = [
-    ("Продолжение оформления", "Сегодня · 12 сообщений", True),
-    ("Идеи для локального ИИ", "Вчера · 8 сообщений", False),
-    ("Материалы проекта Xopilot", "18 февраля · 24 сообщения", False),
-    ("Настройка интерфейса", "12 февраля · 16 сообщений", False),
-]
-
-
 def _chat_row(title: str, subtitle: str, pinned: bool, on_click) -> ft.Container:
     return ft.Container(
         padding=ft.padding.Padding.symmetric(horizontal=12, vertical=9),
@@ -51,7 +43,7 @@ def build_chats_dialog(
     chat_list: ft.ListView | None = None,
     chat_items: list[tuple[str, str, bool]] | None = None,
 ) -> ft.AlertDialog:
-    items = chat_items if chat_items is not None else CHAT_ITEMS
+    items = chat_items if chat_items is not None else []
     search = ft.TextField(
         hint_text="Поиск по чатам",
         prefix_icon=ft.Icons.SEARCH,
