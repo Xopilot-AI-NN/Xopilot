@@ -87,12 +87,14 @@ class MicrophoneRecorder:
     def _receive(self, data, frames, _time, status):
         if status:
             self._error = "Запись звука прервалась. Проверьте микрофон и повторите диктовку."
+            assert sd is not None
             raise sd.CallbackAbort
         remaining = int(self.max_seconds * self._sample_rate) - self._frames
         count = min(frames, remaining)
         self._chunks.append(bytes(data)[:count * 2])
         self._frames += count
         if count == remaining:
+            assert sd is not None
             raise sd.CallbackStop
 
     def _close_stream(self):

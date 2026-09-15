@@ -23,9 +23,9 @@ _active_chat_id: Optional[int] = None
 
 
 def get_or_create_active_chat_id() -> int:
-    """ID последнего (самого нового) чата, либо новый, если чатов ещё нет.
-    Кэшируется в памяти процесса — переключение между чатами (сайдбар чатов)
-    пока не реализовано отдельно — это всегда «самый последний» чат.
+    """ID активного чата (кэшируется в памяти процесса). Если ещё ничего не выбирался
+    через switch_active_chat()/create_new_chat() в этой сессии — возвращает самый новый чат,
+    либо создаёт новый, если чатов ещё нет.
     """
     global _active_chat_id
     if _active_chat_id is not None:
@@ -37,7 +37,24 @@ def get_or_create_active_chat_id() -> int:
         _active_chat_id = chats[0][0]
     else:
         _active_chat_id = db.create_chat("Новый чат")
+    assert _active_chat_id is not None
     return _active_chat_id
+
+
+def switch_active_chat(chat_id: int) -> None:
+    """Переключает активный чат (выбор чата в сайдбаре). Не проверяет,
+    что chat_id действительно существует — это ответственность вызывающего (chat_id берётся из list_chat_items()).
+    """
+    global _active_chat_id
+    _active_chat_id = chat_id
+
+
+def create_new_chat(title: str = "Новый чат") -> int:
+    """Создаёт новый пустой чат и делает его активным. Возвращает id нового чата."""
+    global _active_chat_id
+    chat_id = get_db().create_chat(title)
+    _active_chat_id = chat_id
+    return chat_id
 
 
 def load_chat_messages(chat_id: int):
@@ -65,6 +82,23 @@ def save_ai_message(chat_id: int, text: str) -> int:
 def update_message(message_id: int, text: str) -> bool:
     """Правит текст уже сохранённого сообщения (редактирование в UI). Цитату/ответ/вложения пока не трогает."""
     return get_db().update_message(message_id, text)
+
+
+def delete_message(message_id: int) -> bool:
+    """Удаляет одно сообщение (вложения — каскадно). Возвращает False, если id не найден."""
+    return get_db().delete_message(message_id)
+
+
+def delete_chat(chat_id: int) -> bool:
+    """Удаляет чат целиком (сообщения и вложения — каскадно). Если удаляемый чат был активным,
+    сбрасывает кэш активного чата — вызывающий должен сам выбрать следующий активный чат
+    (через switch_active_chat/create_new_chat).
+    """
+    global _active_chat_id
+    deleted = get_db().delete_chat(chat_id)
+    if _active_chat_id == chat_id:
+        _active_chat_id = None
+    return deleted
 
 
 _LEGACY_CLEANUP_KEY = "legacy_demo_messages_removed_v1"
@@ -145,9 +179,11 @@ def cleanup_legacy_messages():
 
 
 def list_chat_items():
-    """Реальные названия и количество сообщений для списка чатов."""
+    """Реальные (chat_id, название, количество сообщений, pinned) для списка чатов в сайдбаре.
+    Упорядочено по дате создания по убыванию (самый новый чат — первым).
+    """
     db = get_db()
-    return [(title or "Новый чат", f"Сообщений: {len(db.get_messages(chat_id))}", False)
+    return [(chat_id, title or "Новый чат", f"Сообщений: {len(db.get_messages(chat_id))}", False)
             for chat_id, title, _ in db.list_chats()]
 
 

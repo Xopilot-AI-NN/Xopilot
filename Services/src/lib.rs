@@ -142,6 +142,11 @@ impl PyDatabase {
         self.inner.lock().unwrap().delete_message(message_id).map_err(to_py_err)
     }
 
+    /// Удаляет чат целиком (сообщения и вложения — каскадно через FK на стороне SQLite).
+    fn delete_chat(&self, chat_id: i64) -> PyResult<bool> {
+        self.inner.lock().unwrap().delete_chat(chat_id).map_err(to_py_err)
+    }
+
     fn get_messages(&self, chat_id: i64) -> PyResult<Vec<PyMessage>> {
         self.inner
             .lock()
