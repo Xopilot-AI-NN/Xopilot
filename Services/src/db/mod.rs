@@ -270,6 +270,13 @@ impl Database {
         Ok(self.conn.execute("DELETE FROM messages WHERE id = ?1", params![message_id])? > 0)
     }
 
+    /// Удаляет чат целиком: связанные сообщения и их вложения удаляются каскадно через FK
+    /// (ON DELETE CASCADE на messages.chat_id и message_attachments.message_id).
+    /// Возвращает Ok(false), если чата с таким id не было.
+    pub fn delete_chat(&self, chat_id: i64) -> Result<bool> {
+        Ok(self.conn.execute("DELETE FROM chats WHERE id = ?1", params![chat_id])? > 0)
+    }
+
     /// Общее число сообщений во всех чатах — для статистики на странице «Аккаунт».
     pub fn total_message_count(&self) -> Result<i64> {
         self.conn
