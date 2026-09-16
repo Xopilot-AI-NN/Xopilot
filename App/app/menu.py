@@ -19,15 +19,15 @@
         width (0 -> LABEL_WIDTH). Важно: длительность этой анимации
         (PANEL_ANIMATION_MS) СОВПАДАЕТ с длительностью анимации
         ширины самой панели — если бы они были разными, подпись
-        "обгоняла" бы рост панели и Flutter кидал overflow-warning
+        "обгоняла" бы рост панели и Flutter кидал бы overflow-warning
         (та самая красная рамка на кнопке "Новый чат"). При одной
         длительности и кривой доступное место в панели всегда растёт
         быстрее, чем ширина подписи — переполнения не будет.
 
         Кнопки рейла — динамические: при изменении ширины рейла
         (size_change_interval/on_size_change) считается ratio (0..1)
-        между RAIL_WIDTH_MIN и RAIL_WIDTH_MAX — это единственное,
-        что принадлежит самому рейлу-контейнеру. Пересчёт размера
+        между RAIL_WIDTH_MIN и RAIL_WIDTH_MAX — это единственное, что
+        принадлежит самому рейлу-контейнеру. Пересчёт размера
         кнопки/иконки по этому ratio делает уже сама кнопка
         (resize_*_button в buttons/*.py).
 """
@@ -183,6 +183,7 @@ def _overlay_item(
 def build_menu_overlay(
     rail: ft.Container,
     page: ft.Page,
+    on_new_chat_click=None,
     on_settings_click=None,
     on_workspaces_click=None,
     on_chats_click=None,
@@ -286,10 +287,6 @@ def build_menu_overlay(
             rail.opacity = 1
             page.update()
 
-    async def handle_new_chat_click(_):
-        # TODO: сбросить историю чата / создать новый диалог
-        await toggle()
-
     async def handle_scrim_click(_):
         await toggle()
 
@@ -298,8 +295,15 @@ def build_menu_overlay(
         if callback is not None:
             callback(event)
 
-    new_chat_row.on_click = handle_new_chat_click
+    async def handle_new_chat_click(event):
+        if on_new_chat_click is None:
+            await handle_scrim_click(event)
+        else:
+            await handle_panel_click(on_new_chat_click, event)
+
     menu_row.on_click = handle_scrim_click
+    new_chat_row.on_click = handle_new_chat_click
+
     async def handle_settings_click(event):
         if on_settings_click is None:
             await handle_scrim_click(event)

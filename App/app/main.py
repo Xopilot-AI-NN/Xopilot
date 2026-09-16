@@ -76,7 +76,9 @@ def build_app_ui(page: ft.Page) -> ft.Control:
     chat: ft.Container
     attachment_strip = build_file_attachments(selected_files, lambda _: None)
     file_picker = ft.FilePicker()
+    clipboard = ft.Clipboard()
     page.services.append(file_picker)
+    page.services.append(clipboard)
 
     async def add_live_message(role, text):
         chat_list = cast(ft.ListView, chat.content)
@@ -143,7 +145,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         await refresh_attachments(animated=True)
 
     async def paste_files():
-        for path in await page.clipboard.get_files():
+        for path in await clipboard.get_files():
             file = file_from_path(path)
             if file and not any(selected.path == file.path for selected in selected_files):
                 selected_files.append(file)
@@ -158,7 +160,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
     async def handle_message_action(action, text, files, message_id=None):
         nonlocal editing_message
         if action == "copy":
-            await page.clipboard.set(text)
+            await clipboard.set(text)
         elif action == "reply":
             prompt.value = f"Ответ на сообщение:\n{text}\n\n"
             await prompt.focus()
@@ -398,7 +400,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
             chat_items[:] = list_chat_items()
         except Exception:
             chat_items.clear()
-        page.show_dialog(build_chats_dialog(page, cast(ft.ListView, chat.content), chat_items))
+        page.show_dialog(build_chats_dialog(page, chat_items=chat_items))
 
     def open_workspaces(_):
         page.show_dialog(build_workspaces_dialog(page, workspace_items))

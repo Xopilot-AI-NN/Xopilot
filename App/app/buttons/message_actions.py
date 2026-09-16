@@ -25,6 +25,9 @@ def build_message_actions(
     async def on_edit(_):
         await handle_action("edit")
 
+    async def on_delete(_):
+        await handle_action("delete")
+
     controls: list[ft.Control] = [
         ft.IconButton(
             icon=ft.Icons.CONTENT_COPY,
@@ -78,4 +81,18 @@ def build_message_actions(
                 on_click=on_edit,
             )
         )
+    controls.append(
+        ft.IconButton(
+            icon=ft.Icons.DELETE_OUTLINE,
+            icon_color="#c94b4b",
+            icon_size=15,
+            width=28,
+            height=28,
+            padding=0,
+            bgcolor="#ffe9e9",
+            hover_color="#ffd2d2",
+            tooltip="Удалить",
+            on_click=on_delete,
+        )
+    )
     return ft.Row(spacing=2, tight=True, height=28, controls=controls)
