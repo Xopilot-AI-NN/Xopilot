@@ -235,9 +235,10 @@ impl Database {
     }
 
     /// Простое сообщение без цитат/вложений — тонкая обёртка над add_message_full.
-    pub fn add_message(&self, chat_id: i64, role: &str, content: &str) -> Result<i64> {
-        self.add_message_full(chat_id, role, content, None, None, &[])
-    }
+    // pub fn add_message(&self, chat_id: i64, role: &str, content: &str) -> Result<i64> {
+    //     self.add_message_full(chat_id, role, content, None, None, &[])
+    // }
+    // пока что закоменчу
 
     /// Полная версия: с цитатой/ответом и списком вложений (имя, путь).
     pub fn add_message_full(

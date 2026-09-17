@@ -31,7 +31,7 @@ def build_prompt(on_submit=None) -> ft.TextField:
         border=ft.NoInputBorder(),
         color=ft.Colors.BLACK,
         cursor_color=ft.Colors.BLACK,
-        content_padding=ft.Padding.symmetric(horizontal=4, vertical=8),
+        content_padding=ft.Padding.symmetric(horizontal=6, vertical=5),
         expand=True,
     )
 
@@ -41,6 +41,7 @@ def build_prompt_container(
     on_send,
     on_add_material=None,
     attachments: ft.Control | None = None,
+    model_button: ft.Control | None = None,
     voice_button: ft.Control | None = None,
     voice_status: ft.Control | None = None,
     live_button: ft.Control | None = None,
@@ -48,10 +49,11 @@ def build_prompt_container(
 ) -> ft.Container:
     input_row = ft.Row(
         expand=True,
-        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        vertical_alignment=ft.CrossAxisAlignment.END,
         spacing=8,
         controls=[
             build_add_material_button(on_click=on_add_material),
+            *([model_button] if model_button is not None else []),
             prompt,
             voice_button if voice_button is not None else build_microphone_button(),
             *([live_button] if live_button is not None else []),
@@ -63,7 +65,7 @@ def build_prompt_container(
         border_radius=10,
         border=ft.Border.all(2, "#00c753"),
         bgcolor="#d9ffe6",
-        padding=ft.Padding.symmetric(horizontal=8, vertical=4),
+        padding=ft.Padding.symmetric(horizontal=8, vertical=3),
         content=ft.Column(
             spacing=4,
             controls=[

@@ -18,6 +18,7 @@ from .chat import build_chat
 from .material import build_file_attachments, file_from_path
 from .message import build_user_message, build_ai_message
 from .prompt import build_prompt, build_prompt_container
+from .buttons.model import build_model_button
 from .voice_input import VoiceInput
 from .live_conversation import LiveConversation
 from .menu import build_menu, build_menu_overlay
@@ -56,9 +57,15 @@ except ImportError:
         delete_chat as store_delete_chat,
     )
 try:
-    from ..services.llm import DEFAULT_FILENAME, generate_reply, is_model_loaded, list_local_models, load_model
+    from ..services.llm import ensure_model_loaded, generate_reply
+    from ..services.model_settings import (
+        get_selected_chat_model, model_display_name, set_selected_chat_model,
+    )
 except ImportError:
-    from services.llm import DEFAULT_FILENAME, generate_reply, is_model_loaded, list_local_models, load_model
+    from services.llm import ensure_model_loaded, generate_reply
+    from services.model_settings import (
+        get_selected_chat_model, model_display_name, set_selected_chat_model,
+    )
 
 
 def build_app_ui(page: ft.Page) -> ft.Control:
@@ -118,6 +125,19 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         on_user_message=add_live_user_message,
         on_ai_message=add_live_ai_message,
     )
+
+    async def choose_chat_model(filename: str):
+        try:
+            persisted = await asyncio.to_thread(set_selected_chat_model, filename)
+        except Exception as exc:
+            page.show_dialog(ft.SnackBar(ft.Text(f"Не удалось выбрать модель: {exc}")))
+            return
+        suffix = "" if persisted else " · только на эту сессию"
+        page.show_dialog(
+            ft.SnackBar(ft.Text(f"Модель чата: {model_display_name(filename)}{suffix}"))
+        )
+
+    model_button, refresh_model_button = build_model_button(on_select=choose_chat_model)
 
     async def close_voice_modes(e):
         await asyncio.gather(voice_input.close(e), live.close(e))
@@ -291,14 +311,12 @@ def build_app_ui(page: ft.Page) -> ft.Control:
             if not should_reply:
                 return
 
-            # Только реальная локальная модель. Ошибка не превращается в выдуманный ответ.
+            # Только реальная локальная модель. Выбор хранится отдельно для чата и Live.
             try:
-                if not is_model_loaded():
-                    available = list_local_models()
-                    if not available:
-                        raise RuntimeError("Локальная модель не найдена. Добавьте файл .litertlm в App/data/models/.")
-                    chosen = DEFAULT_FILENAME if DEFAULT_FILENAME in available else available[0]
-                    await asyncio.to_thread(load_model, chosen)
+                chosen = get_selected_chat_model()
+                if not chosen:
+                    raise RuntimeError("Локальная модель не найдена. Добавьте файл .litertlm в App/data/models/.")
+                await asyncio.to_thread(ensure_model_loaded, chosen)
                 reply_text = await asyncio.to_thread(
                     generate_reply, text,
                     history=[dict(item) for item in chat_context[:-1]],
@@ -413,6 +431,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         on_send,
         on_add_material=on_add_material,
         attachments=attachment_strip,
+        model_button=model_button,
         voice_button=voice_input.button,
         voice_status=voice_input.status,
         live_button=live.button,
@@ -422,12 +441,30 @@ def build_app_ui(page: ft.Page) -> ft.Control:
     async def handle_menu_toggle(e):
         await toggle_menu()
 
+    def refresh_chat_model_ui(_filename=None):
+        refresh_model_button(update=True)
+
     def open_settings(_):
-        page.show_dialog(build_settings_dialog(page, cast(ft.ListView, chat.content), chat_id=active_chat_id))
+        page.show_dialog(
+            build_settings_dialog(
+                page,
+                cast(ft.ListView, chat.content),
+                chat_id=active_chat_id,
+                on_chat_model_changed=refresh_chat_model_ui,
+                on_live_model_changed=live.refresh_model_label,
+            )
+        )
 
     def open_account(_):
         page.show_dialog(
-            build_settings_dialog(page, cast(ft.ListView, chat.content), start_section=0, chat_id=active_chat_id)
+            build_settings_dialog(
+                page,
+                cast(ft.ListView, chat.content),
+                start_section=0,
+                chat_id=active_chat_id,
+                on_chat_model_changed=refresh_chat_model_ui,
+                on_live_model_changed=live.refresh_model_label,
+            )
         )
 
     def switch_chat(chat_id: int):
