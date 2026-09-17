@@ -1,7 +1,7 @@
 [project]
 name = "Xopilot"
 version = "2.0.0"
-description = "Xopilot AI+ NN+ desktop assistant"
+description = "Xopilot by DenBroLiik"
 requires-python = ">=3.10"
 dependencies = [
 	"flet==1.0.0",

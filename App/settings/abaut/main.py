@@ -7,18 +7,34 @@
 import flet as ft
 
 from ..common import section_title
-from .info import build_about_info, build_about_row
+from .info import ABOUT_WIDTH, build_about_info, build_about_row
 
 
 def build_about_page() -> ft.Column:
+    about_content = ft.Container(
+        expand=True,
+        alignment=ft.Alignment.CENTER,
+        content=ft.Column(
+            tight=True,
+            spacing=4,
+            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+            controls=[
+                build_about_row(),
+                build_about_info(),
+            ],
+        ),
+    )
+
     return ft.Column(
-        width=455,
-        alignment=ft.MainAxisAlignment.START,
+        expand=True,
+        spacing=0,
         horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-        spacing=2,
         controls=[
-            section_title("О приложении"),
-            build_about_row(),
-            build_about_info(),
+            ft.Container(
+                width=ABOUT_WIDTH,
+                alignment=ft.Alignment.CENTER,
+                content=section_title("О приложении"),
+            ),
+            about_content,
         ],
     )
