@@ -16,3 +16,4 @@ DEV.md
 App/data/models/tts/*.onnx
 App/data/models/tts/*.onnx.json
 App/data/models/tts/*.part
+run.sh

@@ -18,12 +18,14 @@ try:
     from ..services.llm import (
         SpeechNotRecognizedError, generate_live_reply, prepare_voice_model, transcribe_audio,
     )
+    from ..services.model_settings import get_selected_live_model, model_display_name
 except ImportError:
     from services.live_audio import check_live_audio, record_utterance
     from services.speech_output import SpeechOutput
     from services.llm import (
         SpeechNotRecognizedError, generate_live_reply, prepare_voice_model, transcribe_audio,
     )
+    from services.model_settings import get_selected_live_model, model_display_name
 
 
 class LiveConversation:
@@ -51,6 +53,8 @@ class LiveConversation:
         self._turn_cancelled = threading.Event()
         self._task = None
         self._closed = False
+        self._live_model = None
+        self.refresh_model_label()
 
     @property
     def busy(self):
@@ -68,13 +72,25 @@ class LiveConversation:
             color=ft.Colors.WHITE, size=20,
         )
         self.button.bgcolor = "#d9364f" if self.busy else "#ff6666ff"
-        self.button.tooltip = "Завершить Live" if self.busy else "Live — голосовой разговор"
+        self.button.tooltip = (
+            "Завершить Live"
+            if self.busy
+            else f"Live — {model_display_name(get_selected_live_model())}"
+        )
         if not self._closed:
             self.page.update()
 
     def _set_state(self, state, message):
         self._state = state
         self._render(message)
+
+    def refresh_model_label(self, _filename=None):
+        if not self.busy:
+            self.button.tooltip = f"Live — {model_display_name(get_selected_live_model())}"
+            try:
+                self.button.update()
+            except Exception:
+                pass
 
     async def toggle(self, _=None):
         if self._closed:
@@ -88,9 +104,17 @@ class LiveConversation:
         if self.page.web:
             self._render("Live доступен в настольном приложении Xopilot.")
             return
+        selected_model = get_selected_live_model()
+        if not selected_model:
+            self._render("Live: нет локальной модели с поддержкой аудио в App/data/models/.")
+            return
+        self._live_model = selected_model
         self._stopped = threading.Event()
         self._turn_cancelled = threading.Event()
-        self._set_state("preparing", "Live · Подготавливаю голосовой разговор…")
+        self._set_state(
+            "preparing",
+            f"Live · {model_display_name(selected_model)} · Подготавливаю голосовой разговор…",
+        )
         self._task = asyncio.create_task(self._run())
 
     def _check_turn(self):
@@ -102,7 +126,10 @@ class LiveConversation:
         try:
             await asyncio.to_thread(check_live_audio)
             speaker = await asyncio.to_thread(SpeechOutput)
-            await asyncio.to_thread(prepare_voice_model, self._stopped)
+            model_filename = self._live_model or get_selected_live_model()
+            if not model_filename:
+                raise RuntimeError("Не выбрана модель Live.")
+            await asyncio.to_thread(prepare_voice_model, self._stopped, model_filename)
             hint = "Говорите — отвечу после паузы."
             while not self._stopped.is_set():
                 self._turn_cancelled = threading.Event()
@@ -111,13 +138,17 @@ class LiveConversation:
                     wav = await asyncio.to_thread(record_utterance, self._turn_cancelled)
                     self._check_turn()
                     self._set_state("transcribing", "Live · Распознаю вашу реплику…")
-                    transcript = await asyncio.to_thread(transcribe_audio, wav, self._turn_cancelled)
+                    transcript = await asyncio.to_thread(
+                        transcribe_audio, wav, self._turn_cancelled, model_filename
+                    )
                     self._check_turn()
                     await self.on_user_message(transcript)
                     self._check_turn()
                     history = self.get_history()
                     self._set_state("thinking", "Live · Готовлю ответ…")
-                    reply = await asyncio.to_thread(generate_live_reply, history, self._turn_cancelled)
+                    reply = await asyncio.to_thread(
+                        generate_live_reply, history, self._turn_cancelled, model_filename
+                    )
                     self._check_turn()
                     await self.on_ai_message(reply)
                     self._check_turn()

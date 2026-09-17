@@ -67,6 +67,28 @@ def is_model_loaded():
     return _engine is not None and _conversation is not None
 
 
+def get_loaded_model():
+    return _loaded_filename
+
+
+def model_supports_audio(filename: str) -> bool:
+    if litert_lm is None:
+        raise RuntimeError("litert_lm не установлен — выполните pip install litert-lm-api") from _IMPORT_ERROR
+    path = os.path.join(MODELS_DIR, filename)
+    if not os.path.isfile(path):
+        raise FileNotFoundError(f"Файл модели не найден: {path}")
+    with litert_lm.Capabilities(path) as capabilities:
+        return bool(capabilities.input_modalities.audio)
+
+
+def ensure_model_loaded(filename: str):
+    """Загрузить нужную модель только если сейчас активна другая."""
+    with _engine_lock:
+        if is_model_loaded() and _loaded_filename == filename:
+            return filename
+        return _load_model(filename, DEFAULT_SYSTEM_PROMPT)
+
+
 def load_model(filename=DEFAULT_FILENAME, system_prompt=DEFAULT_SYSTEM_PROMPT):
     with _engine_lock:
         return _load_model(filename, system_prompt)
@@ -139,19 +161,21 @@ class SpeechNotRecognizedError(RuntimeError):
     pass
 
 
-def prepare_voice_model(cancelled: threading.Event):
+def prepare_voice_model(cancelled: threading.Event, filename: str | None = None):
     """Загрузить и проверить модель до начала голосового разговора."""
     with _engine_lock:
         if cancelled.is_set():
             raise CancelledError()
         if litert_lm is None:
             raise RuntimeError("Для распознавания речи установите зависимости приложения (LiteRT-LM).") from _IMPORT_ERROR
-        if not is_model_loaded():
-            models = list_local_models()
-            if not models:
-                raise RuntimeError("Для диктовки нужна локальная модель с поддержкой аудио в App/data/models/.")
-            chosen = DEFAULT_FILENAME if DEFAULT_FILENAME in models else models[0]
-            load_model(chosen)
+        models = list_local_models()
+        if not models:
+            raise RuntimeError("Для диктовки нужна локальная модель с поддержкой аудио в App/data/models/.")
+        chosen = filename or (DEFAULT_FILENAME if DEFAULT_FILENAME in models else models[0])
+        if chosen not in models:
+            raise RuntimeError(f"Выбранная модель Live не найдена: {chosen}")
+        if not is_model_loaded() or _loaded_filename != chosen:
+            _load_model(chosen, DEFAULT_SYSTEM_PROMPT)
         if cancelled.is_set():
             raise CancelledError()
         if not _supports_audio:
@@ -185,10 +209,10 @@ def _send_cancellable(conversation, message, cancelled, **kwargs):
         watcher.join()
 
 
-def transcribe_audio(wav_bytes: bytes, cancelled: threading.Event) -> str:
+def transcribe_audio(wav_bytes: bytes, cancelled: threading.Event, model_filename: str | None = None) -> str:
     """Распознать речь локально, без ответа ассистента и записи в статистику/БД."""
     with _engine_lock:
-        prepare_voice_model(cancelled)
+        prepare_voice_model(cancelled, model_filename)
         lm = litert_lm
         engine = _engine
         if lm is None:
@@ -246,10 +270,10 @@ def _conversation_kwargs(lm, *, temperature=None, thinking_disabled=False):
     return kwargs
 
 
-def generate_live_reply(history, cancelled: threading.Event) -> str:
+def generate_live_reply(history, cancelled: threading.Event, model_filename: str | None = None) -> str:
     """Ответ на последний голосовой вопрос с недавней текстовой историей чата."""
     with _engine_lock:
-        prepare_voice_model(cancelled)
+        prepare_voice_model(cancelled, model_filename)
         lm = litert_lm
         engine = _engine
         if lm is None:

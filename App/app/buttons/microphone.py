@@ -9,9 +9,9 @@ import flet as ft
 
 def build_microphone_button(on_click=None):
     return ft.Container(
-        width=38,
-        height=38,
-        border_radius=19,
+        width=48,
+        height=48,
+        border_radius=24,
         border=ft.Border.all(2, "#ffffff"),
         bgcolor="#ff6666ff",
         alignment=ft.Alignment.CENTER,

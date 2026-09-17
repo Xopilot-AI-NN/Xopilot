@@ -99,7 +99,7 @@ class Init():
 
         w, h = self.auto_screen_size()
 
-        page.title = "Xopilot-NN+ AI+ 2.0"
+        page.title = "Xopilot 2.0.0"
         page.window.icon = "./Icons/Xopilot-icon-apk.png"
         page.window.width = w
         page.window.height = h

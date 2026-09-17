@@ -3,12 +3,8 @@
 Разработчик: DenBroLiik
 Версия: 2.0.0
 Описание: __Главное окно настроек__.
-           Собирает отдельные страницы персонализации, истории, обновлений и информации о приложении.
-           Отвечает только за навигацию и общую оболочку окна.
-
-           Страница "Безопасность" убрана: шифрование теперь всегда включено
-           автоматически через OS keyring — ручного тумблера/пароля больше нет,
-           статус шифрования показан плашкой на странице "О приложении".
+           Собирает отдельные страницы персонализации, моделей, истории,
+           обновлений и информации о приложении.
 """
 
 import flet as ft
@@ -19,9 +15,9 @@ from .buttons.back import build_back_button
 from .common import section_title
 from .buttons.navigation import build_navigation_button
 from .history.main import build_history_page
+from .models.main import build_models_page
 from .personalizations.main import build_personalizations_page
 from .updates.main import build_updates_page
-from .voice.main import build_voice_page
 
 
 BRAND_GRADIENT = ft.LinearGradient(
@@ -36,51 +32,68 @@ def build_settings_dialog(
     chat_list: ft.ListView | None = None,
     start_section: int | None = None,
     chat_id: int | None = None,
+    on_chat_model_changed=None,
+    on_live_model_changed=None,
 ) -> ft.AlertDialog:
-    # Создаёт окно настроек и переключает его разделы.
     status = ft.Text("Изменения применяются сразу", size=11, color="#dff8f3")
 
     def set_status(text: str):
         status.value = text
         status.update()
 
-    # (лейбл, иконка, подпись на главной странице, сама страница) — один источник правды вместо двух параллельных списков + индексный тернарник
+    def refresh_model_surfaces():
+        if on_chat_model_changed is not None:
+            on_chat_model_changed()
+        if on_live_model_changed is not None:
+            on_live_model_changed()
+
+    # Страницы строятся при открытии раздела. Поэтому после установки модели/голоса
+    # «Персонализация» сразу увидит новые локальные файлы без перезапуска приложения.
     sections = [
         (
             "Аккаунт",
             ft.Icons.PERSON_OUTLINE,
             "Профиль, тариф и статистика ИИ",
-            build_account_page(page),
+            lambda: build_account_page(page),
         ),
         (
-            "Внешний вид",
-            ft.Icons.DARK_MODE_OUTLINED,
-            "Тема оформления и язык интерфейса",
-            build_personalizations_page(page, set_status),
+            "Персонализация",
+            ft.Icons.TUNE,
+            "Тема, язык, модели ИИ и голос Live",
+            lambda: build_personalizations_page(
+                page,
+                set_status,
+                on_chat_model_changed=on_chat_model_changed,
+                on_live_model_changed=on_live_model_changed,
+            ),
         ),
         (
-            "Голос Live",
-            ft.Icons.RECORD_VOICE_OVER,
-            "COVE, Miku и Maple · русский и английский",
-            build_voice_page(page, set_status),
+            "Модели",
+            ft.Icons.DOWNLOAD_OUTLINED,
+            "Загрузка Gemma 4 и голосов Live",
+            lambda: build_models_page(
+                page,
+                set_status,
+                on_models_changed=refresh_model_surfaces,
+            ),
         ),
         (
             "История",
             ft.Icons.HISTORY,
             "Удаление и управление сообщениями",
-            build_history_page(chat_list, set_status, chat_id),
+            lambda: build_history_page(chat_list, set_status, chat_id),
         ),
         (
             "Обновления",
             ft.Icons.SYSTEM_UPDATE_OUTLINED,
             "Версия и обновления приложения",
-            build_updates_page(set_status),
+            lambda: build_updates_page(set_status),
         ),
         (
             "О программе",
             ft.Icons.INFO_OUTLINE,
             "Версия, описание и разработчик",
-            build_about_page(),
+            build_about_page,
         ),
     ]
 
@@ -88,14 +101,12 @@ def build_settings_dialog(
     page_host = ft.Column(spacing=0, expand=True)
 
     def select_page(index: int):
-        # Открывает выбранный раздел настроек.
-        page_host.controls = [sections[index][3]]
+        page_host.controls = [sections[index][3]()]
         page_title.value = sections[index][0]
         back_button.visible = True
         page.update()
 
     def show_home(_=None):
-        # Возвращает список разделов настроек.
         page_host.controls = [home_page]
         page_title.value = "Настройки"
         back_button.visible = False
@@ -112,7 +123,7 @@ def build_settings_dialog(
                     subtitle,
                     lambda _, selected=index: select_page(selected),
                 )
-                for index, (label, icon, subtitle, _page) in enumerate(sections)
+                for index, (label, icon, subtitle, _builder) in enumerate(sections)
             ],
         ],
     )
@@ -156,9 +167,7 @@ def build_settings_dialog(
             ft.Container(
                 padding=ft.Padding.symmetric(horizontal=12, vertical=8),
                 bgcolor="#eafffa",
-                content=ft.Row(
-                    controls=[page_host],
-                ),
+                content=ft.Row(controls=[page_host]),
             ),
         ],
     )
