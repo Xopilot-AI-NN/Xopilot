@@ -36,7 +36,7 @@ class LiveConversation:
         self.button = build_live_button(on_click=self.toggle)
         self.status_text = ft.Text(size=12, color="#123b43", expand=True)
         self.interrupt_button = ft.TextButton(
-            "Перебить", style=ft.ButtonStyle(color="#087f8c"), on_click=self.interrupt,
+            content="Перебить", style=ft.ButtonStyle(color="#087f8c"), on_click=self.interrupt,
         )
         self.end_button = ft.IconButton(
             icon=ft.Icons.CALL_END, icon_color="#d9364f",

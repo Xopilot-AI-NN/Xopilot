@@ -46,9 +46,9 @@ def build_file_tile(file: ft.FilePickerFile) -> ft.Container:
                 width=96,
                 height=94,
                 bgcolor="#dff8f3",
-                border=ft.border.Border.all(1, "#7DEED5"),
+                border=ft.Border.all(1, "#7DEED5"),
                 border_radius=16,
-                padding=ft.padding.Padding.all(5),
+                padding=ft.Padding.all(5),
                 content=ft.Column(
                         horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                         spacing=3,
@@ -101,7 +101,7 @@ def build_file_attachments(
                         controls=[
                                 tile_content,
                                 ft.Container(
-                                        alignment=ft.alignment.Alignment.TOP_RIGHT,
+                                        alignment=ft.Alignment.TOP_RIGHT,
                                         content=ft.IconButton(
                                                 icon=ft.Icons.CLOSE,
                                                 icon_size=13,

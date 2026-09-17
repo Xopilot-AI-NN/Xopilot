@@ -10,7 +10,7 @@ import flet as ft
 
 def section_title(text: str) -> ft.Container:
     return ft.Container(
-        padding=ft.padding.Padding.only(left=4, top=14, bottom=5),
+        padding=ft.Padding.only(left=4, top=14, bottom=5),
         content=ft.Text(text.upper(), size=11, color="#087f8c", weight=ft.FontWeight.BOLD),
     )
 
@@ -22,7 +22,7 @@ def setting_row(icon, title: str, subtitle: str, trailing=None, on_click=None) -
             height=36,
             border_radius=18,
             bgcolor="#dff8f3",
-            alignment=ft.alignment.Alignment.CENTER,
+            alignment=ft.Alignment.CENTER,
             content=ft.Icon(icon, size=19, color="#087f8c"),
         ),
         ft.Column(
@@ -38,7 +38,7 @@ def setting_row(icon, title: str, subtitle: str, trailing=None, on_click=None) -
         controls.append(trailing)
     return ft.Container(
         height=62,
-        padding=ft.padding.Padding.symmetric(horizontal=10, vertical=8),
+        padding=ft.Padding.symmetric(horizontal=10, vertical=8),
         border_radius=10,
         ink=on_click is not None,
         on_click=on_click,

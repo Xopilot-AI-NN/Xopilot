@@ -22,9 +22,9 @@ def build_menu_button(on_click=None, size: int = 40, icon_size: int = 20) -> ft.
         width=size,
         height=size,
         border_radius=size / 2,
-        border=ft.border.Border.all(2, "#ffffff"),
+        border=ft.Border.all(2, "#ffffff"),
         bgcolor="#ff6666ff",
-        alignment=ft.alignment.Alignment.CENTER,
+        alignment=ft.Alignment.CENTER,
         ink=True,
         animate=ft.Animation(duration=150, curve=ft.AnimationCurve.EASE_OUT),
         tooltip="Меню",
@@ -37,7 +37,7 @@ def build_menu_button(on_click=None, size: int = 40, icon_size: int = 20) -> ft.
     )
 
     def handle_hover(e: ft.Event[ft.Container]):
-        e.control.border = ft.border.Border.all(2, "#d9ffe6" if e.data else "#ffffff")
+        e.control.border = ft.Border.all(2, "#d9ffe6" if e.data else "#ffffff")
         e.control.update()
 
     button.on_hover = handle_hover

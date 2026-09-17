@@ -30,22 +30,30 @@ except ImportError:
 try:
     from ..services.chat_store import (
         get_or_create_active_chat_id,
+        switch_active_chat,
+        create_new_chat,
         load_chat_messages,
         save_ai_message,
         save_user_message,
         cleanup_legacy_messages,
         list_chat_items,
         update_message,
+        delete_message as store_delete_message,
+        delete_chat as store_delete_chat,
     )
 except ImportError:
     from services.chat_store import (
         get_or_create_active_chat_id,
+        switch_active_chat,
+        create_new_chat,
         load_chat_messages,
         save_ai_message,
         save_user_message,
         cleanup_legacy_messages,
         list_chat_items,
         update_message,
+        delete_message as store_delete_message,
+        delete_chat as store_delete_chat,
     )
 try:
     from ..services.llm import DEFAULT_FILENAME, generate_reply, is_model_loaded, list_local_models, load_model
@@ -71,7 +79,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
     # editing_message: (message_id или None для ещё не сохранённых в БД сообщений, text, files)
     editing_message = None
     is_sending = False  # защита от повторного Enter/клика, пока предыдущая отправка (вкл. инференс ИИ) ещё идёт
-    active_chat_id: int | None = None  # заполняется ниже при загрузке истории из БД
+    active_chat_id: int | None = None  # заполняется ниже при загрузке истории из БД и меняется при переключении/создании/удалении чата
     chat_context = []  # Текстовый контекст Live, включая сообщения текущей сессии без БД.
     chat: ft.Container
     attachment_strip = build_file_attachments(selected_files, lambda _: None)
@@ -172,6 +180,31 @@ def build_app_ui(page: ft.Page) -> ft.Control:
             editing_message = (message_id, text, files or [])
             prompt.value = text
             await prompt.focus()
+        elif action == "delete":
+            chat_list = cast(ft.ListView, chat.content)
+            for index, control in enumerate(chat_list.controls):
+                matches = (
+                    getattr(control, "data", None) == message_id
+                    if message_id is not None
+                    else getattr(control, "data", None) == text
+                )
+                if matches:
+                    del chat_list.controls[index]
+                    break
+            for index, item in enumerate(chat_context):
+                if (message_id is not None and item.get("id") == message_id) or (
+                    message_id is None and item["content"] == text
+                ):
+                    del chat_context[index]
+                    break
+            if editing_message is not None and editing_message[0] == message_id:
+                editing_message = None
+            if message_id is not None:
+                try:
+                    store_delete_message(message_id)
+                except Exception:
+                    pass  # БД недоступна — сообщение всё равно скрыто из UI на эту сессию
+            chat_list.update()
         prompt.update()
 
     async def on_send(e):
@@ -288,29 +321,8 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         finally:
             is_sending = False
 
-    # Удаляем известные старые заглушки один раз. Новая база начинает с пустого чата.
-    try:
-        cleanup_legacy_messages()
-    except Exception as exc:
-        page.show_dialog(ft.SnackBar(ft.Text(f"Не удалось очистить старые тестовые сообщения: {exc}")))
-    try:
-        active_chat_id = get_or_create_active_chat_id()
-        stored_messages = load_chat_messages(active_chat_id)  # [advanced_xopilot.PyMessage, ...]
-    except Exception:
-        stored_messages = []
-
-    chat_context.extend(
-        {"role": msg.role, "content": msg.content, "id": msg.id} for msg in stored_messages
-    )
-
-    # Ленивая подгрузка истории: виджетами строим только последние MESSAGE_PAGE_SIZE сообщений,
-    # остальные догружаются порциями при прокрутке вверх (см. on_chat_scroll). ListView с
-    # build_controls_on_demand и так строит только видимые элементы, но сам список controls
-    # держать полным незачем.
     MESSAGE_PAGE_SIZE = 30
-    stored_messages.reverse()  # реверс один раз здесь, чтобы ниже не слайсить с конца
-    older_messages = stored_messages[MESSAGE_PAGE_SIZE:]
-    stored_messages = stored_messages[:MESSAGE_PAGE_SIZE]
+    older_messages: list = []  # остаток истории текущего чата, догружается порциями при скролле вверх (см. on_chat_scroll)
     _loading_older = False  # защита от повторной догрузки, пока Flutter не перемерил список
 
     def _rebuild_files(attachments):
@@ -319,19 +331,54 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         files = [file_from_path(path) for _name, path in attachments]
         return [f for f in files if f is not None] or None
 
-    chat_messages = [
-        build_user_message(
-            msg.content,
-            files=_rebuild_files(msg.attachments),
-            on_action=handle_message_action,
-            quote=msg.quote,
-            reply_to=msg.reply_to,
-            message_id=msg.id,
-        )
-        if msg.role == "user"
-        else build_ai_message(msg.content, on_action=handle_message_action, message_id=msg.id)
-        for msg in stored_messages
-    ]
+    def _build_message_control(msg):
+        """Один advanced_xopilot.PyMessage -> готовый control для ListView (используется и при первоначальной
+        загрузке чата, и при догрузке старых сообщений, и при переключении между чатами)."""
+        if msg.role == "user":
+            return build_user_message(
+                msg.content,
+                files=_rebuild_files(msg.attachments),
+                on_action=handle_message_action,
+                quote=msg.quote,
+                reply_to=msg.reply_to,
+                message_id=msg.id,
+            )
+        return build_ai_message(msg.content, on_action=handle_message_action, message_id=msg.id)
+
+    def _prepare_chat_view(chat_id: int):
+        """Загружает историю указанного чата, готовит контекст/пагинацию и возвращает
+        список control'ов первой страницы (используется и при старте, и при переключении чата).
+        """
+        nonlocal active_chat_id, older_messages
+        try:
+            stored = load_chat_messages(chat_id)  # [advanced_xopilot.PyMessage, ...]
+        except Exception:
+            stored = []
+        active_chat_id = chat_id
+        chat_context.clear()
+        chat_context.extend({"role": msg.role, "content": msg.content, "id": msg.id} for msg in stored)
+        # Реверс-список: ленивая подгрузка истории строит только последние MESSAGE_PAGE_SIZE сообщений,
+        # остальные догружаются порциями при прокрутке вверх (см. on_chat_scroll).
+        stored.reverse()  # реверс один раз здесь, чтобы ниже не слайсить с конца
+        older_messages = stored[MESSAGE_PAGE_SIZE:]
+        page_messages = stored[:MESSAGE_PAGE_SIZE]
+        return [_build_message_control(msg) for msg in page_messages]
+
+    # Удаляем известные старые заглушки один раз. Новая база начинает с пустого чата.
+    try:
+        cleanup_legacy_messages()
+    except Exception as exc:
+        page.show_dialog(ft.SnackBar(ft.Text(f"Не удалось очистить старые тестовые сообщения: {exc}")))
+    try:
+        initial_chat_id = get_or_create_active_chat_id()
+    except Exception:
+        initial_chat_id = None
+
+    # Ленивая подгрузка истории: виджетами строим только последние MESSAGE_PAGE_SIZE сообщения,
+    # остальные догружаются порциями при прокрутке вверх (см. on_chat_scroll). ListView с
+    # build_controls_on_demand и так строит только видимые элементы, но самий список controls
+    # держать полным незачем.
+    chat_messages = _prepare_chat_view(initial_chat_id) if initial_chat_id is not None else []
 
     async def on_chat_scroll(e: ft.OnScrollEvent):
         """Догрузка старых сообщений при прокрутке вверх.
@@ -353,19 +400,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         _loading_older = True
         batch, older_messages = older_messages[:MESSAGE_PAGE_SIZE], older_messages[MESSAGE_PAGE_SIZE:]
         chat_list = cast(ft.ListView, chat.content)
-        chat_list.controls.extend(
-            build_user_message(
-                msg.content,
-                files=_rebuild_files(msg.attachments),
-                on_action=handle_message_action,
-                quote=msg.quote,
-                reply_to=msg.reply_to,
-                message_id=msg.id,
-            )
-            if msg.role == "user"
-            else build_ai_message(msg.content, on_action=handle_message_action, message_id=msg.id)
-            for msg in batch
-        )
+        chat_list.controls.extend(_build_message_control(msg) for msg in batch)
         chat_list.update()
         # пока Dart-сторона не перемерила выросший max_scroll_extent, события скролла
         # ещё рапортуют "почти наверху" -- короткая защита от повторной догрузки
@@ -395,18 +430,64 @@ def build_app_ui(page: ft.Page) -> ft.Control:
             build_settings_dialog(page, cast(ft.ListView, chat.content), start_section=0, chat_id=active_chat_id)
         )
 
+    def switch_chat(chat_id: int):
+        """Переключает активный чат: перестраивает список сообщений, сбрасывает черновик редактирования."""
+        nonlocal editing_message
+        editing_message = None
+        chat_list = cast(ft.ListView, chat.content)
+        chat_list.controls[:] = _prepare_chat_view(chat_id)
+        chat_list.update()
+        switch_active_chat(chat_id)
+
+    def start_new_chat(_=None):
+        """Создаёт новый пустой чат и сразу переключается на него (кнопка «Новый чат» в меню/диалоге чатов)."""
+        try:
+            new_id = create_new_chat()
+        except Exception as exc:
+            page.show_dialog(ft.SnackBar(ft.Text(f"Не удалось создать чат: {exc}")))
+            return
+        switch_chat(new_id)
+
+    def delete_chat_by_id(chat_id: int):
+        """Удаляет чат. Если он был активным — переключается на самый новый из оставшихся,
+        а если чатов больше не осталось — создаётся новый.
+        """
+        try:
+            store_delete_chat(chat_id)
+        except Exception as exc:
+            page.show_dialog(ft.SnackBar(ft.Text(f"Не удалось удалить чат: {exc}")))
+            return
+        if chat_id == active_chat_id:
+            try:
+                remaining = list_chat_items()
+            except Exception:
+                remaining = []
+            if remaining:
+                switch_chat(remaining[0][0])
+            else:
+                start_new_chat()
+
     def open_chats(_):
         try:
             chat_items[:] = list_chat_items()
         except Exception:
             chat_items.clear()
-        page.show_dialog(build_chats_dialog(page, chat_items=chat_items))
+        page.show_dialog(
+            build_chats_dialog(
+                page,
+                chat_items=chat_items,
+                on_select_chat=switch_chat,
+                on_create_chat=start_new_chat,
+                on_delete_chat=delete_chat_by_id,
+            )
+        )
 
     def open_workspaces(_):
         page.show_dialog(build_workspaces_dialog(page, workspace_items))
 
     menu = build_menu(
         on_menu_click=handle_menu_toggle,
+        on_new_chat_click=start_new_chat,
         on_settings_click=open_settings,
         on_chats_click=open_chats,
         on_workspaces_click=open_workspaces,
@@ -415,6 +496,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
     menu_overlay, toggle_menu = build_menu_overlay(
         menu,
         page,
+        on_new_chat_click=start_new_chat,
         on_settings_click=open_settings,
         on_chats_click=open_chats,
         on_workspaces_click=open_workspaces,

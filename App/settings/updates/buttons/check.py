@@ -7,4 +7,4 @@ import flet as ft
 
 
 def build_check_button(on_click) -> ft.FilledButton:
-    return ft.FilledButton("Проверить", on_click=on_click)
+    return ft.FilledButton(content="Проверить", on_click=on_click)

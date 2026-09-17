@@ -24,13 +24,13 @@ def build_background_layout(
     menu_overlay: ft.Control | None = None
 ) -> ft.Container:
     bg = build_background()
-    bg.padding = ft.padding.Padding.all(10)
+    bg.padding = ft.Padding.all(10)
     linux_layout = platform.system() == "Linux"
     input_side_margin = 100 if linux_layout else 0
     input_bottom_margin = 8 if linux_layout else 0
 
     input_area = ft.Container(
-        padding=ft.padding.Padding.only(
+        padding=ft.Padding.only(
             left=input_side_margin,
             right=input_side_margin,
         ),
@@ -43,7 +43,7 @@ def build_background_layout(
         controls=[
             chat,
             ft.Container(
-                margin=ft.margin.Margin.only(bottom=input_bottom_margin),
+                margin=ft.Margin.only(bottom=input_bottom_margin),
                 content=input_area,
             ),
         ],
@@ -53,7 +53,7 @@ def build_background_layout(
         expand=True,
         bgcolor="#d9ffe6",
         border_radius=8,
-        border=ft.border.Border.all(2, "#00c753"),
+        border=ft.Border.all(2, "#00c753"),
         content=main_column,
     )
 

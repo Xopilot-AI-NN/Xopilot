@@ -4,7 +4,7 @@ version = "2.0.0"
 description = "Xopilot AI+ NN+ desktop assistant"
 requires-python = ">=3.10"
 dependencies = [
-	"flet==0.86.5",
+	"flet==1.0.0",
 	"screeninfo==0.8.1",
 	"litert-lm-api>=0.17.0",
 	"sounddevice==0.5.6",
