@@ -7,30 +7,46 @@
 import flet as ft
 
 
+ABOUT_WIDTH = 520
+TEXT_WIDTH = 455
+
+
 def build_about_row() -> ft.Container:
+    """Верхний hero-блок страницы «О программе» с иконкой приложения."""
     return ft.Container(
-        height=62,
-        padding=ft.Padding.symmetric(horizontal=10, vertical=8),
-        border_radius=10,
-        content=ft.Row(
-            spacing=11,
-            vertical_alignment=ft.CrossAxisAlignment.CENTER,
-            alignment=ft.MainAxisAlignment.CENTER,
+        width=ABOUT_WIDTH,
+        padding=ft.Padding.only(top=8, bottom=12),
+        content=ft.Column(
+            spacing=7,
+            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
             controls=[
                 ft.Container(
-                    width=36,
-                    height=36,
-                    border_radius=18,
-                    bgcolor="#dff8f3",
+                    width=92,
+                    height=92,
+                    border_radius=24,
+                    bgcolor="#ffffff",
+                    border=ft.Border.all(1, "#b9eee4"),
+                    padding=ft.Padding.all(8),
                     alignment=ft.Alignment.CENTER,
-                    content=ft.Icon(ft.Icons.INFO_OUTLINE, size=19, color="#087f8c"),
+                    content=ft.Image(
+                        src="Icons/Xopilot-icon-apk.png",
+                        width=74,
+                        height=74,
+                        fit=ft.BoxFit.CONTAIN,
+                    ),
                 ),
-                ft.Column(
-                    spacing=2,
-                    controls=[
-                        ft.Text("Xopilot-NN+ AI+ 2.0", size=13, color="#123b43", text_align=ft.TextAlign.CENTER),
-                        ft.Text("Чаты, материалы и AI · DenBroLiik", size=11, color="#47747a", text_align=ft.TextAlign.CENTER),
-                    ],
+                ft.Text(
+                    "Xopilot-NN+ AI+ 2.0",
+                    size=18,
+                    weight=ft.FontWeight.BOLD,
+                    color="#123b43",
+                    text_align=ft.TextAlign.CENTER,
+                ),
+                ft.Text(
+                    "Чаты, материалы и AI · DenBroLiik",
+                    size=11,
+                    color="#47747a",
+                    text_align=ft.TextAlign.CENTER,
                 ),
             ],
         ),
@@ -42,19 +58,20 @@ def _info_chip(text: str) -> ft.Container:
         bgcolor="#dff8f3",
         border_radius=10,
         padding=ft.Padding.symmetric(horizontal=10, vertical=7),
-        content=ft.Text(text, size=11, color="#087f8c"),
+        content=ft.Text(text, size=11, color="#087f8c", text_align=ft.TextAlign.CENTER),
     )
 
 
 def build_about_info() -> ft.Column:
     return ft.Column(
-        width=455,
+        width=ABOUT_WIDTH,
         spacing=10,
+        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
         controls=[
             ft.Text(
                 "Автономный рабочий интерфейс для чатов, материалов "
                 "и локальной модели ИИ.",
-                width=430,
+                width=TEXT_WIDTH,
                 size=13,
                 color="#123b43",
                 max_lines=2,
@@ -63,16 +80,19 @@ def build_about_info() -> ft.Column:
             ft.Text(
                 "Локальная модель и зашифрованная история помогают "
                 "работать без обязательной зависимости от облака.",
-                width=430,
+                width=TEXT_WIDTH,
                 size=11,
                 color="#47747a",
                 max_lines=2,
                 text_align=ft.TextAlign.CENTER,
             ),
-            ft.Divider(height=1, color="#b9eee4"),
+            ft.Container(width=TEXT_WIDTH, content=ft.Divider(height=1, color="#b9eee4")),
             ft.Row(
+                width=TEXT_WIDTH,
                 spacing=8,
+                run_spacing=8,
                 wrap=True,
+                alignment=ft.MainAxisAlignment.CENTER,
                 controls=[
                     _info_chip("Версия 2.0.0"),
                     _info_chip("Python · Mojo · Rust"),
@@ -91,9 +111,16 @@ def build_about_info() -> ft.Column:
                     ),
                 ],
             ),
-            ft.Text("Windows · Linux · Flet", size=11, color="#47747a", text_align=ft.TextAlign.CENTER),
+            ft.Text(
+                "Windows · Linux · Flet",
+                width=TEXT_WIDTH,
+                size=11,
+                color="#47747a",
+                text_align=ft.TextAlign.CENTER,
+            ),
             ft.Text(
                 "Релиз: 1 февраля 2026 г. · Разработчик: DenBroLiik",
+                width=TEXT_WIDTH,
                 size=11,
                 color="#47747a",
                 text_align=ft.TextAlign.CENTER,

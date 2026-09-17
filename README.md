@@ -8,7 +8,7 @@
 - Языки: Русский
 
 ### Скриншоты
-<img src="./images/previev/main.png" alt="main" width="60" height="110"> <img src="./images/previev/settings.png" alt="settings" width="60" height="110">
+<img src="./previews/main.png" alt="main" width="60" height="110"> <img src="./previews/main2.png" alt="main2" width="60" height="110"> <img src="./previews/settings.png" alt="settings" width="60" height="110"> <img src="./previews/account.png" alt="account" width="60" height="110"> <img src="./previews/about.png" alt="about" width="60" height="110">
 
 ## Системные требования
 
