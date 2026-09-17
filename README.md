@@ -8,7 +8,8 @@
 - Языки: Русский
 
 ### Скриншоты
-<img src="./previews/main.png" alt="main" width="60" height="110"> <img src="./previews/main2.png" alt="main2" width="60" height="110"> <img src="./previews/settings.png" alt="settings" width="60" height="110"> <img src="./previews/account.png" alt="account" width="60" height="110"> <img src="./previews/about.png" alt="about" width="60" height="110">
+<img src="./previews/main.png" alt="main" width="240" height="155"> <img src="./previews/main2.png" alt="main2" width="240" height="155"> <img src="./previews/settings.png" alt="settings" width="240" height="155"><br>
+<img src="./previews/account.png" alt="account" width="240" height="155"> <img src="./previews/about.png" alt="about" width="240" height="155">
 
 ## Системные требования
 
