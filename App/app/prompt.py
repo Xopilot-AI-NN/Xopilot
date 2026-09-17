@@ -23,13 +23,15 @@ def build_prompt(on_submit=None) -> ft.TextField:
         shift_enter=True,
         min_lines=1,
         max_lines=3,
-        border_radius=10,
-        bgcolor=ft.Colors.TRANSPARENT,
+        # Flet 1.x: borderless filled field. The visible outline belongs to
+        # build_prompt_container(), not to TextField itself.
+        filled=True,
+        bgcolor="#d9ffe6",
+        focused_bgcolor="#d9ffe6",
+        border=ft.NoInputBorder(),
         color=ft.Colors.BLACK,
         cursor_color=ft.Colors.BLACK,
-        border_color=ft.Colors.TRANSPARENT,
-        focused_border_color=ft.Colors.TRANSPARENT,
-        content_padding=ft.padding.Padding.symmetric(horizontal=4, vertical=8),
+        content_padding=ft.Padding.symmetric(horizontal=4, vertical=8),
         expand=True,
     )
 
@@ -59,9 +61,9 @@ def build_prompt_container(
 
     return ft.Container(
         border_radius=10,
-        border=ft.border.Border.all(2, "#00c753"),
+        border=ft.Border.all(2, "#00c753"),
         bgcolor="#d9ffe6",
-        padding=ft.padding.Padding.symmetric(horizontal=8, vertical=4),
+        padding=ft.Padding.symmetric(horizontal=8, vertical=4),
         content=ft.Column(
             spacing=4,
             controls=[

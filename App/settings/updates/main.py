@@ -33,6 +33,6 @@ def build_updates_page(on_status) -> ft.Column:
                 "Проверить актуальность версии приложения",
                 build_check_button(check),
             ),
-            ft.Container(padding=ft.padding.Padding.only(left=47), content=status),
+            ft.Container(padding=ft.Padding.only(left=47), content=status),
         ],
     )

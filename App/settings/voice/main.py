@@ -28,7 +28,7 @@ def build_voice_page(page, on_status):
             spacing=10,
             controls=[
                 ft.Container(
-                    padding=ft.padding.Padding.symmetric(horizontal=14, vertical=10),
+                    padding=ft.Padding.symmetric(horizontal=14, vertical=10),
                     border_radius=12,
                     bgcolor="#dff8f3",
                     content=ft.Column(
@@ -41,7 +41,7 @@ def build_voice_page(page, on_status):
                                 label_style=ft.TextStyle(size=15, color="#123b43", weight=ft.FontWeight.W_600),
                             ),
                             ft.Container(
-                                padding=ft.padding.Padding.only(left=48, bottom=4),
+                                padding=ft.Padding.only(left=48, bottom=4),
                                 content=ft.Text(profile.description, size=12, color="#47747a"),
                             ),
                         ],

@@ -46,9 +46,9 @@ def build_user_message(
         content.append(
             ft.Container(
                 bgcolor="#effffc",
-                border=ft.border.Border.all(1, "#087f8c"),
+                border=ft.Border.all(1, "#087f8c"),
                 border_radius=12,
-                padding=ft.padding.Padding.only(left=8, top=6, right=8, bottom=6),
+                padding=ft.Padding.only(left=8, top=6, right=8, bottom=6),
                 content=ft.Column(
                     spacing=2,
                     controls=[
@@ -62,9 +62,9 @@ def build_user_message(
         content.append(
             ft.Container(
                 bgcolor="#effffc",
-                border=ft.border.Border.all(1, "#20b486"),
+                border=ft.Border.all(1, "#20b486"),
                 border_radius=12,
-                padding=ft.padding.Padding.only(left=8, top=6, right=8, bottom=6),
+                padding=ft.Padding.only(left=8, top=6, right=8, bottom=6),
                 content=ft.Column(
                     spacing=2,
                     controls=[
@@ -93,7 +93,7 @@ def build_user_message(
     actions.animate_opacity = 180
 
     bubble = ft.Container(
-        padding=ft.padding.Padding.symmetric(horizontal=12, vertical=9),
+        padding=ft.Padding.symmetric(horizontal=12, vertical=9),
         border_radius=20,
         bgcolor="#e6ffffff",
         blur=2,
@@ -108,14 +108,14 @@ def build_user_message(
         alignment=ft.MainAxisAlignment.END,
         controls=[
             ft.Container(
-                margin=ft.margin.Margin.only(top=2),
+                margin=ft.Margin.only(top=2),
                 content=actions,
             )
         ],
     )
     message = ft.Container(
-        alignment=ft.alignment.Alignment.CENTER_RIGHT,
-        padding=ft.padding.Padding.only(left=40),
+        alignment=ft.Alignment.CENTER_RIGHT,
+        padding=ft.Padding.only(left=40),
         content=ft.Column(
             horizontal_alignment=ft.CrossAxisAlignment.END,
             spacing=0,
@@ -161,7 +161,7 @@ def build_ai_message(text: str, on_action=None, message_id: int | None = None) -
         ],
     )
     bubble = ft.Container(
-        padding=ft.padding.Padding.symmetric(horizontal=12, vertical=9),
+        padding=ft.Padding.symmetric(horizontal=12, vertical=9),
         border_radius=20,
         bgcolor="#e6ffffff",
         blur=2,
@@ -179,14 +179,14 @@ def build_ai_message(text: str, on_action=None, message_id: int | None = None) -
         alignment=ft.MainAxisAlignment.START,
         controls=[
             ft.Container(
-                margin=ft.margin.Margin.only(top=2),
+                margin=ft.Margin.only(top=2),
                 content=actions,
             )
         ],
     )
     message = ft.Container(
-        alignment=ft.alignment.Alignment.CENTER_LEFT,
-        padding=ft.padding.Padding.only(right=40),
+        alignment=ft.Alignment.CENTER_LEFT,
+        padding=ft.Padding.only(right=40),
         content=ft.Column(spacing=0, controls=[bubble, footer]),
     )
     message.data = message_id if message_id is not None else text

@@ -10,7 +10,7 @@ import flet as ft
 def build_about_row() -> ft.Container:
     return ft.Container(
         height=62,
-        padding=ft.padding.Padding.symmetric(horizontal=10, vertical=8),
+        padding=ft.Padding.symmetric(horizontal=10, vertical=8),
         border_radius=10,
         content=ft.Row(
             spacing=11,
@@ -22,7 +22,7 @@ def build_about_row() -> ft.Container:
                     height=36,
                     border_radius=18,
                     bgcolor="#dff8f3",
-                    alignment=ft.alignment.Alignment.CENTER,
+                    alignment=ft.Alignment.CENTER,
                     content=ft.Icon(ft.Icons.INFO_OUTLINE, size=19, color="#087f8c"),
                 ),
                 ft.Column(
@@ -41,7 +41,7 @@ def _info_chip(text: str) -> ft.Container:
     return ft.Container(
         bgcolor="#dff8f3",
         border_radius=10,
-        padding=ft.padding.Padding.symmetric(horizontal=10, vertical=7),
+        padding=ft.Padding.symmetric(horizontal=10, vertical=7),
         content=ft.Text(text, size=11, color="#087f8c"),
     )
 
@@ -79,7 +79,7 @@ def build_about_info() -> ft.Column:
                     ft.Container(
                         bgcolor="#dff8f3",
                         border_radius=10,
-                        padding=ft.padding.Padding.symmetric(horizontal=10, vertical=7),
+                        padding=ft.Padding.symmetric(horizontal=10, vertical=7),
                         content=ft.Row(
                             spacing=4,
                             tight=True,

@@ -18,9 +18,9 @@ def _workspace_card(name: str, description: str, icon, on_click) -> ft.Container
     return ft.Container(
         width=178,
         height=132,
-        padding=ft.padding.Padding.all(12),
+        padding=ft.Padding.all(12),
         bgcolor="#f3fffc",
-        border=ft.border.Border.all(1, "#b9eee4"),
+        border=ft.Border.all(1, "#b9eee4"),
         border_radius=14,
         ink=True,
         on_click=on_click,
@@ -32,7 +32,7 @@ def _workspace_card(name: str, description: str, icon, on_click) -> ft.Container
                     height=38,
                     border_radius=12,
                     bgcolor="#dff8f3",
-                    alignment=ft.alignment.Alignment.CENTER,
+                    alignment=ft.Alignment.CENTER,
                     content=ft.Icon(icon, size=20, color="#087f8c"),
                 ),
                 ft.Text(name, size=13, color="#123b43", no_wrap=True),
@@ -73,8 +73,8 @@ def build_workspaces_dialog(
             title=ft.Text("Новое пространство", color="#123b43"),
             content=name_field,
             actions=[
-                ft.TextButton("Отмена", on_click=lambda _: page.pop_dialog()),
-                ft.FilledButton("Создать", on_click=lambda _: save_workspace(dialog, name_field)),
+                ft.TextButton(content="Отмена", on_click=lambda _: page.pop_dialog()),
+                ft.FilledButton(content="Создать", on_click=lambda _: save_workspace(dialog, name_field)),
             ],
         )
         page.show_dialog(dialog)
@@ -123,7 +123,7 @@ def build_workspaces_dialog(
         content=content,
         bgcolor="#eafffa",
         shape=ft.RoundedRectangleBorder(radius=18),
-        inset_padding=ft.padding.Padding.symmetric(horizontal=32, vertical=22),
+        inset_padding=ft.Padding.symmetric(horizontal=32, vertical=22),
         barrier_color="#88000000",
-        actions=[ft.TextButton("Закрыть", on_click=lambda _: page.pop_dialog())],
+        actions=[ft.TextButton(content="Закрыть", on_click=lambda _: page.pop_dialog())],
     )

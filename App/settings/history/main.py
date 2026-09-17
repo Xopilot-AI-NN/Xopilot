@@ -40,7 +40,7 @@ def build_history_page(chat_list: ft.ListView | None, on_status, chat_id: int | 
                 ft.Icon(ft.Icons.CHEVRON_RIGHT, color="#47747a"),
                 clear,
             ),
-            ft.Container(padding=ft.padding.Padding.only(left=47, bottom=5), content=build_clear_button(clear)),
+            ft.Container(padding=ft.Padding.only(left=47, bottom=5), content=build_clear_button(clear)),
             build_history_summary(),
         ],
     )

@@ -22,8 +22,8 @@ def _stat_card(icon, label: str, value: str, color: str = "#087f8c") -> ft.Conta
         width=134,
         bgcolor="#dff8f3",
         border_radius=12,
-        padding=ft.padding.Padding.symmetric(horizontal=12, vertical=10),
-        border=ft.border.Border.all(1, "#b9eee4"),
+        padding=ft.Padding.symmetric(horizontal=12, vertical=10),
+        border=ft.Border.all(1, "#b9eee4"),
         content=ft.Column(
             spacing=4,
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
@@ -75,8 +75,8 @@ def build_account_page(page: ft.Page) -> ft.Column:
         width=134,
         bgcolor="#dff8f3",
         border_radius=12,
-        padding=ft.padding.Padding.symmetric(horizontal=12, vertical=10),
-        border=ft.border.Border.all(1, "#b9eee4"),
+        padding=ft.Padding.symmetric(horizontal=12, vertical=10),
+        border=ft.Border.all(1, "#b9eee4"),
         content=ft.Column(
             spacing=4,
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
@@ -106,21 +106,21 @@ def build_account_page(page: ft.Page) -> ft.Column:
         height=80,
         border_radius=40,
         gradient=ft.LinearGradient(
-            begin=ft.alignment.Alignment.TOP_LEFT,
-            end=ft.alignment.Alignment.BOTTOM_RIGHT,
+            begin=ft.Alignment.TOP_LEFT,
+            end=ft.Alignment.BOTTOM_RIGHT,
             colors=["#00D6A3", "#7657FF"],
         ),
-        alignment=ft.alignment.Alignment.CENTER,
-        border=ft.border.Border.all(3, "#ffffff"),
+        alignment=ft.Alignment.CENTER,
+        border=ft.Border.all(3, "#ffffff"),
         shadow=ft.BoxShadow(blur_radius=10, color="#20000000"),
         content=ft.Icon(ft.Icons.PERSON, color=ft.Colors.WHITE, size=40),
     )
 
     profile_card = ft.Container(
-        padding=ft.padding.Padding.symmetric(horizontal=10, vertical=12),
+        padding=ft.Padding.symmetric(horizontal=10, vertical=12),
         bgcolor="#ffffff",
         border_radius=12,
-        border=ft.border.Border.all(1, "#b9eee4"),
+        border=ft.Border.all(1, "#b9eee4"),
         content=ft.Row(
             spacing=16,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -158,7 +158,7 @@ def build_account_page(page: ft.Page) -> ft.Column:
             ft.Container(height=10),
             ft.Divider(height=1, color="#b9eee4"),
             ft.Container(
-                padding=ft.padding.Padding.all(4),
+                padding=ft.Padding.all(4),
                 content=ft.Text(
                     "Время считается с момента запуска Xopilot и хранится локально в базе данных. Счётчик обновляется автоматически.",
                     size=11,

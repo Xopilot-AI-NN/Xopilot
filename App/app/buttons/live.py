@@ -15,9 +15,9 @@ def build_live_button(on_click=None) -> ft.Container:
         width=38,
         height=38,
         border_radius=19,
-        border=ft.border.Border.all(2, "#ffffff"),
+        border=ft.Border.all(2, "#ffffff"),
         bgcolor="#ff6666ff",
-        alignment=ft.alignment.Alignment.CENTER,
+        alignment=ft.Alignment.CENTER,
         tooltip="Live — голосовой разговор",
         content=ft.Icon(
             ft.Icons.GRAPHIC_EQ,

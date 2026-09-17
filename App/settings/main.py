@@ -25,8 +25,8 @@ from .voice.main import build_voice_page
 
 
 BRAND_GRADIENT = ft.LinearGradient(
-    begin=ft.alignment.Alignment.TOP_LEFT,
-    end=ft.alignment.Alignment.BOTTOM_RIGHT,
+    begin=ft.Alignment.TOP_LEFT,
+    end=ft.Alignment.BOTTOM_RIGHT,
     colors=["#00c753", "#0083e8"],
 )
 
@@ -130,9 +130,9 @@ def build_settings_dialog(
         controls=[
             ft.Container(
                 height=76,
-                padding=ft.padding.Padding.symmetric(horizontal=18, vertical=13),
+                padding=ft.Padding.symmetric(horizontal=18, vertical=13),
                 gradient=BRAND_GRADIENT,
-                border_radius=ft.border_radius.BorderRadius.only(top_left=16, top_right=16),
+                border_radius=ft.BorderRadius.only(top_left=16, top_right=16),
                 content=ft.Row(
                     alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                     controls=[
@@ -154,7 +154,7 @@ def build_settings_dialog(
                 ),
             ),
             ft.Container(
-                padding=ft.padding.Padding.symmetric(horizontal=12, vertical=8),
+                padding=ft.Padding.symmetric(horizontal=12, vertical=8),
                 bgcolor="#eafffa",
                 content=ft.Row(
                     controls=[page_host],
@@ -168,6 +168,6 @@ def build_settings_dialog(
         content=content,
         bgcolor="#eafffa",
         shape=ft.RoundedRectangleBorder(radius=16),
-        inset_padding=ft.padding.Padding.symmetric(horizontal=32, vertical=20),
+        inset_padding=ft.Padding.symmetric(horizontal=32, vertical=20),
         barrier_color="#88000000",
     )

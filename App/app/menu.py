@@ -51,8 +51,8 @@ PANEL_ANIMATION_MS = 220
 LABEL_WIDTH = 170
 
 BRAND_GRADIENT = ft.LinearGradient(
-    begin=ft.alignment.Alignment.TOP_LEFT,
-    end=ft.alignment.Alignment.BOTTOM_RIGHT,
+    begin=ft.Alignment.TOP_LEFT,
+    end=ft.Alignment.BOTTOM_RIGHT,
     colors=["#00D6A3", "#08A9D9", "#7657FF"],
 )
 
@@ -82,7 +82,7 @@ def build_menu(
 
     for button in (menu_btn, new_chat_btn, workspaces_btn, chats_btn, settings_btn, account_btn):
         button.gradient = BRAND_GRADIENT
-        button.border = ft.border.Border.all(2, "#FFFFFF")
+        button.border = ft.Border.all(2, "#FFFFFF")
 
     def handle_resize(e):
         span = max(RAIL_WIDTH_MAX - RAIL_WIDTH_MIN, 1)
@@ -99,8 +99,8 @@ def build_menu(
         bgcolor="#e6ffffff",
         blur=14,
         border_radius=8,
-        border=ft.border.Border.all(2, "#d9ffe6"),
-        padding=ft.padding.Padding.symmetric(horizontal=0, vertical=8),
+        border=ft.Border.all(2, "#d9ffe6"),
+        padding=ft.Padding.symmetric(horizontal=0, vertical=8),
         opacity=1,
         animate_opacity=200,
         size_change_interval=80,
@@ -149,7 +149,7 @@ def _overlay_item(
 
     row = ft.Container(
         border_radius=10,
-        padding=ft.padding.Padding.symmetric(horizontal=8, vertical=8),
+        padding=ft.Padding.symmetric(horizontal=8, vertical=8),
         bgcolor=ft.Colors.TRANSPARENT,
         ink=True,
         animate=ft.Animation(duration=150, curve=ft.AnimationCurve.EASE_OUT),
@@ -163,7 +163,7 @@ def _overlay_item(
                     height=36,
                     border_radius=18,
                     gradient=BRAND_GRADIENT,
-                    alignment=ft.alignment.Alignment.CENTER,
+                    alignment=ft.Alignment.CENTER,
                     content=ft.Icon(icon, color=ft.Colors.WHITE, size=19),
                 ),
                 label_wrapper,
@@ -227,11 +227,11 @@ def build_menu_overlay(
         left=0,
         bgcolor="#EAFBFA",
         blur=14,
-        border_radius=ft.border_radius.BorderRadius.only(
+        border_radius=ft.BorderRadius.only(
             top_right=20, bottom_right=20
         ),
-        border=ft.border.Border.all(2, "#7DEED5"),
-        padding=ft.padding.Padding.symmetric(horizontal=10, vertical=12),
+        border=ft.Border.all(2, "#7DEED5"),
+        padding=ft.Padding.symmetric(horizontal=10, vertical=12),
         clip_behavior=ft.ClipBehavior.HARD_EDGE,
         animate=ft.Animation(
             duration=PANEL_ANIMATION_MS, curve=ft.AnimationCurve.EASE_OUT_BACK

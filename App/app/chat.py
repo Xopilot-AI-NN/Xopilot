@@ -22,7 +22,7 @@ def build_chat(controls: list, on_scroll=None) -> ft.Container:
             expand=True,
             reverse=True,
             spacing=12,
-            padding=ft.padding.Padding.only(left=4, top=4, right=4, bottom=12),
+            padding=ft.Padding.only(left=4, top=4, right=4, bottom=12),
             controls=controls,
             on_scroll=on_scroll,
         ),
