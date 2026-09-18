@@ -8,25 +8,17 @@
 // что БД пользователя, созданная на старой версии приложения, безопасно доедет до актуальной,
 // без потери данных.
 //
-// v3 (текущая): подготовка под будущую cloud-синхронизацию (сам синк ещё не реализован,
-// это только схема + внутренний учёт изменений, ничего не отправляет и ни откуда не читает):
-//   - `uuid` на chats/messages — стабильный межустройственный id (локальный `id` — это SQLite ROWID,
-//     он не глобален и совпадёт на разных устройствах; uuid генерируется прямо в SQLite через
-//     `lower(hex(randomblob(16)))`, чтобы не тянуть новую зависимость ради этого)
-//   - `updated_at` на chats/messages — чтобы будущий синк знал, что изменилось с момента последней синхронизации
-//   - таблица `tombstones` — без неё каскадное удаление стирает и сам факт удаления — другое
-//     устройство при синке просто воскресит удалённое сообщение/чат, ничего не зная про delete.
-//     Записы пишутся В delete_message/delete_chat/clear_chat_messages ДО фактического DELETE,
-//     потому что uuid удаляемой строки нужно успеть прочитать до того, как он исчезнет.
-// Ни один Python-вызывающий метод пока не читает эти колонки — UI и поведение не меняются.
-// Сам синк-движок (чтение tombstones/updated_at, пуш/пулл на сервер) — следующий шаг, когда будет выбран транспорт/сервер.
+// ВАЖНО: синхронизация между устройствами (local_changes/sync_records и т.п.) живёт отдельно от
+// этого файла и управляется своим кодом/миграциями — не дублировать здесь uuid/tombstones/updated_at
+// на chats/messages, пока это явно не согласовано с тем, что уже есть в реальной БД (user_version там выше,
+// чем CURRENT_SCHEMA_VERSION ниже, и migrate() корректно ничего не трогает в этом случае).
 
 use rusqlite::{params, Connection, OptionalExtension, Result};
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Текущая версия схемы. Повышать при каждом изменении схемы и добавлять ветку в migrate().
-const CURRENT_SCHEMA_VERSION: i32 = 3;
+const CURRENT_SCHEMA_VERSION: i32 = 2;
 
 /// Одно сообщение со всеми полями: цитата/ответ — произвольный текст (не ссылка на другое сообщение по id),
 /// вложения — список (имя_файла, путь_к_файлу).
@@ -146,51 +138,9 @@ impl Database {
             )?;
         }
 
-        if from_version < 3 {
-            // Подготовка под будущий cloud-синк: uuid (стабильный межустройственный id, потому
-            // что локальный `id` — это только SQLite ROWID этого устройства), updated_at
-            // (что изменилось с последней синхронизации) и таблица tombstones (чтобы удаление
-            // распространялось на другие устройства, а не терялось бесследно вместе со строкой).
-            // Самого синка (передача на/с сервера) здесь ещё нет — только схема и внутренний учёт.
-            self.conn.execute_batch(
-                "
-                ALTER TABLE chats ADD COLUMN uuid TEXT;
-                ALTER TABLE chats ADD COLUMN updated_at INTEGER;
-                ALTER TABLE messages ADD COLUMN uuid TEXT;
-                ALTER TABLE messages ADD COLUMN updated_at INTEGER;
+        // Следующий шаг схемы для этого файла — когда будет готов согласованный дизайн синхронизации:
+        // if from_version < 3 { ... }
 
-                CREATE TABLE IF NOT EXISTS tombstones (
-                    entity_type  TEXT NOT NULL,   -- 'chat' | 'message'
-                    entity_uuid  TEXT NOT NULL,
-                    deleted_at   INTEGER NOT NULL,
-                    PRIMARY KEY (entity_type, entity_uuid)
-                );
-
-                UPDATE chats SET uuid = lower(hex(randomblob(16))) WHERE uuid IS NULL;
-                UPDATE chats SET updated_at = created_at WHERE updated_at IS NULL;
-                UPDATE messages SET uuid = lower(hex(randomblob(16))) WHERE uuid IS NULL;
-                UPDATE messages SET updated_at = created_at WHERE updated_at IS NULL;
-
-                CREATE UNIQUE INDEX IF NOT EXISTS idx_chats_uuid ON chats(uuid);
-                CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_uuid ON messages(uuid);
-                ",
-            )?;
-        }
-
-        // Пример будущего шага:
-        // if from_version < 4 { ... }
-
-        Ok(())
-    }
-
-    /// Записывает факт удаления сущности для будущей синхронизации. Вызывать ДО фактического
-    /// DELETE из chats/messages — иначе uuid удаляемой строки уже негде будет взять.
-    fn record_tombstone(&self, entity_type: &str, entity_uuid: &str) -> Result<()> {
-        self.conn.execute(
-            "INSERT INTO tombstones (entity_type, entity_uuid, deleted_at) VALUES (?1, ?2, ?3)
-             ON CONFLICT(entity_type, entity_uuid) DO UPDATE SET deleted_at = excluded.deleted_at",
-            params![entity_type, entity_uuid, now()],
-        )?;
         Ok(())
     }
 
@@ -226,19 +176,17 @@ impl Database {
     // ---------- chats / messages ----------
 
     pub fn create_chat(&self, title: &str) -> Result<i64> {
-        let now = now();
         self.conn.execute(
-            "INSERT INTO chats (title, created_at, updated_at, uuid) VALUES (?1, ?2, ?2, lower(hex(randomblob(16))))",
-            params![title, now],
+            "INSERT INTO chats (title, created_at) VALUES (?1, ?2)",
+            params![title, now()],
         )?;
         Ok(self.conn.last_insert_rowid())
     }
 
     /// Простое сообщение без цитат/вложений — тонкая обёртка над add_message_full.
-    // pub fn add_message(&self, chat_id: i64, role: &str, content: &str) -> Result<i64> {
-    //     self.add_message_full(chat_id, role, content, None, None, &[])
-    // }
-    // пока что закоменчу
+    pub fn add_message(&self, chat_id: i64, role: &str, content: &str) -> Result<i64> {
+        self.add_message_full(chat_id, role, content, None, None, &[])
+    }
 
     /// Полная версия: с цитатой/ответом и списком вложений (имя, путь).
     pub fn add_message_full(
@@ -250,11 +198,9 @@ impl Database {
         reply_to: Option<&str>,
         attachments: &[(String, String)],
     ) -> Result<i64> {
-        let now = now();
         self.conn.execute(
-            "INSERT INTO messages (chat_id, role, content, quote, reply_to, created_at, updated_at, uuid)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, lower(hex(randomblob(16))))",
-            params![chat_id, role, content, quote, reply_to, now],
+            "INSERT INTO messages (chat_id, role, content, quote, reply_to, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![chat_id, role, content, quote, reply_to, now()],
         )?;
         let message_id = self.conn.last_insert_rowid();
 
@@ -269,12 +215,11 @@ impl Database {
     }
 
     /// Правит текст уже отправленного сообщения (редактирование в UI). Цитату/ответ/вложения пока не трогает (известное ограничение, будет расширено при необходимости).
-    /// Бумает updated_at — без этого будущий синк не увидит правку как изменение.
     /// Возвращает Ok(false), если сообщение с таким id не найдено.
     pub fn update_message(&self, message_id: i64, content: &str) -> Result<bool> {
         let affected = self.conn.execute(
-            "UPDATE messages SET content = ?1, updated_at = ?2 WHERE id = ?3",
-            params![content, now(), message_id],
+            "UPDATE messages SET content = ?1 WHERE id = ?2",
+            params![content, message_id],
         )?;
         Ok(affected > 0)
     }
@@ -319,58 +264,22 @@ impl Database {
     }
 
     /// Удаляет все сообщения чата (вложения удаляются каскадно через FK). Сам чат остаётся.
-    /// Пишет tombstone на каждое удаляемое сообщение — без этого будущий синк воскресил бы их с другого устройства.
     pub fn clear_chat_messages(&self, chat_id: i64) -> Result<()> {
-        let message_uuids = self.message_uuids_of_chat(chat_id)?;
         self.conn
             .execute("DELETE FROM messages WHERE chat_id = ?1", params![chat_id])?;
-        for uuid in message_uuids {
-            self.record_tombstone("message", &uuid)?;
-        }
         Ok(())
     }
 
-    /// Удаляет ровно одно сообщение; связанные вложения удаляются через FK. Пишет tombstone для будущего синка.
+    /// Удаляет ровно одно сообщение; связанные вложения удаляются через FK.
     pub fn delete_message(&self, message_id: i64) -> Result<bool> {
-        // uuid нужно успеть прочитать ДО удаления — после DELETE строки уже нет.
-        let uuid: Option<String> = self
-            .conn
-            .query_row("SELECT uuid FROM messages WHERE id = ?1", params![message_id], |row| row.get(0))
-            .optional()?;
-        let affected = self.conn.execute("DELETE FROM messages WHERE id = ?1", params![message_id])?;
-        if let Some(uuid) = uuid {
-            self.record_tombstone("message", &uuid)?;
-        }
-        Ok(affected > 0)
+        Ok(self.conn.execute("DELETE FROM messages WHERE id = ?1", params![message_id])? > 0)
     }
 
     /// Удаляет чат целиком: связанные сообщения и их вложения удаляются каскадно через FK
-    /// (ON DELETE CASCADE на messages.chat_id и message_attachments.message_id). Пишет tombstone и на сам чат,
-    /// и на каждое его сообщение — иначе другое устройство при синхронизации увидит только пропавший чат,
-    /// а его сообщения без tombstone могут остаться «висеть» на нём при push.
+    /// (ON DELETE CASCADE на messages.chat_id и message_attachments.message_id).
     /// Возвращает Ok(false), если чата с таким id не было.
     pub fn delete_chat(&self, chat_id: i64) -> Result<bool> {
-        let chat_uuid: Option<String> = self
-            .conn
-            .query_row("SELECT uuid FROM chats WHERE id = ?1", params![chat_id], |row| row.get(0))
-            .optional()?;
-        let message_uuids = self.message_uuids_of_chat(chat_id)?;
-
-        let affected = self.conn.execute("DELETE FROM chats WHERE id = ?1", params![chat_id])?;
-
-        if let Some(uuid) = chat_uuid {
-            self.record_tombstone("chat", &uuid)?;
-        }
-        for uuid in message_uuids {
-            self.record_tombstone("message", &uuid)?;
-        }
-        Ok(affected > 0)
-    }
-
-    fn message_uuids_of_chat(&self, chat_id: i64) -> Result<Vec<String>> {
-        let mut stmt = self.conn.prepare("SELECT uuid FROM messages WHERE chat_id = ?1")?;
-        let rows = stmt.query_map(params![chat_id], |row| row.get(0))?;
-        rows.collect()
+        Ok(self.conn.execute("DELETE FROM chats WHERE id = ?1", params![chat_id])? > 0)
     }
 
     /// Общее число сообщений во всех чатах — для статистики на странице «Аккаунт».
