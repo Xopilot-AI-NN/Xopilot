@@ -7,19 +7,18 @@
 """
 
 
-
 import flet as ft
 
 
-def build_live_button(on_click=None) -> ft.Container:
+def build_live_display_button(on_click=None, active: bool = False) -> ft.Container:
     return ft.Container(
         width=38,
         height=38,
         border_radius=19,
-        border=ft.Border.all(2, "#ffffff"),
+        border=ft.Border.all(3 if active else 2, "#00c753" if active else "#ffffff"),
         bgcolor="#ff6666ff",
         alignment=ft.Alignment.CENTER,
-        tooltip="Live — трансляция экрана",
+        tooltip="Live — экран включён" if active else "Live — трансляция экрана",
         content=ft.Icon(
             ft.Icons.SMART_DISPLAY,
             color=ft.Colors.WHITE,

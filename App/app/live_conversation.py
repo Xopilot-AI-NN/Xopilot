@@ -2,6 +2,9 @@
 Файл: App/app/live_conversation.py
 Разработчик: DenBroLiik
 Описание: Голосовой режим: слушать реплику, распознать, ответить и озвучить.
+    Дополнительно — две кнопки-тумблера (камера/экран): когда один из них включён, перед
+    каждым ответом захватывается один кадр и передаётся модели вместе с голосовым вопросом —
+    так модель «видит», что происходит в момент реплики.
     UI управляет состояниями и отменой; устройства и модель находятся в services.
 """
 
@@ -12,6 +15,8 @@ from concurrent.futures import CancelledError
 import flet as ft
 
 from .buttons.live import build_live_button
+from .buttons.live_camera import build_live_camera_button
+from .buttons.live_display import build_live_display_button
 try:
     from ..services.live_audio import check_live_audio, record_utterance
     from ..services.speech_output import SpeechOutput
@@ -19,6 +24,7 @@ try:
         SpeechNotRecognizedError, generate_live_reply, prepare_voice_model, transcribe_audio,
     )
     from ..services.model_settings import get_selected_live_model, model_display_name
+    from ..services.live_vision import capture_camera_frame, capture_screen_frame
 except ImportError:
     from services.live_audio import check_live_audio, record_utterance
     from services.speech_output import SpeechOutput
@@ -26,6 +32,7 @@ except ImportError:
         SpeechNotRecognizedError, generate_live_reply, prepare_voice_model, transcribe_audio,
     )
     from services.model_settings import get_selected_live_model, model_display_name
+    from services.live_vision import capture_camera_frame, capture_screen_frame
 
 
 class LiveConversation:
@@ -36,6 +43,10 @@ class LiveConversation:
         self.on_user_message = on_user_message
         self.on_ai_message = on_ai_message
         self.button = build_live_button(on_click=self.toggle)
+        self.camera_on = False
+        self.screen_on = False
+        self.camera_button = build_live_camera_button(on_click=self.toggle_camera)
+        self.screen_button = build_live_display_button(on_click=self.toggle_screen)
         self.status_text = ft.Text(size=12, color="#123b43", expand=True)
         self.interrupt_button = ft.TextButton(
             content="Перебить", style=ft.ButtonStyle(color="#087f8c"), on_click=self.interrupt,
@@ -45,7 +56,10 @@ class LiveConversation:
             tooltip="Завершить Live", on_click=self.stop,
         )
         self.status = ft.Row(
-            controls=[self.status_text, self.interrupt_button, self.end_button],
+            controls=[
+                self.camera_button, self.screen_button,
+                self.status_text, self.interrupt_button, self.end_button,
+            ],
             visible=False,
         )
         self._state = "idle"
@@ -92,6 +106,30 @@ class LiveConversation:
             except Exception:
                 pass
 
+    def _refresh_vision_buttons(self):
+        self.camera_button.border = ft.Border.all(3 if self.camera_on else 2, "#00c753" if self.camera_on else "#ffffff")
+        self.camera_button.tooltip = "Live — камера включена" if self.camera_on else "Live — показать с камеры"
+        self.screen_button.border = ft.Border.all(3 if self.screen_on else 2, "#00c753" if self.screen_on else "#ffffff")
+        self.screen_button.tooltip = "Live — экран включён" if self.screen_on else "Live — трансляция экрана"
+        if not self._closed:
+            self.camera_button.update()
+            self.screen_button.update()
+
+    async def toggle_camera(self, _=None):
+        """Вкл/выкл передачи кадра с камеры модели перед каждым ответом. Камера и экран взаимоисключают друг друга —
+        на одну реплику передаётся только одно изображение."""
+        self.camera_on = not self.camera_on
+        if self.camera_on:
+            self.screen_on = False
+        self._refresh_vision_buttons()
+
+    async def toggle_screen(self, _=None):
+        """Вкл/выкл передачи снимка экрана модели перед каждым ответом."""
+        self.screen_on = not self.screen_on
+        if self.screen_on:
+            self.camera_on = False
+        self._refresh_vision_buttons()
+
     async def toggle(self, _=None):
         if self._closed:
             return
@@ -121,6 +159,25 @@ class LiveConversation:
         if self._turn_cancelled.is_set() or self._stopped.is_set():
             raise CancelledError()
 
+    async def _capture_vision_frame(self):
+        """Кадр с камеры/экрана для текущей реплики, если включена соответствующая кнопка.
+        Ошибка захвата (камера занята другим приложением и т.п.) не прерывает разговор —
+        просто отвечаем без картинки на этот раз.
+        """
+        if self.camera_on:
+            self._set_state("thinking", "Live · Смотрю в камеру…")
+            try:
+                return await asyncio.to_thread(capture_camera_frame)
+            except Exception:
+                return None
+        if self.screen_on:
+            self._set_state("thinking", "Live · Смотрю на экран…")
+            try:
+                return await asyncio.to_thread(capture_screen_frame)
+            except Exception:
+                return None
+        return None
+
     async def _run(self):
         error = ""
         try:
@@ -144,10 +201,12 @@ class LiveConversation:
                     self._check_turn()
                     await self.on_user_message(transcript)
                     self._check_turn()
+                    image_bytes = await self._capture_vision_frame()
+                    self._check_turn()
                     history = self.get_history()
                     self._set_state("thinking", "Live · Готовлю ответ…")
                     reply = await asyncio.to_thread(
-                        generate_live_reply, history, self._turn_cancelled, model_filename
+                        generate_live_reply, history, self._turn_cancelled, model_filename, image_bytes,
                     )
                     self._check_turn()
                     await self.on_ai_message(reply)
