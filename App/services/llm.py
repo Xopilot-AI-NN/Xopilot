@@ -6,6 +6,12 @@
 huggingface.co/litert-community/gemma-4-E2B-it-litert-lm
 Блокирующие вызовы — через asyncio.to_thread. Диктовка использует отдельный
 conversation с аудиовходом и не добавляет запись в историю чата.
+
+Мультимодальность: вложения текущего сообщения (фото/текст/PDF/DOCX/видео) разбираются
+через services.attachments и передаётся модели как Contents (текст + Content.ImageBytes) — только
+для ТЕКУЩЕГО сообщения, вложения из истории повторно не отправляются (и ради бюджета визуальных
+токенов модели, и из-за простоты). Живой Live через generate_live_reply может приложить один кадр
+с камеры/экрана (services.live_vision) к последней реплике пользователя.
 """
 
 import atexit
@@ -38,15 +44,17 @@ _conversation = None
 _loaded_filename = None
 _engine_lock = threading.RLock()
 _supports_audio = False
+_supports_vision = False
 
 
 def unload_model():
     """Освободить conversation до engine: нативные сессии зависят от движка."""
-    global _engine, _conversation, _loaded_filename, _supports_audio
+    global _engine, _conversation, _loaded_filename, _supports_audio, _supports_vision
     with _engine_lock:
         conversation, engine = _conversation, _engine
         _conversation = _engine = _loaded_filename = None
         _supports_audio = False
+        _supports_vision = False
         try:
             if conversation is not None:
                 conversation.close()
@@ -95,7 +103,7 @@ def load_model(filename=DEFAULT_FILENAME, system_prompt=DEFAULT_SYSTEM_PROMPT):
 
 
 def _load_model(filename, system_prompt):
-    global _engine, _conversation, _loaded_filename, _supports_audio
+    global _engine, _conversation, _loaded_filename, _supports_audio, _supports_vision
 
     if litert_lm is None:
         raise RuntimeError("litert_lm не установлен — выполните pip install litert-lm-api") from _IMPORT_ERROR
@@ -106,12 +114,16 @@ def _load_model(filename, system_prompt):
 
     with litert_lm.Capabilities(path) as capabilities:
         supports_audio = capabilities.input_modalities.audio
+        supports_vision = capabilities.input_modalities.vision
 
     unload_model()
 
+    # vision_backend аналогичен audio_backend выше: без него send_message с картинкой падает с "Vision
+    # executor should not be null, please TryLoadingVisionExecutor() first" даже если модель vision поддерживает.
     engine = litert_lm.Engine(
         path,
         backend=litert_lm.Backend.CPU(),
+        vision_backend=litert_lm.Backend.CPU() if supports_vision else None,
         audio_backend=litert_lm.Backend.CPU() if supports_audio else None,
     )
     try:
@@ -122,6 +134,7 @@ def _load_model(filename, system_prompt):
     _engine = engine
     _loaded_filename = filename
     _supports_audio = supports_audio
+    _supports_vision = supports_vision
     return filename
 
 
@@ -133,14 +146,44 @@ def _extract_text(result):
         return str(result)
 
 
-def generate_reply(prompt_text, history=None):
+def _build_message(prompt_text, attachments):
+    """Собирает аргумент для send_message: простая строка, если вложений нет или из них
+    ничего не вышло; иначе — Contents с текстом (промпт + извлечённый текст вложений) и
+    картинками (фото, кадры видео). attachments: [(имя, путь), ...] или None.
+    """
+    if not attachments:
+        return prompt_text
+    try:
+        from .attachments import build_attachment_message_parts
+    except ImportError:
+        from services.attachments import build_attachment_message_parts  # type: ignore
+    text_notes, images = build_attachment_message_parts(attachments)
+    full_text = prompt_text
+    if text_notes:
+        joined = "\n\n".join(text_notes)
+        full_text = f"{full_text}\n\n{joined}" if full_text.strip() else joined
+    if not images or litert_lm is None:
+        return full_text
+    if not _supports_vision:
+        # Загруженная модель не умеет vision — отправка картинок всё равно упадёт с ошибкой движка,
+        # лучше честно предупредить модель в тексте, чем падать с непонятной ошибкой FFI.
+        return full_text + "\n\n[Вложены изображения/видео, но текущая модель не поддерживает vision — они не были проанализированы]"
+    parts = [full_text] + [litert_lm.Content.ImageBytes(img) for img in images]
+    return litert_lm.Contents.of(*parts)
+
+
+def generate_reply(prompt_text, history=None, attachments=None):
+    """attachments: [(имя, путь), ...] вложений ТЕКУЩЕГО сообщения (фото/текст/PDF/DOCX/видео).
+    Старые вложения из history повторно не отправляются — только текст истории (см. _recent_messages).
+    """
     with _engine_lock:
         if litert_lm is None:
             raise RuntimeError("litert_lm не установлен — выполните pip install litert-lm-api") from _IMPORT_ERROR
         if _conversation is None:
             raise RuntimeError("Модель не загружена — вызовите load_model()")
+        message = _build_message(prompt_text, attachments)
         if history is None:
-            result = _conversation.send_message(prompt_text)
+            result = _conversation.send_message(message)
         else:
             engine = _engine
             if engine is None:
@@ -149,7 +192,7 @@ def generate_reply(prompt_text, history=None):
                 system_message=DEFAULT_SYSTEM_PROMPT,
                 messages=_recent_messages(history),
             ) as conversation:
-                result = conversation.send_message(prompt_text)
+                result = conversation.send_message(message)
     text = _extract_text(result).strip()
     if not text:
         raise RuntimeError("Модель не вернула ответ. Повторите запрос.")
@@ -270,8 +313,16 @@ def _conversation_kwargs(lm, *, temperature=None, thinking_disabled=False):
     return kwargs
 
 
-def generate_live_reply(history, cancelled: threading.Event, model_filename: str | None = None) -> str:
-    """Ответ на последний голосовой вопрос с недавней текстовой историей чата."""
+def generate_live_reply(
+    history,
+    cancelled: threading.Event,
+    model_filename: str | None = None,
+    image_bytes: bytes | None = None,
+) -> str:
+    """Ответ на последний голосовой вопрос с недавней текстовой историей чата.
+    image_bytes — необязательный кадр с камеры/экрана (кнопки Live-камера/Live-экран),
+    добавляется к последней реплике пользователя как изображение.
+    """
     with _engine_lock:
         prepare_voice_model(cancelled, model_filename)
         lm = litert_lm
@@ -284,10 +335,15 @@ def generate_live_reply(history, cancelled: threading.Event, model_filename: str
         if not messages or messages[-1]["role"] != "user":
             raise RuntimeError("Нет голосового вопроса для ответа.")
         current = messages.pop()
+        if image_bytes:
+            content = list(current.get("content") or [])
+            content.append(lm.Content.ImageBytes(image_bytes).to_json())
+            current = {**current, "content": content}
         with engine.create_conversation(
             system_message=(
                 "Ты — Zephyr, голосовой собеседник в Xopilot. Веди естественный разговор, "
-                "учитывай предыдущие реплики. Отвечай на языке собеседника с подробностью, "
+                "учитывай предыдущие реплики. Если к реплике приложено изображение с камеры или экрана — "
+                "опирайся на то, что на нём видно. Отвечай на языке собеседника с подробностью, "
                 "необходимой для его запроса. Ответ будет прочитан вслух: пиши обычным текстом "
                 "без Markdown. Если вопрос непонятен, попроси уточнить."
             ),

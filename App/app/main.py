@@ -235,6 +235,9 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         if not text.strip() and not selected_files:
             return
         sent_files = selected_files.copy()
+        sent_attachments = [
+            (f.name, f.path) for f in sent_files if getattr(f, "path", None)
+        ]
         prompt.value = ""
         selected_files.clear()
         prompt.update()
@@ -277,10 +280,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                 new_id = None
                 if active_chat_id is not None:
                     try:
-                        attachments = [
-                            (f.name, f.path) for f in sent_files if getattr(f, "path", None)
-                        ]
-                        new_id = save_user_message(active_chat_id, text, attachments=attachments)
+                        new_id = save_user_message(active_chat_id, text, attachments=sent_attachments)
                     except Exception:
                         pass  # БД недоступна (напр., advanced_xopilot ещё не собран) — сообщение останется только в UI на эту сессию
                     # Цитата/ответ для новых сообщений пока не персистятся отдельно от текста промпта
@@ -320,6 +320,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                 reply_text = await asyncio.to_thread(
                     generate_reply, text,
                     history=[dict(item) for item in chat_context[:-1]],
+                    attachments=sent_attachments,
                 )
             except Exception as exc:
                 page.show_dialog(ft.SnackBar(ft.Text(f"Не удалось получить ответ ИИ: {exc}")))
