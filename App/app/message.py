@@ -132,31 +132,60 @@ def build_user_message(
     return message
 
 
+_AI_AUTHOR = "Zephyr"
+_TEXT_COLOR = ft.Colors.BLACK
+
+
+def _md_style(size: int = 14, **kwargs) -> ft.TextStyle:
+    params = {"font_family": "Google Sans", "color": _TEXT_COLOR, **kwargs}
+    return ft.TextStyle(size=size, **params)
+
+
+def _ai_markdown_style() -> ft.MarkdownStyleSheet:
+    """Единый шрифт/цвет для всех элементов Markdown в пузыре ИИ."""
+    bold = ft.FontWeight.BOLD
+    return ft.MarkdownStyleSheet(
+        p_text_style=_md_style(),
+        strong_text_style=_md_style(weight=bold),
+        em_text_style=_md_style(italic=True),
+        del_text_style=_md_style(decoration=ft.TextDecoration.LINE_THROUGH),
+        a_text_style=_md_style(color="#087f8c", decoration=ft.TextDecoration.UNDERLINE),
+        h1_text_style=_md_style(22, weight=bold),
+        h2_text_style=_md_style(19, weight=bold),
+        h3_text_style=_md_style(16, weight=bold),
+        h4_text_style=_md_style(15, weight=bold),
+        h5_text_style=_md_style(14, weight=bold),
+        h6_text_style=_md_style(14, weight=bold),
+        blockquote_text_style=_md_style(color="#47747a"),
+        list_bullet_text_style=_md_style(),
+        table_head_text_style=_md_style(weight=bold),
+        table_body_text_style=_md_style(),
+        code_text_style=_md_style(13, bgcolor="#dff8f3", font_family="monospace"),
+    )
+
+
+def _ai_markdown_value(text: str) -> str:
+    """Имя автора в начале ответа («Zephyr: ...») как раньше выделяем жирным."""
+    if text.startswith(_AI_AUTHOR):
+        return f"**{_AI_AUTHOR}**{text[len(_AI_AUTHOR):]}"
+    return text
+
+
 def build_ai_message(text: str, on_action=None, message_id: int | None = None) -> ft.Container:
-    """Пузырь сообщения ИИ (слева). Раньше это была внутренняя функция внутри messages(),
-    вынесена на верхний уровень — чтобы рендерить отдельные сообщения из БД, а не только
-    весь демо-список целиком."""
-    author = "Zephyr"
-    spans = None
-
-    if text.startswith(author):
-        spans = [
-            ft.TextSpan(
-                author,
-                style=ft.TextStyle(weight=ft.FontWeight.BOLD),
-            ),
-            ft.TextSpan(text[len(author):]),
-        ]
-
+    """Пузырь сообщения ИИ (слева). Ответ рендерится как Markdown (GitHub Flavored):
+    **жирный**, *курсив*, заголовки, списки, таблицы, код с подсветкой, ссылки.
+    Кнопка «Копировать» и цитаты работают с исходным Markdown-текстом."""
     bubble_content = ft.Column(
         spacing=4,
         controls=[
-            ft.Text(
-                "" if spans else text,
-                font_family="Google Sans",
-                spans=spans,
-                color=ft.Colors.BLACK,
-                size=14,
+            ft.Markdown(
+                value=_ai_markdown_value(text),
+                selectable=True,
+                extension_set=ft.MarkdownExtensionSet.GITHUB_FLAVORED,
+                code_theme=ft.MarkdownCodeTheme.GITHUB,
+                md_style_sheet=_ai_markdown_style(),
+                soft_line_break=True,
+                auto_follow_links=True,
             ),
         ],
     )

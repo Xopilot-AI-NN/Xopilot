@@ -68,6 +68,7 @@ class LiveConversation:
         self._task = None
         self._closed = False
         self._live_model = None
+        self._vision_note = ""  # причина, по которой кадр камеры/экрана не получено
         self.refresh_model_label()
 
     @property
@@ -161,22 +162,22 @@ class LiveConversation:
 
     async def _capture_vision_frame(self):
         """Кадр с камеры/экрана для текущей реплики, если включена соответствующая кнопка.
-        Ошибка захвата (камера занята другим приложением и т.п.) не прерывает разговор —
-        просто отвечаем без картинки на этот раз.
+        Ошибка захвата (камера занята, Wayland без скриншотера и т.п.) не прерывает
+        разговор — отвечаем без картинки, но причина показывается в статусе (_vision_note).
         """
+        self._vision_note = ""
         if self.camera_on:
-            self._set_state("thinking", "Live · Смотрю в камеру…")
-            try:
-                return await asyncio.to_thread(capture_camera_frame)
-            except Exception:
-                return None
-        if self.screen_on:
-            self._set_state("thinking", "Live · Смотрю на экран…")
-            try:
-                return await asyncio.to_thread(capture_screen_frame)
-            except Exception:
-                return None
-        return None
+            source, message, capture = "Камера", "Live · Смотрю в камеру…", capture_camera_frame
+        elif self.screen_on:
+            source, message, capture = "Экран", "Live · Смотрю на экран…", capture_screen_frame
+        else:
+            return None
+        self._set_state("thinking", message)
+        try:
+            return await asyncio.to_thread(capture)
+        except Exception as exc:
+            self._vision_note = f"{source}: {exc} Ответ был без картинки."
+            return None
 
     async def _run(self):
         error = ""
@@ -215,7 +216,7 @@ class LiveConversation:
                     await asyncio.to_thread(speaker.speak, reply, self._turn_cancelled)
                     # Дать динамикам закончить звучание перед повторным открытием микрофона.
                     await asyncio.sleep(0.25)
-                    hint = "Говорите — отвечу после паузы."
+                    hint = self._vision_note or "Говорите — отвечу после паузы."
                 except SpeechNotRecognizedError:
                     hint = "Не разобрал речь. Повторите фразу."
                 except (CancelledError, asyncio.CancelledError):
