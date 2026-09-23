@@ -5,7 +5,7 @@ sounddevice==0.5.6
 webrtcvad-wheels==2.0.14
 piper-tts==1.8.0
 pillow==12.3.0
-opencv-python-headless==4.14.0.94
+opencv-python-headless==5.0.0.93
 pypdf==6.19.0
 python-docx==1.2.0
 mss==10.2.0
