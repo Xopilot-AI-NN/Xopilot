@@ -61,12 +61,15 @@ class MicrophoneRecorder:
             self._error = None
             self._finished.clear()
             try:
-                device = sd.query_devices(kind="input")
+                from .devices import selected_audio_device
+                selected = selected_audio_device("input")
+                device = sd.query_devices(selected, kind="input")
                 if device["max_input_channels"] < 1:
                     raise RuntimeError("Не найден микрофон.")
                 # Используем частоту устройства: не все драйверы принимают 16 кГц.
                 self._sample_rate = int(device["default_samplerate"])
                 self._stream = sd.RawInputStream(
+                    device=selected,
                     samplerate=self._sample_rate,
                     channels=1,
                     dtype="int16",

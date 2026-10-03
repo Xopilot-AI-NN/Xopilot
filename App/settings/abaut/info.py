@@ -5,10 +5,14 @@
 """
 
 import flet as ft
+try:
+    from ...app.palette import color
+except ImportError:
+    from app.palette import color
 
 
-ABOUT_WIDTH = 520
-TEXT_WIDTH = 455
+ABOUT_WIDTH = None
+TEXT_WIDTH = None
 
 
 def build_about_row() -> ft.Container:
@@ -24,8 +28,8 @@ def build_about_row() -> ft.Container:
                     width=92,
                     height=92,
                     border_radius=24,
-                    bgcolor="#ffffff",
-                    border=ft.Border.all(1, "#b9eee4"),
+                    bgcolor=color("#ffffff"),
+                    border=ft.Border.all(1, color("#b9eee4")),
                     padding=ft.Padding.all(8),
                     alignment=ft.Alignment.CENTER,
                     content=ft.Image(
@@ -39,13 +43,13 @@ def build_about_row() -> ft.Container:
                     "Xopilot-NN+ AI+ 2.0",
                     size=18,
                     weight=ft.FontWeight.BOLD,
-                    color="#123b43",
+                    color=color("#123b43"),
                     text_align=ft.TextAlign.CENTER,
                 ),
                 ft.Text(
                     "Чаты, материалы и AI · DenBroLiik",
                     size=11,
-                    color="#47747a",
+                    color=color("#47747a"),
                     text_align=ft.TextAlign.CENTER,
                 ),
             ],
@@ -55,10 +59,10 @@ def build_about_row() -> ft.Container:
 
 def _info_chip(text: str) -> ft.Container:
     return ft.Container(
-        bgcolor="#dff8f3",
+        bgcolor=color("#dff8f3"),
         border_radius=10,
         padding=ft.Padding.symmetric(horizontal=10, vertical=7),
-        content=ft.Text(text, size=11, color="#087f8c", text_align=ft.TextAlign.CENTER),
+        content=ft.Text(text, size=11, color=color("#087f8c"), text_align=ft.TextAlign.CENTER),
     )
 
 
@@ -73,8 +77,8 @@ def build_about_info() -> ft.Column:
                 "и локальной модели ИИ.",
                 width=TEXT_WIDTH,
                 size=13,
-                color="#123b43",
-                max_lines=2,
+                color=color("#123b43"),
+
                 text_align=ft.TextAlign.CENTER,
             ),
             ft.Text(
@@ -82,11 +86,11 @@ def build_about_info() -> ft.Column:
                 "работать без обязательной зависимости от облака.",
                 width=TEXT_WIDTH,
                 size=11,
-                color="#47747a",
-                max_lines=2,
+                color=color("#47747a"),
+
                 text_align=ft.TextAlign.CENTER,
             ),
-            ft.Container(width=TEXT_WIDTH, content=ft.Divider(height=1, color="#b9eee4")),
+            ft.Container(width=TEXT_WIDTH, content=ft.Divider(height=1, color=color("#b9eee4"))),
             ft.Row(
                 width=TEXT_WIDTH,
                 spacing=8,
@@ -95,17 +99,17 @@ def build_about_info() -> ft.Column:
                 alignment=ft.MainAxisAlignment.CENTER,
                 controls=[
                     _info_chip("Версия 2.0.0"),
-                    _info_chip("Python · Mojo · Rust"),
+                    _info_chip("Python · Rust · LiteRT-LM"),
                     ft.Container(
-                        bgcolor="#dff8f3",
+                        bgcolor=color("#dff8f3"),
                         border_radius=10,
                         padding=ft.Padding.symmetric(horizontal=10, vertical=7),
                         content=ft.Row(
                             spacing=4,
                             tight=True,
                             controls=[
-                                ft.Icon(ft.Icons.LOCK_OUTLINE, size=13, color="#087f8c"),
-                                ft.Text("БД зашифрована локально", size=11, color="#087f8c"),
+                                ft.Icon(ft.Icons.LOCK_OUTLINE, size=13, color=color("#087f8c")),
+                                ft.Text("БД зашифрована локально", size=11, color=color("#087f8c")),
                             ],
                         ),
                     ),
@@ -115,14 +119,14 @@ def build_about_info() -> ft.Column:
                 "Windows · Linux · Flet",
                 width=TEXT_WIDTH,
                 size=11,
-                color="#47747a",
+                color=color("#47747a"),
                 text_align=ft.TextAlign.CENTER,
             ),
             ft.Text(
-                "Релиз: 1 февраля 2026 г. · Разработчик: DenBroLiik",
+                "Разработчик: DenBroLiik",
                 width=TEXT_WIDTH,
                 size=11,
-                color="#47747a",
+                color=color("#47747a"),
                 text_align=ft.TextAlign.CENTER,
             ),
         ],

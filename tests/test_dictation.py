@@ -253,7 +253,10 @@ class TranscriptionTests(unittest.TestCase):
         self.engine = Mock()
         self.engine.create_conversation.return_value = self.context
         self.chat_conversation = Mock()
-        self.patch = patch.multiple(llm, _engine=self.engine, _conversation=self.chat_conversation, _supports_audio=True)
+        self.patch = patch.multiple(llm, _engine=self.engine, _conversation=self.chat_conversation, _supports_audio=True, _loaded_filename=llm.DEFAULT_FILENAME, _loaded_preference="auto", list_local_models=Mock(return_value=[llm.DEFAULT_FILENAME]))
+        preference = patch.object(llm.acceleration, "preference", return_value="auto")
+        preference.start()
+        self.addCleanup(preference.stop)
         self.patch.start()
         self.addCleanup(self.patch.stop)
 

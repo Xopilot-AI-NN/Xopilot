@@ -13,6 +13,15 @@
 import asyncio
 import ctypes
 import platform
+import os
+import sys
+from pathlib import Path
+# Lazy imports during inference must not create __pycache__ inside watched App/.
+sys.dont_write_bytecode = True
+from services.runtime import configure_runtime
+
+configure_runtime()
+
 import flet as ft
 from screeninfo import get_monitors
 from ctypes import wintypes
@@ -97,16 +106,20 @@ class Init():
                 except Exception:
                     pass
 
-        w, h = self.auto_screen_size()
-
         page.title = "Xopilot 2.0.0"
-        page.window.icon = "./Icons/Xopilot-icon-apk.png"
-        page.window.width = w
-        page.window.height = h
-        page.window.min_width = w
-        page.window.max_width = w
-        page.window.visible = False
-        page.update()
+        page.theme = ft.Theme(color_scheme_seed="#087f8c", font_family="Google Sans")
+        page.theme_mode = ft.ThemeMode.LIGHT
+        if not page.web:
+            try:
+                w, h = self.auto_screen_size()
+            except Exception:
+                w, h = 1000, 720
+            page.window.icon = "Icons/Xopilot-icon-apk.png"
+            page.window.width = w
+            page.window.height = h
+            page.window.min_width = 380
+            page.window.min_height = 560
+            page.window.visible = False
 
         page.fonts = {"Google Sans": "./fonts/GoogleSans-Regular.ttf"}
 
@@ -114,6 +127,8 @@ class Init():
         page.update()
         page.run_task(persist_loop)
 
+        if page.web:
+            return
         if platform.system() == "Windows":
             await self.animate_position(page)
         else:
@@ -121,7 +136,9 @@ class Init():
             page.update()
 
     def __init__(self):
-        ft.run(self.main)
+        ft.run(self.main, assets_dir=str(Path(__file__).parent / "assets"),
+               no_cdn=os.environ.get("FLET_WEB_NO_CDN") == "1",
+               host="127.0.0.1")
 
 
 Init()

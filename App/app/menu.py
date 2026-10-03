@@ -34,6 +34,10 @@
 
 import asyncio
 import flet as ft
+try:
+    from .palette import color
+except ImportError:
+    from app.palette import color
 import platform
 
 from .buttons.account import build_account_button, resize_account_button
@@ -53,7 +57,7 @@ LABEL_WIDTH = 170
 BRAND_GRADIENT = ft.LinearGradient(
     begin=ft.Alignment.TOP_LEFT,
     end=ft.Alignment.BOTTOM_RIGHT,
-    colors=["#00D6A3", "#08A9D9", "#7657FF"],
+    colors=[color("#00D6A3"), color("#08A9D9"), color("#7657FF")],
 )
 
 
@@ -82,7 +86,7 @@ def build_menu(
 
     for button in (menu_btn, new_chat_btn, workspaces_btn, chats_btn, settings_btn, account_btn):
         button.gradient = BRAND_GRADIENT
-        button.border = ft.Border.all(2, "#FFFFFF")
+        button.border = ft.Border.all(2, ft.Colors.WHITE)
 
     def handle_resize(e):
         span = max(RAIL_WIDTH_MAX - RAIL_WIDTH_MIN, 1)
@@ -96,10 +100,10 @@ def build_menu(
 
     return ft.Container(
         width=RAIL_WIDTH_DEFAULT,
-        bgcolor="#e6ffffff",
+        bgcolor=color("#e6ffffff"),
         blur=14,
         border_radius=8,
-        border=ft.Border.all(2, "#d9ffe6"),
+        border=ft.Border.all(2, ft.Colors.WHITE),
         padding=ft.Padding.symmetric(horizontal=0, vertical=8),
         opacity=1,
         animate_opacity=200,
@@ -131,7 +135,7 @@ def _overlay_item(
     label_text = ft.Text(
         label,
         font_family="Google Sans",
-        color=ft.Colors.BLACK,
+        color=color("#000000"),
         size=14,
         no_wrap=True,
         opacity=0,
@@ -148,6 +152,7 @@ def _overlay_item(
     )
 
     row = ft.Container(
+        tooltip=label,
         border_radius=10,
         padding=ft.Padding.symmetric(horizontal=8, vertical=8),
         bgcolor=ft.Colors.TRANSPARENT,
@@ -172,7 +177,7 @@ def _overlay_item(
     )
 
     def handle_hover(e: ft.Event[ft.Container]):
-        e.control.bgcolor = "#1aff6666" if e.data else ft.Colors.TRANSPARENT
+        e.control.bgcolor = color("#1aff6666") if e.data else ft.Colors.TRANSPARENT
         e.control.update()
 
     row.on_hover = handle_hover
@@ -188,6 +193,9 @@ def build_menu_overlay(
     on_workspaces_click=None,
     on_chats_click=None,
     on_account_click=None,
+    get_chat_items=None,
+    on_select_chat=None,
+    get_active_chat_id=None,
 ):
     is_open = False
 
@@ -220,17 +228,63 @@ def build_menu_overlay(
     )
     texts = (menu_text, new_chat_text, workspaces_text, chats_text, settings_text, account_text)
 
+    chat_search = ft.TextField(label="Найти чат", prefix_icon=ft.Icons.SEARCH,
+                              text_size=12, dense=True)
+    recent_chats = ft.ListView(expand=True, spacing=6, build_controls_on_demand=True)
+    chat_feedback = ft.Text('', size=12, color=color('#47747a'))
+    chat_snapshot = []
+
+    async def select_recent(chat_id):
+        if is_open:
+            await toggle()
+        if on_select_chat:
+            on_select_chat(chat_id)
+
+    def render_recent(e=None):
+        query = (chat_search.value or '').strip().casefold()
+        active = get_active_chat_id() if get_active_chat_id else None
+        def row(item):
+            cid, title, subtitle, _ = item
+            async def click(_):
+                await select_recent(cid)
+            return ft.Container(padding=ft.Padding.symmetric(horizontal=10, vertical=10),
+                border_radius=14, bgcolor=color('#dff8f3') if cid == active else color('#f3fffc'),
+                border=ft.Border.all(1, color('#a8ddd7')) if cid == active else None,
+                ink=True, on_click=click, tooltip=title,
+                content=ft.Row(spacing=9, controls=[
+                    ft.Icon(ft.Icons.LOCK_OUTLINED if cid < 0 else ft.Icons.CHAT_BUBBLE_OUTLINE,
+                            size=17, color=color('#087f8c')),
+                    ft.Column(expand=True, spacing=3, controls=[
+                        ft.Text(title, size=12, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS,
+                                color=color('#123b43'), weight=ft.FontWeight.W_600 if cid == active else None),
+                        ft.Text(subtitle, size=10, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS,
+                                color=color('#47747a'))])]))
+        recent_chats.controls = [row(item) for item in chat_snapshot if not query or query in item[1].casefold()]
+        if not chat_feedback.value.startswith('Не удалось'):
+            chat_feedback.value = 'Чаты не найдены' if chat_snapshot else 'Здесь появятся ваши чаты'
+        chat_feedback.visible = not recent_chats.controls
+        from .palette import apply_palette
+        apply_palette(recent_chats)
+        if e:
+            page.update()
+
+    chat_search.on_change = render_recent
+    history_panel = ft.Column(expand=True, spacing=10, visible=False,
+        horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+        controls=[ft.Text('Ваши чаты', size=12, weight=ft.FontWeight.W_600, color=color('#087f8c')),
+                  chat_search, chat_feedback, recent_chats])
+
     panel = ft.Container(
         width=RAIL_WIDTH_DEFAULT,
         top=0,
         bottom=0,
         left=0,
-        bgcolor="#EAFBFA",
+        bgcolor=color("#EAFBFA"),
         blur=14,
         border_radius=ft.BorderRadius.only(
             top_right=20, bottom_right=20
         ),
-        border=ft.Border.all(2, "#7DEED5"),
+        border=ft.Border.all(2, color("#7DEED5")),
         padding=ft.Padding.symmetric(horizontal=10, vertical=12),
         clip_behavior=ft.ClipBehavior.HARD_EDGE,
         animate=ft.Animation(
@@ -239,7 +293,7 @@ def build_menu_overlay(
         shadow=ft.BoxShadow(
             blur_radius=24,
             spread_radius=2,
-            color="#4400A896",
+            color=color("#4400A896"),
         ),
         content=ft.Column(
             expand=True,
@@ -251,6 +305,7 @@ def build_menu_overlay(
                     horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
                     controls=[menu_row, new_chat_row, workspaces_row, chats_row],
                 ),
+                history_panel,
                 ft.Column(
                     spacing=8,
                     horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
@@ -260,22 +315,37 @@ def build_menu_overlay(
         ),
     )
 
+    def refresh_recent():
+        if not is_open:
+            return
+        try:
+            chat_snapshot[:] = get_chat_items() if get_chat_items else []
+            chat_feedback.value = ''
+        except Exception as exc:
+            chat_snapshot.clear()
+            chat_feedback.value = f'Не удалось прочитать чаты: {exc}'
+        render_recent()
+        page.update()
+
     async def toggle():
         nonlocal is_open
         is_open = not is_open
 
         if is_open:
+            refresh_recent()
             overlay_stack.visible = True
             rail.opacity = 0
             page.update()
             await asyncio.sleep(0.02)
-            panel.width = PANEL_WIDTH
+            panel.width = min(PANEL_WIDTH, max(220, (page.width or PANEL_WIDTH + 32) - 32))
             for wrapper in wrappers:
-                wrapper.width = LABEL_WIDTH
+                wrapper.width = min(LABEL_WIDTH, panel.width - 90)
             for text in texts:
                 text.opacity = 1          # <- теперь тип точно ft.Text
+            history_panel.visible = True
             page.update()
         else:
+            history_panel.visible = False
             panel.width = RAIL_WIDTH_DEFAULT
             for wrapper in wrappers:
                 wrapper.width = 0
@@ -335,7 +405,7 @@ def build_menu_overlay(
 
     scrim = ft.Container(
         expand=True,
-        bgcolor="#40000000",
+        bgcolor=color("#40000000"),
         blur=5,
         on_click=handle_scrim_click,
     )
@@ -346,4 +416,5 @@ def build_menu_overlay(
         controls=[scrim, panel],
     )
 
+    overlay_stack._xopilot_refresh_chats = refresh_recent
     return overlay_stack, toggle

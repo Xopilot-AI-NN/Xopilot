@@ -9,6 +9,10 @@ from __future__ import annotations
 import asyncio
 
 import flet as ft
+try:
+    from ...app.palette import color
+except ImportError:
+    from app.palette import color
 
 from ..common import section_title, setting_row
 from .buttons.language import build_language_select
@@ -39,25 +43,25 @@ except ImportError:
     from services.voice_settings import get_selected_voice, set_selected_voice
 
 
-_TEXT = "#123b43"
-_MUTED = "#47747a"
-_ERROR = "#b3261e"
-_MENU_BG = "#f5fffc"
-_MENU_HOVER = "#e3f7f2"
-_MENU_FOCUS = "#d7f1eb"
-_MENU_BORDER = "#b6e5df"
-_MENU_SHADOW = "#33000000"
+_TEXT = color("#123b43")
+_MUTED = color("#47747a")
+_ERROR = color("#b3261e")
+_MENU_BG = color("#f5fffc")
+_MENU_HOVER = color("#e3f7f2")
+_MENU_FOCUS = color("#d7f1eb")
+_MENU_BORDER = color("#b6e5df")
+_MENU_SHADOW = color("#33000000")
 
 
 def _border() -> dict[ft.ControlState, ft.InputBorder]:
     return {
         ft.ControlState.DEFAULT: ft.OutlineInputBorder(
             border_radius=12,
-            side=ft.BorderSide(color="#a8ddd7"),
+            side=ft.BorderSide(color=color("#a8ddd7")),
         ),
         ft.ControlState.FOCUSED: ft.OutlineInputBorder(
             border_radius=12,
-            side=ft.BorderSide(width=2, color="#087f8c"),
+            side=ft.BorderSide(width=2, color=color("#087f8c")),
         ),
     }
 
@@ -114,9 +118,9 @@ def _dropdown(label: str, value, options, icon, hint: str) -> ft.Dropdown:
         trailing_icon=ft.Icons.KEYBOARD_ARROW_DOWN_ROUNDED,
         selected_trailing_icon=ft.Icons.KEYBOARD_ARROW_UP_ROUNDED,
         filled=True,
-        fill_color="#f5fffc",
-        bgcolor="#f5fffc",
-        hover_color="#edfbf8",
+        fill_color=color("#f5fffc"),
+        bgcolor=color("#f5fffc"),
+        hover_color=color("#edfbf8"),
         color=_TEXT,
         text_size=13,
         content_padding=ft.Padding.symmetric(horizontal=12, vertical=8),
@@ -132,7 +136,7 @@ def _preference_card(icon, title: str, description: str, control, feedback: ft.T
     return ft.Container(
         padding=ft.Padding.symmetric(horizontal=14, vertical=12),
         border_radius=14,
-        bgcolor="#dff8f3",
+        bgcolor=color("#dff8f3"),
         content=ft.Column(
             spacing=8,
             controls=[
@@ -143,9 +147,9 @@ def _preference_card(icon, title: str, description: str, control, feedback: ft.T
                             width=36,
                             height=36,
                             border_radius=18,
-                            bgcolor="#c9f1e9",
+                            bgcolor=color("#c9f1e9"),
                             alignment=ft.Alignment.CENTER,
-                            content=ft.Icon(icon, size=19, color="#087f8c"),
+                            content=ft.Icon(icon, size=19, color=color("#087f8c")),
                         ),
                         ft.Column(
                             expand=True,
@@ -176,7 +180,15 @@ def build_personalizations_page(
         voice_id: profile for voice_id, profile in VOICES.items() if profile.installed
     }
 
-    chat_saved = get_selected_chat_model()
+    try:
+        from ...services import api_chat
+        from ...services.model_installer import DOWNLOADABLE_MODELS
+        from ...app.api_settings import open_api_settings
+    except ImportError:
+        from services import api_chat
+        from services.model_installer import DOWNLOADABLE_MODELS
+        from app.api_settings import open_api_settings
+    chat_saved = 'api' if api_chat.is_api_selected() else get_selected_chat_model()
     live_saved = get_selected_live_model()
     voice_saved = get_selected_voice()
     if voice_saved not in installed_voices:
@@ -201,10 +213,13 @@ def build_personalizations_page(
     chat_select = _dropdown(
         "Модель чата",
         chat_saved,
-        [_option(name, model_display_name(name), ft.Icons.SMART_TOY_OUTLINED) for name in models],
+        [ft.DropdownOption(key='zephyr', text='Zephyr Micro · в разработке', disabled=True),
+         *[_option(m.filename, m.name + (' · скачать в Моделях' if m.filename not in models else ''), ft.Icons.SMART_TOY_OUTLINED) for m in DOWNLOADABLE_MODELS.values()],
+         _option('api', 'API', ft.Icons.API)],
         ft.Icons.SMART_TOY_OUTLINED,
         "Сначала установите модель в разделе «Модели»",
     )
+    chat_select.disabled = False
     live_select = _dropdown(
         "Модель Live",
         live_saved,
@@ -229,6 +244,16 @@ def build_personalizations_page(
 
     async def change_chat(_):
         requested = chat_select.value
+        if requested == 'api':
+            def selected():
+                chat_select.value = 'api'
+                chat_feedback.value = 'API выбран · ' + api_chat.configuration().get('model', '')
+                if on_chat_model_changed:
+                    on_chat_model_changed('api')
+            open_api_settings(page, on_saved=selected)
+            chat_select.value = 'api' if api_chat.is_api_selected() else get_selected_chat_model()
+            page.update()
+            return
         if not requested:
             return
         chat_select.disabled = True
@@ -250,7 +275,7 @@ def build_personalizations_page(
             if on_chat_model_changed is not None:
                 on_chat_model_changed(requested)
         finally:
-            chat_select.disabled = not models
+            chat_select.disabled = False
             page.update()
 
     async def change_live(_):
@@ -306,23 +331,46 @@ def build_personalizations_page(
     live_select.on_select = change_live
     voice_select.on_select = change_voice
 
+    try:
+        from ...services import acceleration
+        from ...services.llm import execution_label, execution_info
+    except ImportError:
+        from services import acceleration
+        from services.llm import execution_label, execution_info
+    backend_feedback = ft.Text(execution_label() + " · " + execution_info()["reason"], size=11, color=_MUTED)
+    backend_select = _dropdown("Ускорение ИИ", acceleration.preference(),
+        [ft.DropdownOption(key=key, text=text) for key, text in acceleration.MODES.items()],
+        ft.Icons.MEMORY, "Выберите устройство")
+    def change_backend(_):
+        try:
+            acceleration.set_preference(backend_select.value)
+            backend_feedback.value = "Применится при следующем запросе. Звук и изображения обрабатываются на CPU."
+        except Exception as exc:
+            backend_select.value = acceleration.preference()
+            backend_feedback.value = str(exc)
+        page.update()
+    backend_select.on_select = change_backend
+
     return ft.Column(
         spacing=8,
         controls=[
             section_title("Внешний вид"),
             setting_row(
                 ft.Icons.DARK_MODE_OUTLINED,
-                "Тёмная тема",
-                "Переключить оформление приложения",
+                "Тема оформления",
+                "Семь палитр для чата и всех окон",
                 build_theme_switch(page, on_status),
             ),
             setting_row(
                 ft.Icons.LANGUAGE,
-                "Язык интерфейса",
-                "Выберите язык меню и сообщений",
+                "Язык ответов ИИ",
+                "Предпочтительный язык обычного чата и Live",
                 build_language_select(on_status),
             ),
             section_title("ИИ и Live"),
+            _preference_card(ft.Icons.MEMORY, "Устройство вычислений",
+                "Авто предпочитает видеокарту со свободной памятью; при ошибке использует CPU.",
+                backend_select, backend_feedback),
             _preference_card(
                 ft.Icons.SMART_TOY_OUTLINED,
                 "Модель чата",

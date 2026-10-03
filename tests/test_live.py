@@ -104,6 +104,7 @@ class LiveControllerTests(unittest.IsolatedAsyncioTestCase):
 
         self.live = LiveConversation(self.page, lambda: False, lambda: list(self.history), add_user, add_ai)
         patches = {
+            "get_selected_live_model": Mock(return_value=llm.DEFAULT_FILENAME),
             "check_live_audio": Mock(),
             "SpeechOutput": Mock(return_value=self.speaker),
             "prepare_voice_model": Mock(),
@@ -183,7 +184,7 @@ class LiveControllerTests(unittest.IsolatedAsyncioTestCase):
         self.mocks["record_utterance"].side_effect = None
         self.mocks["record_utterance"].return_value = b"audio"
 
-        def reply(*_):
+        def reply(*_, **_kwargs):
             entered.set()
             release.wait(3)
             return "Поздний ответ"
@@ -197,13 +198,76 @@ class LiveControllerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([item["role"] for item in self.history], ["user"])
         self.speaker.speak.assert_not_called()
 
-    async def test_missing_voice_does_not_open_microphone(self):
+    async def test_missing_voice_preserves_answer_and_keeps_call_open(self):
         self.mocks["SpeechOutput"].side_effect = RuntimeError("Нет голоса")
+        self.live.microphone_muted = True
+        self.live._typed_question = "Привет"
         await self.live.toggle()
-        await self.finish()
+        async def answered():
+            while not self.live.reply_text.value or self.live._state != "listening":
+                await asyncio.sleep(.005)
+        await asyncio.wait_for(answered(), 2)
         self.mocks["record_utterance"].assert_not_called()
+        self.assertEqual(self.history[-1]["content"], "Здравствуйте")
+        self.assertEqual(self.live.reply_text.value, "Здравствуйте")
         self.assertIn("Нет голоса", self.live.status_text.value)
+        self.assertTrue(self.live.busy)
+        await self.live.stop()
+        await self.finish()
         self.assertFalse(self.live.busy)
+
+    async def wait_answer(self):
+        async def answered():
+            while not self.live.reply_text.value or self.live._state != "listening":
+                await asyncio.sleep(.005)
+        await asyncio.wait_for(answered(), 2)
+
+    async def test_typed_question_starts_without_camera_or_microphone(self):
+        self.live.microphone_muted = True
+        self.live.voice_output_enabled = False
+        self.live.frame_question.value = "Как дела?"
+        await self.live.ask_frame()
+        await self.wait_answer()
+        self.assertEqual(self.history[0]["content"], "Как дела?")
+        self.assertEqual(self.history[1]["content"], "Здравствуйте")
+        self.mocks["record_utterance"].assert_not_called()
+        self.mocks["check_live_audio"].assert_not_called()
+        self.mocks["SpeechOutput"].assert_not_called()
+        await self.live.stop()
+        await self.finish()
+
+    async def test_live_attachments_are_saved_and_passed_to_model_once(self):
+        import flet as ft
+        saved = []
+        async def add_user(text, attachments=None):
+            saved.append((text, attachments))
+            self.history.append({"role": "user", "content": text})
+        self.live.on_user_message = add_user
+        self.live.files = [ft.FilePickerFile(name="brief.txt", path="/brief.txt", size=12, id=1)]
+        self.live.microphone_muted = True
+        self.live.voice_output_enabled = False
+        self.live.frame_question.value = "Что в файле?"
+        await self.live.ask_frame()
+        await self.wait_answer()
+        self.assertEqual(saved, [("Что в файле?", [("brief.txt", "/brief.txt")])])
+        self.assertEqual(self.mocks["generate_live_reply"].call_args.kwargs["attachments"], [("brief.txt", "/brief.txt")])
+        self.assertEqual(self.live.files, [])
+        self.live.frame_question.value = "Следующий вопрос"
+        self.live.reply_text.value = ""
+        await self.live.ask_frame()
+        await self.wait_answer()
+        self.assertEqual(self.mocks["generate_live_reply"].call_args.kwargs["attachments"], [])
+        await self.live.stop()
+        await self.finish()
+
+    async def test_second_queued_question_does_not_replace_first(self):
+        self.live._state = "preparing"
+        self.live._typed_question = "Первый"
+        self.live.frame_question.value = "Второй"
+        await self.live.ask_frame()
+        self.assertEqual(self.live._typed_question, "Первый")
+        self.assertEqual(self.live.frame_question.value, "Второй")
+        self.assertTrue(self.live.frame_question.error_text)
 
     async def test_repeated_clicks_cancel_start_without_second_session(self):
         await self.live.toggle()
@@ -253,7 +317,7 @@ class LiveModelTests(unittest.TestCase):
             {"role": "ai", "content": "Привет, Денис"},
             {"role": "user", "content": "Как меня зовут?"},
         ]
-        with patch.multiple(llm, _engine=engine, _conversation=chat, _supports_audio=True), patch.object(llm, "record_generation"):
+        with patch.multiple(llm, _engine=engine, _conversation=chat, _supports_audio=True, _loaded_filename=llm.DEFAULT_FILENAME, list_local_models=Mock(return_value=[llm.DEFAULT_FILENAME])), patch.object(llm, "record_generation"), patch.object(llm, "prepare_voice_model"):
             self.assertEqual(llm.generate_live_reply(history, threading.Event()), "Привет")
         messages = engine.create_conversation.call_args.kwargs["messages"]
         self.assertEqual([item["role"] for item in messages], ["user", "model"])

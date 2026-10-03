@@ -20,19 +20,7 @@ try:
 
     _IMPORT_ERROR = None
 except Exception as exc:
-    class _NoopVad:
-        """Fallback: когда VAD-пакет отсутствует, допустимо работать в тестовом окружении."""
-
-        def __init__(self, *args, **kwargs):
-            pass
-
-        def is_speech(self, frame, sample_rate):
-            return True
-
-    class _NoopVadModule:
-        Vad = _NoopVad
-
-    webrtcvad = _NoopVadModule()
+    webrtcvad = None
     _IMPORT_ERROR = exc
 
 
@@ -101,12 +89,14 @@ class SpeechSegmenter:
 def record_utterance(cancelled: threading.Event) -> bytes:
     """Блокирующее ожидание одной фразы. Отмена закрывает устройство за один цикл ожидания."""
     check_live_audio()
+    from .devices import selected_audio_device
+    device = selected_audio_device("input")
     if cancelled.is_set():
         raise CancelledError()
     sample_rate = None
     for rate in (16000, 48000, 32000, 8000):
         try:
-            sd.check_input_settings(channels=1, dtype="int16", samplerate=rate)
+            sd.check_input_settings(device=device, channels=1, dtype="int16", samplerate=rate)
             sample_rate = rate
             break
         except Exception:
@@ -133,6 +123,7 @@ def record_utterance(cancelled: threading.Event) -> bytes:
     stream = None
     try:
         stream = sd.RawInputStream(
+            device=device,
             samplerate=sample_rate,
             blocksize=sample_rate * FRAME_MS // 1000,
             channels=1,

@@ -21,7 +21,9 @@
   кнопки диктовки и Live разделены в `buttons/microphone.py` и `buttons/live.py`.
 - `services/` — Python-слой бизнес-логики: `db.py` (обёртка над Rust-модулем
   `advanced_xopilot`), `llm.py` (LiteRT-LM, локальная модель),
-  `chat_store.py`, `stats.py`. Любой вызов нативного модуля — в try/except,
+  `chat_store.py`, `stats.py`, `paths.py` (каталоги пользователя),
+  `updates.py` (проверка опубликованных стабильных релизов),
+  `workspaces.py` (сохраняемые коллекции чатов и выбранное пространство). Любой вызов нативного модуля — в try/except,
   чтобы UI открывался, даже если `advanced_xopilot` ещё не собран.
   `microphone.py` — захват звука через sounddevice/PortAudio в памяти;
   распознавание речи выполняется в отдельном conversation в `llm.py`.
@@ -44,12 +46,16 @@
   `models/` (`sentiment.onnx`). Это копия из корневых `Icons/`/`fonts/` —
   при обновлении иконок/шрифтов обновлять оба места (или завести скрипт
   синхронизации в `scripts/`).
-- `data/models/` — тяжёлые веса модели (`*.litertlm`, `*.xnnpack_cache`).
+- Новые модели/голоса устанавливаются в каталог пользователя:
+  `$XDG_DATA_HOME/Xopilot/models` (Linux, по умолчанию `~/.local/share`) или
+  `%APPDATA%/Xopilot/models` (Windows). `XOPILOT_MODELS_DIR` переопределяет каталог.
+  Старые модели в `App/data/models/` остаются доступными для чтения.
+- `data/models/` — прежний каталог: тяжёлые веса модели (`*.litertlm`, `*.xnnpack_cache`).
   В git не коммитятся (см. `.gitignore`). `tts/` — русские и английские голоса Piper;
   инструкция установки в `tts/README.md`, веса ONNX и конфигурация JSON игнорируются.
-- `native/` — **генерируется** сборкой `Services/` (`maturin develop`/
-  `scripts/build_native.py`) в cdylib `advanced_xopilot`. Руками не редактировать
-  и не коммитить бинарники.
+- `native/` — прежний каталог нативной обвязки. Текущая сборка
+  `scripts/build_native.py` размещает `advanced_xopilot*.so/.pyd` прямо в `App/`.
+  Генерируемые бинарники не редактировать и не коммитить.
 - `requirements.txt` — зависимости конкретно клиента (отдельно от корневого
   `pyproject.toml`, который описывает пакет `Xopilot` и Flet-сборку).
 
@@ -78,7 +84,8 @@
   каждую платформу (venv). Запуск через них (`./python/linux/bin/flet run
   App/App.py`), в системный Python ничего не ставить. Руками не редактировать.
 - `scripts/` — вспомогательные скрипты сборки, напр. `build_native.py`
-  (собирает `Services/` через maturin, кладёт .so/.pyd в `App/native/`).
+  (собирает `Services/` через Cargo для текущего Python, кладёт .so/.pyd в `App/`,
+  затем проверяет импорт; `--debug --offline` подходит для локальной проверки).
   `install_russian_voice.py` — загрузка моделей трёх голосов (ru/en) из закреплённой
   версии с проверкой контрольных сумм; запускается отдельно от приложения.
 - `tests/` — Python `unittest` (БД/крипто/UI/медиа) + `sync_e2e.py`
@@ -87,8 +94,9 @@
 - `build/` — **полностью генерируемый** вывод `flet build` (Flutter-обвязка,
   site-packages и т.д.). В git не идёт, можно удалять целиком в любой момент.
 - `.github/workflows/build.yml` — CI: по тегу `v*`/`dev-*` собирает Linux/
-  Windows через `flet build`, паковит zip, публикует GitHub Release. Rust-части
-  (`Services/`, `Server/`) в CI сейчас не собираются — только Flet-клиент.
+  Windows: сначала собирает `Services/`, проверяет импорт и запускает Python-тесты,
+  затем выполняет `flet build` с Python 3.14, пакует zip и публикует GitHub Release.
+  Тяжёлые модели исключены из пакета и устанавливаются из настроек. `Server/` не собирается.
 
 ### Корень
 - `Icons/`, `fonts/` — исходные/мастер-файлы дизайна (сюда добавлять новые

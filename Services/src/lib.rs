@@ -78,11 +78,17 @@ impl PyDatabase {
             .map(|p| p.to_path_buf())
             .unwrap_or_else(|| std::path::PathBuf::from("."));
 
-        let key = security::get_or_create_db_key(&fallback_dir);
-        let db = Database::open(&path, &key).map_err(to_py_err)?;
-        Ok(PyDatabase {
-            inner: Mutex::new(db),
-        })
+        let existing = db_path.metadata().map(|m| m.len() > 0).unwrap_or(false);
+        let keys = security::get_db_keys(&fallback_dir, existing)
+            .map_err(PyRuntimeError::new_err)?;
+        let mut last_error = None;
+        for key in keys {
+            match Database::open(&path, &key) {
+                Ok(db) => return Ok(PyDatabase { inner: Mutex::new(db) }),
+                Err(error) => last_error = Some(error),
+            }
+        }
+        Err(to_py_err(last_error.expect("key resolver returned no keys")))
     }
 
     fn set_setting(&self, key: String, value: String) -> PyResult<()> {
@@ -130,12 +136,13 @@ impl PyDatabase {
             .map_err(to_py_err)
     }
 
-    fn update_message(&self, message_id: i64, content: String) -> PyResult<bool> {
-        self.inner
-            .lock()
-            .unwrap()
-            .update_message(message_id, &content)
-            .map_err(to_py_err)
+    #[pyo3(signature = (message_id, content, attachments=None))]
+    fn update_message(&self, message_id: i64, content: String, attachments: Option<Vec<(String, String)>>) -> PyResult<bool> {
+        let database = self.inner.lock().unwrap();
+        match attachments {
+            Some(items) => database.update_message_full(message_id, &content, &items),
+            None => database.update_message(message_id, &content),
+        }.map_err(to_py_err)
     }
 
     fn delete_message(&self, message_id: i64) -> PyResult<bool> {
@@ -158,6 +165,14 @@ impl PyDatabase {
 
     fn list_chats(&self) -> PyResult<Vec<(i64, String, i64)>> {
         self.inner.lock().unwrap().list_chats().map_err(to_py_err)
+    }
+
+    fn rename_chat(&self, chat_id: i64, title: String) -> PyResult<bool> {
+        self.inner.lock().unwrap().rename_chat(chat_id, &title).map_err(to_py_err)
+    }
+
+    fn list_chat_summaries(&self) -> PyResult<Vec<(i64, String, i64)>> {
+        self.inner.lock().unwrap().list_chat_summaries().map_err(to_py_err)
     }
 
     fn schema_version(&self) -> PyResult<i32> {

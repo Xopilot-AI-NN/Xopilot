@@ -1,30 +1,5 @@
-"""
-Файл: /App/app/add_material.py
-Разработчик: DenBroLiik
-Версия: 2.0.0
-Описание: __кнопка для добавления материалов__
-        клеится справа по середине строки ввода
-        при нажатии открывается плавующие меню с выбором что можно добавить
-        Фото, Файлы, Папки, Чат, Программу и многое другое
-"""
-
-
 import flet as ft
+from .brand import brand_button
 
-
-def build_add_material_button(on_click=None) -> ft.Container:
-    return ft.Container(
-        width=48,
-        height=48,
-        border_radius=24,
-        border=ft.Border.all(2, "#ffffff"),
-        bgcolor="#ff6666ff",
-        alignment=ft.Alignment.CENTER,
-        tooltip="Добавить материал",
-        content=ft.Icon(
-            ft.Icons.ADD,
-            color=ft.Colors.WHITE,
-            size=22,
-        ),
-        on_click=on_click,
-    )
+def build_add_material_button(on_click=None):
+    return brand_button(ft.Icons.ADD, 'Добавить материал', on_click)

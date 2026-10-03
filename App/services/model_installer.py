@@ -14,7 +14,7 @@ import os
 from pathlib import Path
 import urllib.request
 
-from .llm import DEFAULT_FILENAME, MODELS_DIR
+from .llm import DEFAULT_FILENAME, MODELS_DIR, get_model_path
 
 
 @dataclass(frozen=True)
@@ -34,12 +34,12 @@ class DownloadableModel:
 
     @property
     def installed(self) -> bool:
-        return self.path.is_file()
+        return Path(get_model_path(self.filename)).is_file()
 
 
 GEMMA_4_E2B = DownloadableModel(
     id="gemma-4-e2b",
-    name="Gemma 4 E2B",
+    name="Gemma4-e2b",
     filename=DEFAULT_FILENAME,
     description="Основная мультимодальная LiteRT-LM модель Xopilot для чата и Live.",
     size_label="~2.59 GB",
@@ -51,7 +51,13 @@ GEMMA_4_E2B = DownloadableModel(
     sha256="181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c",
 )
 
-DOWNLOADABLE_MODELS = {GEMMA_4_E2B.id: GEMMA_4_E2B}
+GEMMA_4_E4B = DownloadableModel(
+    id='gemma-4-e4b', name='Gemma4-e4b', filename='gemma-4-E4B-it.litertlm',
+    description='Мультимодальная LiteRT-LM модель для чата и Live.', size_label='~3.66 GB',
+    source='litert-community/gemma-4-E4B-it-litert-lm',
+    download_url='https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm?download=true',
+    sha256='0b2a8980ce155fd97673d8e820b4d29d9c7d99b8fa6806f425d969b145bd52e0')
+DOWNLOADABLE_MODELS = {model.id: model for model in (GEMMA_4_E2B, GEMMA_4_E4B)}
 
 
 def _digest_file(path: Path) -> str:

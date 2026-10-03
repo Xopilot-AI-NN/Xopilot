@@ -11,6 +11,7 @@
 
 import os
 import json
+import re
 from typing import List, Optional, Tuple
 
 try:
@@ -32,9 +33,10 @@ def get_or_create_active_chat_id() -> int:
         return _active_chat_id
 
     db = get_db()
+    saved = db.get_setting("active_chat_id")
     chats = db.list_chats()  # [(id, title, created_at), ...] по убыванию created_at
     if chats:
-        _active_chat_id = chats[0][0]
+        _active_chat_id = next((row[0] for row in chats if str(row[0]) == saved), chats[0][0])
     else:
         _active_chat_id = db.create_chat("Новый чат")
     assert _active_chat_id is not None
@@ -46,6 +48,7 @@ def switch_active_chat(chat_id: int) -> None:
     что chat_id действительно существует — это ответственность вызывающего (chat_id берётся из list_chat_items()).
     """
     global _active_chat_id
+    get_db().set_setting("active_chat_id", str(chat_id))
     _active_chat_id = chat_id
 
 
@@ -53,6 +56,7 @@ def create_new_chat(title: str = "Новый чат") -> int:
     """Создаёт новый пустой чат и делает его активным. Возвращает id нового чата."""
     global _active_chat_id
     chat_id = get_db().create_chat(title)
+    get_db().set_setting("active_chat_id", str(chat_id))
     _active_chat_id = chat_id
     return chat_id
 
@@ -72,16 +76,25 @@ def save_user_message(
     attachments: Optional[List[Tuple[str, str]]] = None,
 ) -> int:
     """Сохраняет сообщение пользователя, возвращает id новой строки (нужен в UI для последующего редактирования)."""
-    return get_db().add_message(chat_id, "user", text, quote, reply_to, attachments or [])
+    db = get_db()
+    message_id = db.add_message(chat_id, "user", text, quote, reply_to, attachments or [])
+    try:
+        auto_name_chat(chat_id)
+    except Exception:
+        # Naming is secondary; a saved message must never be reported as unsaved.
+        pass
+    return message_id
 
 
 def save_ai_message(chat_id: int, text: str) -> int:
     return get_db().add_message(chat_id, "ai", text)
 
 
-def update_message(message_id: int, text: str) -> bool:
-    """Правит текст уже сохранённого сообщения (редактирование в UI). Цитату/ответ/вложения пока не трогает."""
-    return get_db().update_message(message_id, text)
+def update_message(message_id: int, text: str, attachments=None) -> bool:
+    """Правит текст и, если переданы, вложения; сохраняет цитату и связь ответа."""
+    if attachments is None:
+        return get_db().update_message(message_id, text)
+    return get_db().update_message(message_id, text, attachments)
 
 
 def delete_message(message_id: int) -> bool:
@@ -183,10 +196,44 @@ def list_chat_items():
     Упорядочено по дате создания по убыванию (самый новый чат — первым).
     """
     db = get_db()
-    return [(chat_id, title or "Новый чат", f"Сообщений: {len(db.get_messages(chat_id))}", False)
-            for chat_id, title, _ in db.list_chats()]
+    for cid, title, _ in db.list_chats():
+        if title == 'Новый чат':
+            auto_name_chat(cid)
+    summaries = getattr(db, "list_chat_summaries", None)
+    if summaries is not None:
+        return [(cid, title or "Новый чат", f"Сообщений: {count}", False)
+                for cid, title, count in summaries()]
+    return [(cid, title or "Новый чат", f"Сообщений: {len(db.get_messages(cid))}", False)
+            for cid, title, _ in db.list_chats()]
+
+
+def rename_chat(chat_id, title):
+    title = title.strip()
+    if not title:
+        raise ValueError("Введите название чата")
+    if not get_db().rename_chat(chat_id, title):
+        raise RuntimeError("Чат не найден")
+    return title
 
 
 def clear_chat_messages(chat_id):
     """Стирает все сообщения чата из БД (вложения — каскадно). Сам чат остаётся."""
     get_db().clear_chat_messages(chat_id)
+
+
+def auto_name_chat(chat_id):
+    db = get_db()
+    title = next((row[1] for row in db.list_chats() if row[0] == chat_id), None)
+    if title != 'Новый чат':
+        return title
+    first = next((m for m in db.get_messages(chat_id) if m.role == 'user'), None)
+    if first is None:
+        return title
+    name = re.sub(r'\s+', ' ', first.content).strip()
+    if not name and first.attachments:
+        name = first.attachments[0][0]
+    if name:
+        name = name[:72].rsplit(' ', 1)[0] + '…' if len(name) > 72 else name
+        rename_chat(chat_id, name)
+        return name
+    return title

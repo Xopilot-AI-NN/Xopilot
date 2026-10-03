@@ -11,6 +11,11 @@ from ..common import section_title, setting_row
 from .buttons.check import build_check_button
 from .status import build_update_status
 
+try:
+    from ...services.updates import check_updates
+except ImportError:
+    from services.updates import check_updates
+
 
 def build_updates_page(on_status) -> ft.Column:
     status = build_update_status()
@@ -18,10 +23,12 @@ def build_updates_page(on_status) -> ft.Column:
     async def check(_):
         status.value = "Проверяем обновления..."
         status.update()
-        await asyncio.sleep(0.35)
-        status.value = "Установлена последняя версия 2.0.0"
+        try:
+            status.value = await asyncio.to_thread(check_updates)
+        except Exception as exc:
+            status.value = f"Не удалось проверить обновления: {exc}"
         status.update()
-        on_status("Проверка обновлений завершена")
+        on_status(status.value)
 
     return ft.Column(
         spacing=2,

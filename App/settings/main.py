@@ -8,6 +8,10 @@
 """
 
 import flet as ft
+try:
+    from ..app.palette import color, apply_palette
+except ImportError:
+    from app.palette import color, apply_palette
 
 from .abaut.main import build_about_page
 from .account.main import build_account_page
@@ -23,7 +27,7 @@ from .updates.main import build_updates_page
 BRAND_GRADIENT = ft.LinearGradient(
     begin=ft.Alignment.TOP_LEFT,
     end=ft.Alignment.BOTTOM_RIGHT,
-    colors=["#00c753", "#0083e8"],
+    colors=[color("#00c753"), color("#0083e8")],
 )
 
 
@@ -34,8 +38,10 @@ def build_settings_dialog(
     chat_id: int | None = None,
     on_chat_model_changed=None,
     on_live_model_changed=None,
+    on_clear_history=None,
+    on_select_chat=None,
 ) -> ft.AlertDialog:
-    status = ft.Text("Изменения применяются сразу", size=11, color="#dff8f3")
+    status = ft.Text("Изменения применяются сразу", size=11, color=ft.Colors.WHITE, expand=True)
 
     def set_status(text: str):
         status.value = text
@@ -51,9 +57,9 @@ def build_settings_dialog(
     # «Персонализация» сразу увидит новые локальные файлы без перезапуска приложения.
     sections = [
         (
-            "Аккаунт",
+            "Локальный профиль",
             ft.Icons.PERSON_OUTLINE,
-            "Профиль, тариф и статистика ИИ",
+            "Имя и статистика использования",
             lambda: build_account_page(page),
         ),
         (
@@ -81,7 +87,7 @@ def build_settings_dialog(
             "История",
             ft.Icons.HISTORY,
             "Удаление и управление сообщениями",
-            lambda: build_history_page(chat_list, set_status, chat_id),
+            lambda: build_history_page(chat_list, set_status, chat_id, on_clear_history, page=page, on_select=on_select_chat),
         ),
         (
             "Обновления",
@@ -97,11 +103,12 @@ def build_settings_dialog(
         ),
     ]
 
-    page_title = ft.Text("Настройки", size=20, color="#123b43", weight=ft.FontWeight.BOLD)
+    page_title = ft.Text("Настройки", size=18, color=ft.Colors.WHITE, weight=ft.FontWeight.BOLD,
+                         max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)
     page_host = ft.Column(spacing=0, expand=True)
 
     def select_page(index: int):
-        page_host.controls = [sections[index][3]()]
+        page_host.controls = [apply_palette(sections[index][3]())]
         page_title.value = sections[index][0]
         back_button.visible = True
         page.update()
@@ -134,24 +141,24 @@ def build_settings_dialog(
         select_page(start_section)
 
     content = ft.Column(
-        width=750,
-        height=600,
+        width=max(220, min(750, page.width - 112)) if isinstance(page.width, (int, float)) else 750,
+        height=max(220, min(600, page.height - 140)) if isinstance(page.height, (int, float)) else 600,
         spacing=0,
         scroll=ft.ScrollMode.AUTO,
         controls=[
             ft.Container(
-                height=76,
                 padding=ft.Padding.symmetric(horizontal=18, vertical=13),
                 gradient=BRAND_GRADIENT,
                 border_radius=ft.BorderRadius.only(top_left=16, top_right=16),
-                content=ft.Row(
-                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                content=ft.Column(
+                    spacing=8,
                     controls=[
                         ft.Row(
                             spacing=8,
                             controls=[
                                 back_button,
                                 ft.Column(
+                                    expand=True,
                                     spacing=1,
                                     controls=[
                                         ft.Text("Xopilot", size=22, color=ft.Colors.WHITE, weight=ft.FontWeight.BOLD),
@@ -160,23 +167,27 @@ def build_settings_dialog(
                                 ),
                             ],
                         ),
-                        status,
+                        ft.Row(controls=[status, ft.IconButton(icon=ft.Icons.CLOSE, icon_color=ft.Colors.WHITE,
+                                  tooltip="Закрыть настройки", on_click=lambda _: page.pop_dialog())]),
                     ],
                 ),
             ),
             ft.Container(
                 padding=ft.Padding.symmetric(horizontal=12, vertical=8),
-                bgcolor="#eafffa",
+                bgcolor=color("#eafffa"),
                 content=ft.Row(controls=[page_host]),
             ),
         ],
     )
+    # The brand header has fixed white text and a fixed gradient in every theme.
+    # Keep its mounted layout out of recursive value-style replacement.
+    content.controls[0].__dict__['_xopilot_fixed_colors'] = True
 
     return ft.AlertDialog(
         modal=False,
         content=content,
-        bgcolor="#eafffa",
+        bgcolor=color("#eafffa"),
         shape=ft.RoundedRectangleBorder(radius=16),
         inset_padding=ft.Padding.symmetric(horizontal=32, vertical=20),
-        barrier_color="#88000000",
+        barrier_color=color("#88000000"),
     )

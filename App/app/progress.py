@@ -10,18 +10,22 @@
 
 
 import flet as ft
+try:
+    from .palette import color
+except ImportError:
+    from app.palette import color
 
 
 def build_progress(value: float | None = 0) -> ft.Container:
     return ft.Container(
         height=24,
         border_radius=8,
-        border=ft.Border.all(2, "#d9ffe6"),
-        bgcolor="#00c753",
+        border=ft.Border.all(2, color("#d9ffe6")),
+        bgcolor=color("#00c753"),
         padding=ft.Padding.symmetric(horizontal=8, vertical=5),
         content=ft.ProgressBar(
             value=value,
-            color="#ff6666ff",
-            bgcolor="#d9ffe6",
+            color=color("#ff6666ff"),
+            bgcolor=color("#d9ffe6"),
         ),
     )

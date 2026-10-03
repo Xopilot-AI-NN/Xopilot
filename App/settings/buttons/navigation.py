@@ -4,6 +4,10 @@
 """
 
 import flet as ft
+try:
+    from ...app.palette import color
+except ImportError:
+    from app.palette import color
 
 
 def build_navigation_button(icon, label: str, subtitle: str, on_click) -> ft.Container:
@@ -21,19 +25,19 @@ def build_navigation_button(icon, label: str, subtitle: str, on_click) -> ft.Con
                     width=44,
                     height=44,
                     border_radius=22,
-                    bgcolor="#dff8f3",
+                    bgcolor=color("#dff8f3"),
                     alignment=ft.Alignment.CENTER,
-                    content=ft.Icon(icon, size=24, color="#087f8c"),
+                    content=ft.Icon(icon, size=24, color=color("#087f8c")),
                 ),
                 ft.Column(
                     expand=True,
                     spacing=3,
                     controls=[
-                        ft.Text(label, size=15, color="#123b43", weight=ft.FontWeight.W_600),
-                        ft.Text(subtitle, size=12, color="#47747a", max_lines=2),
+                        ft.Text(label, size=15, color=color("#123b43"), weight=ft.FontWeight.W_600),
+                        ft.Text(subtitle, size=12, color=color("#47747a"), max_lines=2),
                     ],
                 ),
-                ft.Icon(ft.Icons.CHEVRON_RIGHT, color="#47747a", opacity=0.4),
+                ft.Icon(ft.Icons.CHEVRON_RIGHT, color=color("#47747a"), opacity=0.4),
             ],
         ),
     )

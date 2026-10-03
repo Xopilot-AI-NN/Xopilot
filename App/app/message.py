@@ -28,6 +28,10 @@
 
 
 import flet as ft
+try:
+    from .palette import color, apply_palette
+except ImportError:
+    from app.palette import color, apply_palette
 
 from . import material as file_utils
 from .buttons.message_actions import build_message_actions
@@ -45,15 +49,15 @@ def build_user_message(
     if reply_to:
         content.append(
             ft.Container(
-                bgcolor="#effffc",
-                border=ft.Border.all(1, "#087f8c"),
+                bgcolor=color("#effffc"),
+                border=ft.Border.all(1, color("#087f8c")),
                 border_radius=12,
                 padding=ft.Padding.only(left=8, top=6, right=8, bottom=6),
                 content=ft.Column(
                     spacing=2,
                     controls=[
-                        ft.Text("ОТВЕТ НА СООБЩЕНИЕ", size=9, color="#087f8c", weight=ft.FontWeight.BOLD),
-                        ft.Text(reply_to, size=12, color="#47747a", max_lines=2),
+                        ft.Text("ОТВЕТ НА СООБЩЕНИЕ", size=9, color=color("#087f8c"), weight=ft.FontWeight.BOLD),
+                        ft.Text(reply_to, size=12, color=color("#47747a"), max_lines=2),
                     ],
                 ),
             )
@@ -61,15 +65,15 @@ def build_user_message(
     if quote:
         content.append(
             ft.Container(
-                bgcolor="#effffc",
-                border=ft.Border.all(1, "#20b486"),
+                bgcolor=color("#effffc"),
+                border=ft.Border.all(1, color("#20b486")),
                 border_radius=12,
                 padding=ft.Padding.only(left=8, top=6, right=8, bottom=6),
                 content=ft.Column(
                     spacing=2,
                     controls=[
-                        ft.Text("ЦИТАТА", size=9, color="#20b486", weight=ft.FontWeight.BOLD),
-                        ft.Text(quote, size=12, color="#47747a", italic=True, max_lines=3),
+                        ft.Text("ЦИТАТА", size=9, color=color("#20b486"), weight=ft.FontWeight.BOLD),
+                        ft.Text(quote, size=12, color=color("#47747a"), italic=True, max_lines=3),
                     ],
                 ),
             )
@@ -78,24 +82,25 @@ def build_user_message(
         content.append(
             ft.Row(
                 spacing=6,
+                wrap=True,
                 tight=True,
                 controls=[file_utils.build_file_tile(file) for file in files],
             )
         )
-    content.append(ft.Text(text, font_family="Google Sans", color=ft.Colors.BLACK, size=14))
+    content.append(ft.Text(text, font_family="Google Sans", color=color("#000000"), size=14))
 
     actions = (
         build_message_actions(text, files, on_action, True, message_id)
         if on_action
         else ft.Container()
     )
-    actions.opacity = 0
+    actions.opacity = 0.65
     actions.animate_opacity = 180
 
     bubble = ft.Container(
         padding=ft.Padding.symmetric(horizontal=12, vertical=9),
         border_radius=20,
-        bgcolor="#e6ffffff",
+        bgcolor=color("#e6ffffff"),
         blur=2,
         content=ft.Column(
             spacing=6,
@@ -118,22 +123,22 @@ def build_user_message(
         padding=ft.Padding.only(left=40),
         content=ft.Column(
             horizontal_alignment=ft.CrossAxisAlignment.END,
-            spacing=0,
+            tight=True, spacing=0,
             controls=[bubble, footer],
         ),
     )
     message.data = message_id if message_id is not None else text
 
     def handle_hover(e: ft.Event[ft.Container]):
-        actions.opacity = 1 if e.data == "true" or e.data is True else 0
+        actions.opacity = 1 if e.data == "true" or e.data is True else 0.65
         actions.update()
 
     message.on_hover = handle_hover
-    return message
+    return apply_palette(message)
 
 
 _AI_AUTHOR = "Zephyr"
-_TEXT_COLOR = ft.Colors.BLACK
+_TEXT_COLOR = color("#000000")
 
 
 def _md_style(size: int = 14, **kwargs) -> ft.TextStyle:
@@ -149,18 +154,18 @@ def _ai_markdown_style() -> ft.MarkdownStyleSheet:
         strong_text_style=_md_style(weight=bold),
         em_text_style=_md_style(italic=True),
         del_text_style=_md_style(decoration=ft.TextDecoration.LINE_THROUGH),
-        a_text_style=_md_style(color="#087f8c", decoration=ft.TextDecoration.UNDERLINE),
+        a_text_style=_md_style(color=color("#087f8c"), decoration=ft.TextDecoration.UNDERLINE),
         h1_text_style=_md_style(22, weight=bold),
         h2_text_style=_md_style(19, weight=bold),
         h3_text_style=_md_style(16, weight=bold),
         h4_text_style=_md_style(15, weight=bold),
         h5_text_style=_md_style(14, weight=bold),
         h6_text_style=_md_style(14, weight=bold),
-        blockquote_text_style=_md_style(color="#47747a"),
+        blockquote_text_style=_md_style(color=color("#47747a")),
         list_bullet_text_style=_md_style(),
         table_head_text_style=_md_style(weight=bold),
         table_body_text_style=_md_style(),
-        code_text_style=_md_style(13, bgcolor="#dff8f3", font_family="monospace"),
+        code_text_style=_md_style(13, bgcolor=color("#dff8f3"), font_family="monospace"),
     )
 
 
@@ -192,7 +197,7 @@ def build_ai_message(text: str, on_action=None, message_id: int | None = None) -
     bubble = ft.Container(
         padding=ft.Padding.symmetric(horizontal=12, vertical=9),
         border_radius=20,
-        bgcolor="#e6ffffff",
+        bgcolor=color("#e6ffffff"),
         blur=2,
         content=bubble_content,
     )
@@ -202,7 +207,7 @@ def build_ai_message(text: str, on_action=None, message_id: int | None = None) -
         if on_action
         else ft.Container()
     )
-    actions.opacity = 0
+    actions.opacity = 0.65
     actions.animate_opacity = 180
     footer = ft.Row(
         alignment=ft.MainAxisAlignment.START,
@@ -216,13 +221,13 @@ def build_ai_message(text: str, on_action=None, message_id: int | None = None) -
     message = ft.Container(
         alignment=ft.Alignment.CENTER_LEFT,
         padding=ft.Padding.only(right=40),
-        content=ft.Column(spacing=0, controls=[bubble, footer]),
+        content=ft.Column(tight=True, spacing=0, controls=[bubble, footer]),
     )
     message.data = message_id if message_id is not None else text
 
     def handle_hover(e: ft.Event[ft.Container]):
-        actions.opacity = 1 if e.data == "true" or e.data is True else 0
+        actions.opacity = 1 if e.data == "true" or e.data is True else 0.65
         actions.update()
 
     message.on_hover = handle_hover
-    return message
+    return apply_palette(message)

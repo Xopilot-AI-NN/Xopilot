@@ -1,251 +1,94 @@
-"""
-Файл: App/app/buttons/model.py
-Описание: Компактный встроенный выбор модели обычного чата из строки ввода.
-"""
-
-from __future__ import annotations
-
+"""Explicit model catalog for the composer, including installation and API setup."""
 import inspect
-
 import flet as ft
-
+from .brand import brand_gradient
+from ..palette import color
+from ..api_settings import open_api_settings
 try:
+    from ...services import api_chat
     from ...services.llm import list_local_models
     from ...services.model_settings import get_selected_chat_model, model_display_name
+    from ...services.model_installer import DOWNLOADABLE_MODELS, install_model
 except ImportError:
+    from services import api_chat
     from services.llm import list_local_models
     from services.model_settings import get_selected_chat_model, model_display_name
-
-
-_MENU_BG = "#ecfffa"
-_MENU_TEXT = "#123b43"
-_MENU_MUTED = "#47747a"
-_MENU_ACCENT = "#087f8c"
-_MENU_BORDER = "#b6e5df"
-_MENU_HOVER = "#ddf8f2"
-_SELECTED_BG = "#d8f5ee"
+    from services.model_installer import DOWNLOADABLE_MODELS, install_model
+import asyncio
 
 
 def build_model_button(on_select=None):
-    """
-    Возвращает встроенный селектор модели для нижней панели.
+    label = ft.Text('Модель', size=12, color=ft.Colors.WHITE, max_lines=1,
+                    overflow=ft.TextOverflow.ELLIPSIS, expand=True)
+    trigger = ft.Container(width=154, height=40, border_radius=20, ink=True,
+        gradient=brand_gradient(), border=ft.Border.all(2, ft.Colors.WHITE), padding=8,
+        tooltip='Выбор модели', content=ft.Row(spacing=5, controls=[
+            ft.Icon(ft.Icons.SMART_TOY_OUTLINED, color=ft.Colors.WHITE, size=18), label,
+            ft.Icon(ft.Icons.EXPAND_MORE, color=ft.Colors.WHITE, size=16)]))
+    trigger._xopilot_fixed_colors = True
 
-    В отличие от PopupMenuButton список не рисуется отдельным плавающим окном:
-    при открытии блок модели физически увеличивается вверх и остаётся частью
-    панели ввода. Если установлена только одна модель, список вообще не
-    раскрывается и стрелка скрыта.
-    """
-    is_open = False
-    current_models: list[str] = []
-
-    model_label = ft.Text(
-        "Модель",
-        size=12,
-        color=_MENU_TEXT,
-        weight=ft.FontWeight.W_600,
-        max_lines=1,
-        overflow=ft.TextOverflow.ELLIPSIS,
-        expand=True,
-    )
-
-    arrow = ft.Icon(
-        ft.Icons.KEYBOARD_ARROW_UP_ROUNDED,
-        size=18,
-        color=_MENU_MUTED,
-        visible=False,
-    )
-
-    trigger = ft.Container(
-        width=95,
-        height=48,
-        border_radius=24,
-        border=ft.Border.all(1, _MENU_BORDER),
-        bgcolor=_MENU_BG,
-        ink=True,
-        ink_color=_MENU_HOVER,
-        alignment=ft.Alignment.CENTER,
-        padding=ft.Padding.only(left=5, right=5),
-        tooltip="Выбор модели",
-        content=ft.Row(
-            spacing=4,
-            vertical_alignment=ft.CrossAxisAlignment.CENTER,
-            controls=[
-                ft.Container(
-                    width=20,
-                    height=20,
-                    border_radius=10,
-                    bgcolor=_SELECTED_BG,
-                    alignment=ft.Alignment.CENTER,
-                    content=ft.Icon(
-                        ft.Icons.SMART_TOY_OUTLINED,
-                        size=13,
-                        color=_MENU_ACCENT,
-                    ),
-                ),
-                model_label,
-                arrow,
-            ],
-        ),
-    )
-
-    menu_list = ft.Column(spacing=2, tight=True, controls=[])
-    menu_shell = ft.Container(
-        width=190,
-        visible=False,
-        bgcolor=_MENU_BG,
-        border=ft.Border.all(1, _MENU_BORDER),
-        border_radius=ft.BorderRadius.only(
-            top_left=14,
-            top_right=14,
-            bottom_left=6,
-            bottom_right=6,
-        ),
-        padding=ft.Padding.all(5),
-        margin=ft.Margin.only(bottom=3),
-        content=menu_list,
-    )
-
-    root = ft.Column(
-        width=95,
-        spacing=0,
-        tight=True,
-        horizontal_alignment=ft.CrossAxisAlignment.START,
-        controls=[menu_shell, trigger],
-    )
-
-    def safe_update():
-        try:
-            root.update()
-        except Exception:
-            pass
-
-    def set_open(value: bool, update: bool = True):
-        nonlocal is_open
-        is_open = bool(value and len(current_models) > 1)
-        menu_shell.visible = is_open
-        arrow.icon = (
-            ft.Icons.KEYBOARD_ARROW_DOWN_ROUNDED
-            if is_open
-            else ft.Icons.KEYBOARD_ARROW_UP_ROUNDED
-        )
-        # Когда список раскрыт, он визуально продолжает кнопку, а не парит над ней.
-        trigger.border_radius = (
-            ft.BorderRadius.only(
-                top_left=7,
-                top_right=7,
-                bottom_left=24,
-                bottom_right=24,
-            )
-            if is_open
-            else 24
-        )
+    def refresh(update=False, private=False):
+        label.value = 'API · ' + api_chat.configuration().get('model', '') if api_chat.is_api_selected() and not private else model_display_name(get_selected_chat_model())
+        trigger.tooltip = 'Выбор модели · ' + label.value
         if update:
-            safe_update()
+            trigger.update()
 
-    def toggle_menu(_):
-        if len(current_models) <= 1:
-            return
-        set_open(not is_open)
-
-    trigger.on_click = toggle_menu
-
-    async def choose(filename: str):
-        set_open(False, update=False)
-        if on_select is not None:
-            result = on_select(filename)
-            if inspect.isawaitable(result):
-                await result
-        refresh(update=True)
-
-    def make_handler(filename: str):
-        async def handle(_):
-            await choose(filename)
-
-        return handle
-
-    def make_row(filename: str, selected: bool) -> ft.Container:
-        return ft.Container(
-            height=38,
-            border_radius=9,
-            bgcolor=_SELECTED_BG if selected else _MENU_BG,
-            ink=True,
-            ink_color=_MENU_HOVER,
-            padding=ft.Padding.symmetric(horizontal=8, vertical=3),
-            on_click=make_handler(filename),
-            content=ft.Row(
-                spacing=4,
-                vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                controls=[
-                    ft.Icon(
-                        ft.Icons.SMART_TOY_OUTLINED,
-                        size=13,
-                        color=_MENU_ACCENT,
-                    ),
-                    ft.Text(
-                        model_display_name(filename),
-                        size=12,
-                        color=_MENU_TEXT,
-                        weight=ft.FontWeight.W_600 if selected else ft.FontWeight.W_500,
-                        max_lines=1,
-                        overflow=ft.TextOverflow.ELLIPSIS,
-                        expand=True,
-                    ),
-                    ft.Icon(
-                        ft.Icons.CHECK_ROUNDED,
-                        size=16,
-                        color="#08734d",
-                        visible=selected,
-                    ),
-                ],
-            ),
-        )
-
-    def refresh(update: bool = False):
-        nonlocal current_models, is_open
-        current_models = list_local_models()
-        selected = get_selected_chat_model()
-
-        if selected:
-            display = model_display_name(selected)
-            model_label.value = display
-            trigger.tooltip = (
-                f"Модель чата: {display}"
-                if len(current_models) <= 1
-                else f"Модель чата: {display} · нажмите для выбора"
-            )
-        else:
-            model_label.value = "Нет моделей"
-            trigger.tooltip = "Модели не найдены · App/data/models"
-
-        arrow.visible = len(current_models) > 1
-        menu_list.controls = [
-            make_row(filename, filename == selected)
-            for filename in current_models[:5]
-        ]
-
-        # Для очень большого каталога не раздуваем нижнюю панель бесконечно.
-        # Первые пять моделей остаются компактными; остальные доступны в настройках.
-        if len(current_models) > 5:
-            menu_list.controls.append(
-                ft.Container(
-                    height=30,
-                    alignment=ft.Alignment.CENTER_LEFT,
-                    padding=ft.Padding.only(left=8),
-                    content=ft.Text(
-                        f"Ещё {len(current_models) - 5} · в настройках",
-                        size=10,
-                        color=_MENU_MUTED,
-                    ),
-                )
-            )
-
-        if len(current_models) <= 1:
-            is_open = False
-            menu_shell.visible = False
-            trigger.border_radius = 24
-
-        if update:
-            safe_update()
-
+    async def show(e):
+        page = e.page
+        feedback = ft.Text('Выберите установленную модель или скачайте её.', size=12, color=color('#47747a'))
+        rows = ft.Column(spacing=10, tight=True)
+        busy = False
+        async def choose(model):
+            nonlocal busy
+            if busy:
+                return
+            if model.filename not in list_local_models():
+                busy = True
+                feedback.value = f'Скачиваю {model.name} ({model.size_label})…'
+                for row in rows.controls:
+                    row.disabled = True
+                page.update()
+                try:
+                    await asyncio.to_thread(install_model, model.id)
+                except Exception as exc:
+                    feedback.value = f'Не удалось скачать модель: {exc}'
+                    feedback.color = color('#b3261e')
+                    return
+                finally:
+                    busy = False
+                    for row in rows.controls:
+                        row.disabled = False
+                    page.update()
+            if on_select:
+                result = on_select(model.filename)
+                if inspect.isawaitable(result):
+                    result = await result
+                if result is False:
+                    return
+            page.pop_dialog()
+            refresh(True)
+        def local_row(model):
+            async def click(_):
+                await choose(model)
+            installed = model.filename in list_local_models()
+            return ft.Container(padding=14, border_radius=16, bgcolor=color('#f3fffc'),
+                border=ft.Border.all(1, color('#a8ddd7')), ink=True, on_click=click,
+                content=ft.Row(controls=[ft.Icon(ft.Icons.SMART_TOY_OUTLINED, color=color('#087f8c')),
+                    ft.Column(expand=True, spacing=3, controls=[ft.Text(model.name, color=color('#123b43'), weight=ft.FontWeight.W_600),
+                        ft.Text('На устройстве' if installed else f'Скачать · {model.size_label}', size=11, color=color('#47747a'))]),
+                    ft.Icon(ft.Icons.CHECK_CIRCLE_OUTLINE if installed else ft.Icons.DOWNLOAD, color=color('#087f8c'))]))
+        rows.controls = [ft.Container(padding=14, border_radius=16, bgcolor=color('#f3fffc'), border=ft.Border.all(1, color('#a8ddd7')),
+            content=ft.Row(controls=[ft.Icon(ft.Icons.CONSTRUCTION, color=color('#47747a')),
+                ft.Text('Zephyr Micro · в разработке', color=color('#47747a'))])),
+            *[local_row(model) for model in DOWNLOADABLE_MODELS.values()],
+            ft.Container(padding=14, border_radius=16, bgcolor=color('#f3fffc'), border=ft.Border.all(1, color('#a8ddd7')),
+                ink=True, on_click=lambda _: open_api_settings(page, on_saved=lambda: refresh(True)),
+                content=ft.Row(controls=[ft.Icon(ft.Icons.API, color=color('#087f8c')),
+                    ft.Text('API · настроить подключение', color=color('#123b43'))]))]
+        page.show_dialog(ft.AlertDialog(bgcolor=color('#eafffa'), shape=ft.RoundedRectangleBorder(radius=22),
+            title=ft.Text('Модель чата', color=color('#123b43')),
+            content=ft.Column(width=max(230, min(380, page.width - 112)), height=min(390, page.height - 180), scroll=ft.ScrollMode.AUTO, controls=[rows, feedback]),
+            actions=[ft.TextButton(content='Закрыть', on_click=lambda _: page.pop_dialog())]))
+    trigger.on_click = show
     refresh()
-    return root, refresh
+    return trigger, refresh
