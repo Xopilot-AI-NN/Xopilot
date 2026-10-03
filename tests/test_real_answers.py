@@ -126,6 +126,11 @@ class LegacyCleanupTests(unittest.TestCase):
 
 
 class RealReplyUITests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        patcher = patch.multiple(main_ui, install_theme=Mock(),
+                                 read_draft=Mock(return_value={}), write_draft=Mock())
+        patcher.start()
+        self.addCleanup(patcher.stop)
     async def test_generation_failure_is_shown_without_saving_a_fake_ai_reply(self):
         page = Mock(services=[], web=False)
         prompt = ft.TextField()
@@ -146,7 +151,8 @@ class RealReplyUITests(unittest.IsolatedAsyncioTestCase):
             "load_chat_messages": Mock(return_value=[]),
             "save_user_message": Mock(return_value=1),
             "save_ai_message": save_ai,
-            "is_model_loaded": Mock(return_value=True),
+            "ensure_model_loaded": Mock(),
+            "get_selected_chat_model": Mock(return_value="test.litertlm"),
             "generate_reply": Mock(side_effect=RuntimeError("Ошибка настоящей модели")),
         }
         with patch.multiple(main_ui, **replacements):
@@ -178,14 +184,122 @@ class RealReplyUITests(unittest.IsolatedAsyncioTestCase):
                             get_or_create_active_chat_id=Mock(return_value=1),
                             load_chat_messages=Mock(return_value=[]),
                             save_user_message=Mock(return_value=1), save_ai_message=save_ai,
-                            is_model_loaded=Mock(return_value=False),
-                            list_local_models=Mock(return_value=[]), generate_reply=generate):
+                            ensure_model_loaded=Mock(),
+                            get_selected_chat_model=Mock(return_value=None), generate_reply=generate):
             main_ui.build_app_ui(page)
             prompt.value = "Мой вопрос"
             await container.call_args.args[1](None)
         generate.assert_not_called()
         save_ai.assert_not_called()
         self.assertIn("модель не найдена", page.show_dialog.call_args.args[0].content.value)
+        status = container.call_args.kwargs['composer_status']
+        self.assertTrue(status.visible)
+        self.assertIn('Настройки → Модели', status.content.controls[0].value)
+        self.assertTrue(status.content.controls[-1].visible)
+
+
+class PersistenceUITests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.page = Mock(services=[], web=False)
+        self.prompt = ft.TextField()
+        self.prompt.update = Mock()
+        self.messages = ft.ListView(controls=[])
+        self.messages.update = Mock()
+        self.prompt_container = Mock(return_value=ft.Container())
+        self.menu = Mock(return_value=ft.Container())
+        self.user = Mock(side_effect=lambda text, *a, **kw: ft.Container(data=kw.get("message_id")))
+        self.save = Mock(return_value=11)
+        self.generate = Mock(return_value="Ответ")
+        self.delete = Mock(return_value=True)
+        self.update = Mock(return_value=True)
+        self.save_ai = Mock(return_value=12)
+        replacements = dict(
+            install_theme=Mock(), read_draft=Mock(return_value={}), write_draft=Mock(),
+            build_prompt=Mock(return_value=self.prompt),
+            build_chat=Mock(return_value=ft.Container(content=self.messages)),
+            build_prompt_container=self.prompt_container,
+            build_background_layout=Mock(return_value=ft.Container()),
+            build_menu=self.menu,
+            build_menu_overlay=Mock(return_value=(ft.Container(), Mock())),
+            build_user_message=self.user,
+            cleanup_legacy_messages=Mock(), get_or_create_active_chat_id=Mock(return_value=1),
+            load_chat_messages=Mock(return_value=[]), save_user_message=self.save,
+            save_ai_message=self.save_ai, get_selected_chat_model=Mock(return_value="test.litertlm"),
+            ensure_model_loaded=Mock(), generate_reply=self.generate,
+            store_delete_message=self.delete, update_message=self.update,
+        )
+        patcher = patch.multiple(main_ui, **replacements)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        main_ui.build_app_ui(self.page)
+        self.send = self.prompt_container.call_args.args[1]
+
+    async def test_failed_save_preserves_draft_and_does_not_generate(self):
+        self.save.side_effect = RuntimeError("disk full")
+        self.prompt.value = "Важный черновик"
+        await self.send(None)
+        self.assertEqual(self.prompt.value, "Важный черновик")
+        self.assertEqual(self.messages.controls, [])
+        self.generate.assert_not_called()
+        self.assertIn("disk full", self.page.show_dialog.call_args.args[0].content.value)
+
+    async def test_failed_delete_keeps_message_visible(self):
+        self.prompt.value = "Вопрос"
+        await self.send(None)
+        action = self.user.call_args.kwargs["on_action"]
+        before = list(self.messages.controls)
+        self.delete.side_effect = RuntimeError("disk error")
+        await action("delete", "Вопрос", [], 11)
+        self.assertEqual(self.messages.controls, before)
+
+    async def test_failed_edit_preserves_original_and_draft(self):
+        self.prompt.value = "Вопрос"
+        await self.send(None)
+        action = self.user.call_args.kwargs["on_action"]
+        from unittest.mock import AsyncMock
+        self.prompt.focus = AsyncMock()
+        await action("edit", "Вопрос", [], 11)
+        before = list(self.messages.controls)
+        self.update.side_effect = RuntimeError("disk error")
+        self.prompt.value = "Правка"
+        await self.send(None)
+        self.assertEqual(self.prompt.value, "Правка")
+        self.assertEqual(self.messages.controls, before)
+
+    async def test_new_chat_is_blocked_while_generation_runs(self):
+        import asyncio
+        entered, release = threading.Event(), threading.Event()
+        def generate(*a, **kw):
+            entered.set()
+            if not release.wait(3):
+                raise RuntimeError("test timeout")
+            return "Ответ"
+        self.generate.side_effect = generate
+        self.prompt.value = "Вопрос"
+        job = asyncio.create_task(self.send(None))
+        try:
+            self.assertTrue(await asyncio.to_thread(entered.wait, 2))
+            with patch.object(main_ui, "create_new_chat") as create:
+                self.menu.call_args.kwargs["on_new_chat_click"](None)
+                create.assert_not_called()
+        finally:
+            release.set()
+            await job
+        self.save_ai.assert_called_once_with(1, "Ответ")
+
+    async def test_unsaved_reply_can_be_retried_without_duplicate_generation(self):
+        self.save_ai.side_effect = [RuntimeError("disk full"), 12]
+        self.prompt.value = "Вопрос"
+        await self.send(None)
+        dialog = self.page.show_dialog.call_args.args[0]
+        self.assertEqual(dialog.title.value, "Ответ не сохранён")
+        self.assertEqual(len(self.messages.controls), 1)
+        retry = dialog.actions[1].on_click
+        await retry(None)
+        await retry(None)
+        self.assertEqual(len(self.messages.controls), 2)
+        self.assertEqual(self.save_ai.call_count, 2)
+        self.generate.assert_called_once()
 
 
 if __name__ == "__main__":

@@ -111,7 +111,9 @@ class PiperSpeechVoice:
         try:
             for chunk in chunks:
                 if stream is None:
+                    from .devices import selected_audio_device
                     stream = sd.RawOutputStream(
+                        device=selected_audio_device("output"),
                         samplerate=chunk.sample_rate,
                         channels=chunk.sample_channels,
                         dtype="int16",

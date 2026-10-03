@@ -1,28 +1,5 @@
-"""
-Файл: /App/app/buttons/live.py
-Разработчик: DenBroLiik
-Версия: 2.0.0
-Описание: __кнопка голосового разговора Live__
-        клеится в строке для ввода от кнопки отправить
-"""
-
-
 import flet as ft
+from .brand import brand_button
 
-
-def build_live_button(on_click=None) -> ft.Container:
-    return ft.Container(
-        width=48,
-        height=48,
-        border_radius=24,
-        border=ft.Border.all(2, "#ffffff"),
-        bgcolor="#ff6666ff",
-        alignment=ft.Alignment.CENTER,
-        tooltip="Live — голосовой разговор",
-        content=ft.Icon(
-            ft.Icons.GRAPHIC_EQ,
-            color=ft.Colors.WHITE,
-            size=20,
-        ),
-        on_click=on_click,
-    )
+def build_live_button(on_click=None):
+    return brand_button(ft.Icons.GRAPHIC_EQ, 'Live — голосовой разговор', on_click)

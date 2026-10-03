@@ -40,6 +40,18 @@ jobs:
           pip install -r App/requirements.txt
           pip install flet
 
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build native database
+        run: python scripts/build_native.py
+
+      - name: Check native storage key transitions
+        run: cargo test --manifest-path Services/Cargo.toml --lib
+
+      - name: Run tests
+        run: python -m unittest discover -s tests -q
+
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -88,7 +100,7 @@ jobs:
 
       - name: Build Flet
         run: |
-          flet build ${{ matrix.platform }}
+          flet build ${{ matrix.platform }} --python-version 3.14 --yes
 
       - name: Create ZIP - Linux
         if: matrix.platform == 'linux'

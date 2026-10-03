@@ -16,9 +16,9 @@ from App.services.voice_installer import install_all_voices, install_voice
 
 def install(voice="all"):
     if voice == "all":
-        install_all_voices()
+        install_all_voices(lambda message: print(message, flush=True))
     else:
-        install_voice(voice)
+        install_voice(voice, lambda message: print(message, flush=True))
     print(f"Голоса готовы: {VOICE_DIR}", flush=True)
 
 

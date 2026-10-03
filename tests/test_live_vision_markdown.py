@@ -12,7 +12,7 @@ from unittest.mock import Mock, patch
 import flet as ft
 from PIL import Image
 
-from App.app.live_conversation import LiveConversation
+from App.app.live_conversation import LiveConversation, VisionCaptureError
 from App.app.message import build_ai_message
 from App.services import live_vision
 
@@ -57,10 +57,11 @@ class LiveVisionNoteTests(unittest.IsolatedAsyncioTestCase):
         self.live = LiveConversation(Mock(web=False), lambda: False, list, Mock(), Mock())
         self.live._set_state = Mock()
 
-    async def test_capture_error_is_remembered_and_reply_continues_without_image(self):
+    async def test_capture_error_prevents_reply_without_requested_image(self):
         self.live.camera_on = True
         with patch("App.app.live_conversation.capture_camera_frame", side_effect=RuntimeError("Нет камеры.")):
-            self.assertIsNone(await self.live._capture_vision_frame())
+            with self.assertRaises(VisionCaptureError):
+                await self.live._capture_vision_frame()
         self.assertIn("Нет камеры.", self.live._vision_note)
         self.assertIn("Камера", self.live._vision_note)
 

@@ -68,13 +68,13 @@ impl Database {
 
         self.conn.execute_batch("BEGIN;")?;
 
-        let result = self.run_migrations(version);
+        let result = self.run_migrations(version).and_then(|_| {
+            self.conn.pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
+        });
 
         match result {
             Ok(()) => {
                 self.conn.execute_batch("COMMIT;")?;
-                self.conn
-                    .pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)?;
                 Ok(())
             }
             Err(e) => {
@@ -193,19 +193,21 @@ impl Database {
         reply_to: Option<&str>,
         attachments: &[(String, String)],
     ) -> Result<i64> {
-        self.conn.execute(
+        let transaction = self.conn.unchecked_transaction()?;
+        transaction.execute(
             "INSERT INTO messages (chat_id, role, content, quote, reply_to, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![chat_id, role, content, quote, reply_to, now()],
         )?;
-        let message_id = self.conn.last_insert_rowid();
+        let message_id = transaction.last_insert_rowid();
 
         for (name, path) in attachments {
-            self.conn.execute(
+            transaction.execute(
                 "INSERT INTO message_attachments (message_id, name, path) VALUES (?1, ?2, ?3)",
                 params![message_id, name, path],
             )?;
         }
 
+        transaction.commit()?;
         Ok(message_id)
     }
 
@@ -217,6 +219,25 @@ impl Database {
             params![content, message_id],
         )?;
         Ok(affected > 0)
+    }
+
+    pub fn update_message_full(&self, message_id: i64, content: &str, attachments: &[(String, String)]) -> Result<bool> {
+        let transaction = self.conn.unchecked_transaction()?;
+        let affected = transaction.execute(
+            "UPDATE messages SET content = ?1 WHERE id = ?2", params![content, message_id],
+        )?;
+        if affected == 0 {
+            return Ok(false);
+        }
+        transaction.execute("DELETE FROM message_attachments WHERE message_id = ?1", params![message_id])?;
+        for (name, path) in attachments {
+            transaction.execute(
+                "INSERT INTO message_attachments (message_id, name, path) VALUES (?1, ?2, ?3)",
+                params![message_id, name, path],
+            )?;
+        }
+        transaction.commit()?;
+        Ok(true)
     }
 
     pub fn get_messages(&self, chat_id: i64) -> Result<Vec<StoredMessage>> {
@@ -256,6 +277,19 @@ impl Database {
             .prepare("SELECT id, COALESCE(title, ''), created_at FROM chats ORDER BY created_at DESC")?;
         let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?;
         rows.collect()
+    }
+
+    pub fn rename_chat(&self, chat_id: i64, title: &str) -> Result<bool> {
+        Ok(self.conn.execute("UPDATE chats SET title = ?1 WHERE id = ?2", params![title, chat_id])? > 0)
+    }
+
+    pub fn list_chat_summaries(&self) -> Result<Vec<(i64, String, i64)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT c.id, COALESCE(c.title, ''), COUNT(m.id) FROM chats c
+             LEFT JOIN messages m ON m.chat_id = c.id
+             GROUP BY c.id ORDER BY c.created_at DESC, c.id DESC"
+        )?;
+        stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?.collect()
     }
 
     /// Удаляет все сообщения чата (вложения удаляются каскадно через FK). Сам чат остаётся.

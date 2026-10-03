@@ -9,24 +9,30 @@
 
 
 import flet as ft
+try:
+    from .palette import color
+except ImportError:
+    from app.palette import color
 import platform
 
 def build_background() -> ft.Container:
     return ft.Container(
         expand=True,
-        bgcolor="#b3f2ff",
+        bgcolor=color("#b3f2ff"),
     )
 
 def build_background_layout(
     chat: ft.Control,
     prompt_container: ft.Control,
     menu: ft.Control,
-    menu_overlay: ft.Control | None = None
+    menu_overlay: ft.Control | None = None,
+    header: ft.Control | None = None,
+    empty_state: ft.Control | None = None
 ) -> ft.Container:
     bg = build_background()
     bg.padding = ft.Padding.all(10)
     linux_layout = platform.system() == "Linux"
-    input_side_margin = 100 if linux_layout else 0
+    input_side_margin = 12 if linux_layout else 4
     input_bottom_margin = 8 if linux_layout else 0
 
     input_area = ft.Container(
@@ -41,7 +47,8 @@ def build_background_layout(
         expand=True,
         spacing=0,
         controls=[
-            chat,
+            *([header] if header is not None else []),
+            ft.Stack(expand=True, controls=[chat, *([empty_state] if empty_state is not None else [])]),
             ft.Container(
                 margin=ft.Margin.only(bottom=input_bottom_margin),
                 content=input_area,
@@ -51,9 +58,9 @@ def build_background_layout(
 
     main_content = ft.Container(
         expand=True,
-        bgcolor="#d9ffe6",
-        border_radius=8,
-        border=ft.Border.all(2, "#00c753"),
+        bgcolor=color("#d9ffe6"),
+        border_radius=16,
+        border=ft.Border.all(2, ft.Colors.WHITE),
         content=main_column,
     )
 

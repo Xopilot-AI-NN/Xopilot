@@ -19,7 +19,8 @@ _session_chat_model: str | None = None
 _session_live_model: str | None = None
 
 _KNOWN_NAMES = {
-    DEFAULT_FILENAME: "Gemma 4 E2B",
+    DEFAULT_FILENAME: "Gemma4-e2b",
+    "gemma-4-E4B-it.litertlm": "Gemma4-e4b",
 }
 
 
@@ -79,6 +80,8 @@ def set_selected_chat_model(filename: str) -> bool:
     global _session_chat_model
     if filename not in list_local_models():
         raise ValueError(f"Локальная модель не найдена: {filename}")
+    from .api_chat import select_local
+    select_local()
     _session_chat_model = filename
     return set_setting(CHAT_MODEL_SETTING_KEY, filename)
 

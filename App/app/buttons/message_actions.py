@@ -1,98 +1,30 @@
-"""Кнопки действий сообщения."""
-
+"""Compact actions remain accessible with a mouse, keyboard or touch."""
 import flet as ft
+try:
+    from ..palette import color
+except ImportError:
+    from app.palette import color
 
 
-def build_message_actions(
-    text: str,
-    files: list[ft.FilePickerFile] | None,
-    on_action,
-    can_edit: bool,
-    message_id: int | None = None,
-) -> ft.Row:
-    async def handle_action(action: str):
-        await on_action(action, text, files, message_id)
+def build_message_actions(text, files, on_action, can_edit, message_id=None):
+    async def action(name):
+        await on_action(name, text, files, message_id)
 
-    async def on_copy(_):
-        await handle_action("copy")
+    async def copy(_):
+        await action('copy')
 
-    async def on_reply(_):
-        await handle_action("reply")
+    def item(label, icon, name):
+        async def invoke(_):
+            await action(name)
+        return ft.PopupMenuItem(content=label, icon=icon, on_click=invoke)
 
-    async def on_quote(_):
-        await handle_action("quote")
-
-    async def on_edit(_):
-        await handle_action("edit")
-
-    async def on_delete(_):
-        await handle_action("delete")
-
-    controls: list[ft.Control] = [
-        ft.IconButton(
-            icon=ft.Icons.CONTENT_COPY,
-            icon_color="#087f8c",
-            icon_size=15,
-            width=28,
-            height=28,
-            padding=0,
-            bgcolor="#dff8f3",
-            hover_color="#bcefe5",
-            tooltip="Копировать",
-            on_click=on_copy,
-        ),
-        ft.IconButton(
-            icon=ft.Icons.REPLY,
-            icon_color="#087f8c",
-            icon_size=15,
-            width=28,
-            height=28,
-            padding=0,
-            bgcolor="#dff8f3",
-            hover_color="#bcefe5",
-            tooltip="Ответить",
-            on_click=on_reply,
-        ),
-        ft.IconButton(
-            icon=ft.Icons.FORMAT_QUOTE,
-            icon_color="#087f8c",
-            icon_size=15,
-            width=28,
-            height=28,
-            padding=0,
-            bgcolor="#dff8f3",
-            hover_color="#bcefe5",
-            tooltip="Цитировать",
-            on_click=on_quote,
-        ),
-    ]
-    if can_edit:
-        controls.append(
-            ft.IconButton(
-                icon=ft.Icons.EDIT,
-                icon_color="#087f8c",
-                icon_size=15,
-                width=28,
-                height=28,
-                padding=0,
-                bgcolor="#dff8f3",
-                hover_color="#bcefe5",
-                tooltip="Изменить",
-                on_click=on_edit,
-            )
-        )
-    controls.append(
-        ft.IconButton(
-            icon=ft.Icons.DELETE_OUTLINE,
-            icon_color="#c94b4b",
-            icon_size=15,
-            width=28,
-            height=28,
-            padding=0,
-            bgcolor="#ffe9e9",
-            hover_color="#ffd2d2",
-            tooltip="Удалить",
-            on_click=on_delete,
-        )
-    )
-    return ft.Row(spacing=2, tight=True, height=28, controls=controls)
+    return ft.Row(spacing=0, tight=True, height=24, controls=[
+        ft.IconButton(icon=ft.Icons.CONTENT_COPY, icon_color=color('#087f8c'), icon_size=14,
+                      width=26, height=24, padding=0, tooltip='Копировать', on_click=copy),
+        ft.PopupMenuButton(icon=ft.Icons.MORE_HORIZ, icon_color=color('#087f8c'), icon_size=18,
+                           tooltip='Действия сообщения', width=26, height=24, padding=0,
+                           items=[item('Ответить', ft.Icons.REPLY, 'reply'),
+                                  item('Цитировать', ft.Icons.FORMAT_QUOTE, 'quote'),
+                                  *([item('Изменить', ft.Icons.EDIT, 'edit')] if can_edit else []),
+                                  item('Удалить', ft.Icons.DELETE_OUTLINE, 'delete')]),
+    ])

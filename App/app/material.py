@@ -9,7 +9,26 @@
 """
 
 import flet as ft
+try:
+    from .palette import color
+except ImportError:
+    from app.palette import color
 import os
+import io
+import asyncio
+from pathlib import Path
+from PIL import Image
+
+
+def image_preview(path):
+        try:
+                with Image.open(path) as image:
+                        image.thumbnail((256, 256))
+                        buffer = io.BytesIO()
+                        image.convert("RGB").save(buffer, format="JPEG")
+                        return buffer.getvalue()
+        except (OSError, ValueError):
+                return b""
 
 
 def is_image_file(file: ft.FilePickerFile) -> bool:
@@ -31,22 +50,35 @@ def file_icon(file: ft.FilePickerFile):
 
 
 def build_file_tile(file: ft.FilePickerFile) -> ft.Container:
+        async def save_copy(e):
+                picker = ft.FilePicker()
+                try:
+                        data = await asyncio.to_thread(Path(file.path).read_bytes)
+                        path = await picker.save_file(dialog_title="Сохранить копию вложения", file_name=file.name,
+                                                       src_bytes=data)
+                        if path and not e.page.web:
+                                await asyncio.to_thread(Path(path).write_bytes, data)
+                except Exception as exc:
+                        e.page.show_dialog(ft.SnackBar(ft.Text(f"Не удалось сохранить файл: {exc}")))
         preview = (
                 ft.Image(
-                        src=file.path or "",
+                        src=image_preview(file.path),
                         width=42,
                         height=42,
                         fit=ft.BoxFit.COVER,
                         border_radius=12,
                 )
                 if is_image_file(file)
-                else ft.Icon(file_icon(file), size=34, color="#087f8c")
+                else ft.Icon(file_icon(file), size=34, color=color("#087f8c"))
         )
         return ft.Container(
+                tooltip=f"Сохранить копию: {file.name}",
+                on_click=save_copy,
+                ink=True,
                 width=96,
                 height=94,
-                bgcolor="#dff8f3",
-                border=ft.Border.all(1, "#7DEED5"),
+                bgcolor=color("#dff8f3"),
+                border=ft.Border.all(1, color("#7DEED5")),
                 border_radius=16,
                 padding=ft.Padding.all(5),
                 content=ft.Column(
@@ -57,14 +89,14 @@ def build_file_tile(file: ft.FilePickerFile) -> ft.Container:
                                 ft.Text(
                                         file.name,
                                         size=10,
-                                        color="#123b43",
+                                        color=color("#123b43"),
                                         max_lines=1,
                                         text_align=ft.TextAlign.CENTER,
                                 ),
                                 ft.Text(
                                         format_file_size(file.size),
                                         size=9,
-                                        color="#47747a",
+                                        color=color("#47747a"),
                                 ),
                         ],
                 ),
@@ -109,7 +141,7 @@ def build_file_attachments(
                                                 height=24,
                                                 padding=0,
                                                 tooltip="Удалить файл",
-                                                icon_color="#087f8c",
+                                                icon_color=color("#087f8c"),
                                                 on_click=lambda _, selected=file: on_remove(selected),
                                         ),
                                 ),
@@ -125,5 +157,3 @@ def build_file_attachments(
                 scroll=ft.ScrollMode.AUTO,
                 controls=chips,
         )
-
-

@@ -10,6 +10,10 @@
 """
 
 import flet as ft
+try:
+    from ..palette import color
+except ImportError:
+    from app.palette import color
 
 SIZE_MIN = 44
 SIZE_MAX = 54
@@ -22,8 +26,8 @@ def build_menu_button(on_click=None, size: int = 40, icon_size: int = 20) -> ft.
         width=size,
         height=size,
         border_radius=size / 2,
-        border=ft.Border.all(2, "#ffffff"),
-        bgcolor="#ff6666ff",
+        border=ft.Border.all(2, color("#ffffff")),
+        bgcolor=color("#ff6666ff"),
         alignment=ft.Alignment.CENTER,
         ink=True,
         animate=ft.Animation(duration=150, curve=ft.AnimationCurve.EASE_OUT),
@@ -37,7 +41,7 @@ def build_menu_button(on_click=None, size: int = 40, icon_size: int = 20) -> ft.
     )
 
     def handle_hover(e: ft.Event[ft.Container]):
-        e.control.border = ft.Border.all(2, "#d9ffe6" if e.data else "#ffffff")
+        e.control.border = ft.Border.all(2, color("#d9ffe6") if e.data else color("#ffffff"))
         e.control.update()
 
     button.on_hover = handle_hover

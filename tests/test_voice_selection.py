@@ -9,7 +9,7 @@ import unittest
 from concurrent.futures import CancelledError
 from unittest.mock import Mock, patch
 
-from App.services import speech_output, voice_catalog, voice_settings
+from App.services import speech_output, voice_catalog, voice_settings, miku_models
 from App.settings.voice.main import build_voice_page
 
 
@@ -26,7 +26,8 @@ class VoiceSettingsTests(unittest.TestCase):
             return True
         with patch.object(voice_settings, "get_setting", side_effect=lambda key, default: stored.get(key, default)), \
                 patch.object(voice_settings, "set_setting", side_effect=save), \
-                patch.object(voice_catalog.VoiceModel, "installed", new_callable=lambda: property(lambda _: True)):
+                patch.object(voice_catalog.VoiceModel, "installed", new_callable=lambda: property(lambda _: True)), \
+                patch.object(miku_models, "miku_installed", return_value=True):
             for voice in ("miku", "maple", "cove"):
                 voice_settings.set_selected_voice(voice)
                 self.assertEqual(voice_settings.get_selected_voice(), voice)
@@ -66,6 +67,8 @@ class SpeechRoutingTests(unittest.TestCase):
             patch.object(speech_output, "get_selected_voice", side_effect=lambda: self.selected),
             patch.object(speech_output, "require_voice", side_effect=lambda key: voice_catalog.VOICES[key]),
             patch.object(speech_output, "PiperSpeechVoice", side_effect=build),
+            patch.object(speech_output, "MikuSpeechVoice", side_effect=lambda variant, converter: build(variant)),
+            patch.object(speech_output, "MikuConverter"),
         ]
         for patcher in patches:
             patcher.start()
@@ -103,6 +106,21 @@ class SpeechRoutingTests(unittest.TestCase):
         speaker.speak("Привет!", threading.Event())
         speaker.speak("До встречи!", threading.Event())
         self.assertEqual(len(self.loaded), 1)
+
+    def test_miku_uses_one_converter_for_both_languages_and_releases_on_voice_change(self):
+        self.selected = "miku"
+        speaker = speech_output.SpeechOutput()
+        speaker.speak("Привет! Hello!", threading.Event())
+        speaker.speak("Ещё одна фраза.", threading.Event())
+        self.assertEqual(speaker.backend, "piper+rvc")
+        speech_output.MikuConverter.assert_called_once_with()
+        converter = speech_output.MikuConverter.return_value
+        for call in speech_output.MikuSpeechVoice.call_args_list:
+            self.assertIs(call.args[1], converter)
+        self.selected = "cove"
+        speaker.speak("Привет.", threading.Event())
+        self.assertIsNone(speaker._converter)
+        self.assertEqual(speaker.backend, "piper")
 
     def test_cancellation_between_languages_does_not_load_next_model(self):
         cancelled = threading.Event()

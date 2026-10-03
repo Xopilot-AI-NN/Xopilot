@@ -6,6 +6,10 @@
 
 import asyncio
 import flet as ft
+try:
+    from ...app.palette import color
+except ImportError:
+    from app.palette import color
 
 from ..common import section_title
 try:
@@ -21,7 +25,7 @@ def build_voice_page(page, on_status):
     if saved not in VOICES:
         saved = "cove"
     hint = "Выбор сохранится и применится со следующего ответа Live."
-    feedback = ft.Text(hint, size=12, color="#47747a")
+    feedback = ft.Text(hint, size=12, color=color("#47747a"))
     select = ft.RadioGroup(
         value=saved,
         content=ft.Column(
@@ -30,19 +34,19 @@ def build_voice_page(page, on_status):
                 ft.Container(
                     padding=ft.Padding.symmetric(horizontal=14, vertical=10),
                     border_radius=12,
-                    bgcolor="#dff8f3",
+                    bgcolor=color("#dff8f3"),
                     content=ft.Column(
                         spacing=1,
                         controls=[
                             ft.Radio(
                                 value=profile.id,
                                 label=f"{profile.name} — {profile.gender} · ru, en",
-                                active_color="#087f8c",
-                                label_style=ft.TextStyle(size=15, color="#123b43", weight=ft.FontWeight.W_600),
+                                active_color=color("#087f8c"),
+                                label_style=ft.TextStyle(size=15, color=color("#123b43"), weight=ft.FontWeight.W_600),
                             ),
                             ft.Container(
                                 padding=ft.Padding.only(left=48, bottom=4),
-                                content=ft.Text(profile.description, size=12, color="#47747a"),
+                                content=ft.Text(profile.description, size=12, color=color("#47747a")),
                             ),
                         ],
                     ),
@@ -64,12 +68,12 @@ def build_voice_page(page, on_status):
         except Exception as exc:
             select.value = saved
             feedback.value = str(exc)
-            feedback.color = "#b3261e"
+            feedback.color = color("#b3261e")
             on_status("Голос не изменён")
         else:
             saved = requested if requested in VOICES else "cove"
             feedback.value = hint
-            feedback.color = "#47747a"
+            feedback.color = color("#47747a")
             on_status(f"{VOICES[saved].name} · Со следующего ответа Live")
         finally:
             select.value = saved
@@ -81,10 +85,10 @@ def build_voice_page(page, on_status):
         spacing=12,
         controls=[
             section_title("Голос Live"),
-            ft.Text("Выберите голос для ответов ИИ", size=18, color="#123b43", weight=ft.FontWeight.BOLD),
+            ft.Text("Выберите голос для ответов ИИ", size=18, color=color("#123b43"), weight=ft.FontWeight.BOLD),
             ft.Text(
                 "Все голоса поддерживают русский и английский. Язык озвучки определяется по тексту ответа.",
-                size=13, color="#47747a",
+                size=13, color=color("#47747a"),
             ),
             select,
             feedback,

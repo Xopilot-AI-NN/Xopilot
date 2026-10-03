@@ -9,6 +9,7 @@ import re
 from concurrent.futures import CancelledError
 
 from .piper_voice import PiperSpeechVoice
+from .miku_voice import MikuConverter, MikuSpeechVoice
 from .voice_settings import get_selected_voice, require_voice
 
 
@@ -46,9 +47,10 @@ class SpeechOutput:
     def __init__(self, voice_id=None):
         self._fixed_voice_id = voice_id
         self._voices = {}
+        self._converter = None
         self._last_language = "ru"
         self.profile = require_voice(voice_id if voice_id is not None else get_selected_voice())
-        self.backend = "piper"
+        self.backend = "piper+rvc" if self.profile.id == "miku" else "piper"
 
     def speak(self, text, cancelled):
         if cancelled.is_set():
@@ -61,12 +63,19 @@ class SpeechOutput:
         profile = require_voice(voice_id)
         if profile.id != self.profile.id:
             self._voices.clear()
+            self._converter = None
             self.profile = profile
+            self.backend = "piper+rvc" if profile.id == "miku" else "piper"
         for language, part in speech_segments(text, self._last_language):
             if cancelled.is_set():
                 raise CancelledError()
             if language not in self._voices:
-                self._voices[language] = PiperSpeechVoice(profile.variant(language))
+                if profile.id == "miku":
+                    if self._converter is None:
+                        self._converter = MikuConverter()
+                    self._voices[language] = MikuSpeechVoice(profile.variant(language), self._converter)
+                else:
+                    self._voices[language] = PiperSpeechVoice(profile.variant(language))
             if cancelled.is_set():
                 raise CancelledError()
             self._voices[language].speak(part, cancelled)

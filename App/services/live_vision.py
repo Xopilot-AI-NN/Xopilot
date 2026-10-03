@@ -134,3 +134,46 @@ def capture_screen_frame(monitor_index: int = 0) -> bytes:
         image.convert("RGB").save(out, format="JPEG", quality=85)
         return out.getvalue()
     raise RuntimeError("Не удалось снять экран (" + "; ".join(reasons) + ").")
+
+class CameraStream:
+    """Открывает камеру один раз на время показа; закрытие освобождает устройство."""
+    def __init__(self, device_index=0):
+        import threading
+        self.device_index = device_index
+        self._lock = threading.Lock()
+        self._capture = None
+        self._closed = False
+
+    def frame(self):
+        with self._lock:
+            if self._closed:
+                raise RuntimeError("Камера уже отключена.")
+            if cv2 is None:
+                raise RuntimeError("Для камеры установите opencv-python-headless.")
+            if self._capture is None:
+                backend = cv2.CAP_V4L2 if sys.platform.startswith("linux") else cv2.CAP_ANY
+                self._capture = cv2.VideoCapture(self.device_index, backend)
+                if not self._capture.isOpened():
+                    self._capture.release()
+                    self._capture = None
+                    raise RuntimeError("Камера недоступна. Проверьте устройство и разрешения.")
+                self._capture.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                self._capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+                for _ in range(CAMERA_MIN_FRAMES):
+                    self._capture.read()
+            ok, frame = self._capture.read()
+            if not ok:
+                self._capture.release()
+                self._capture = None
+                raise RuntimeError("Камера перестала передавать изображение.")
+            ok, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 82])
+            if not ok:
+                raise RuntimeError("Не удалось получить изображение камеры.")
+            return buffer.tobytes()
+
+    def close(self):
+        with self._lock:
+            self._closed = True
+            if self._capture is not None:
+                self._capture.release()
+                self._capture = None

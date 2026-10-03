@@ -9,6 +9,7 @@
 """
 
 import time
+from .paths import app_data_dir
 
 try:
     from .db import get_db, get_setting, set_setting
@@ -84,4 +85,8 @@ def get_stats():
         "messages": messages,
         "tokens": tokens,
         "app_seconds": app_seconds,
+        "chats": len(get_db().list_chats()),
+        "db_bytes": sum(path.stat().st_size for path in
+                        (app_data_dir() / name for name in ('xopilot.db', 'xopilot.db-wal', 'xopilot.db-shm'))
+                        if path.exists()),
     }

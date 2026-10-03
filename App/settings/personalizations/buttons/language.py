@@ -1,30 +1,30 @@
 """
 Файл: /App/settings/personalizations/buttons/language.py
-Описание: Кнопка выбора языка интерфейса.
+Описание: Предпочтительный язык ответов ИИ.
     Значение читается/сохраняется в локальной БД (ключ "language"), переживает перезапуск.
-    Сам перевод интерфейса (i18n) ещё не реализован — только хранение выбора.
+    Интерфейс остаётся русским; выбор применяется к следующим ответам модели.
 """
 
 import flet as ft
+try:
+    from ....app.palette import color
+except ImportError:
+    from app.palette import color
 
 try:
-    from services.db import get_setting, set_setting
-except Exception:  # noqa: BLE001 — БД-модуль может быть ещё не собран, UI должен работать без него
-    def get_setting(key, default=None):  # type: ignore
-        return default
-
-    def set_setting(key, value):  # type: ignore
-        return False
+    from ....services.db import get_setting, get_db
+except ImportError:
+    from services.db import get_setting, get_db
 
 
 def build_language_select(on_status) -> ft.Dropdown:
-    saved = get_setting("language", "ru")
+    saved = get_setting("response_language", "ru")
     option_style = ft.ButtonStyle(
-        color="#123b43",
+        color=color("#123b43"),
         bgcolor={
-            ft.ControlState.DEFAULT: "#f5fffc",
-            ft.ControlState.HOVERED: "#e3f7f2",
-            ft.ControlState.FOCUSED: "#d7f1eb",
+            ft.ControlState.DEFAULT: color("#f5fffc"),
+            ft.ControlState.HOVERED: color("#e3f7f2"),
+            ft.ControlState.FOCUSED: color("#d7f1eb"),
         },
         overlay_color=ft.Colors.TRANSPARENT,
         shape=ft.RoundedRectangleBorder(radius=10),
@@ -36,28 +36,28 @@ def build_language_select(on_status) -> ft.Dropdown:
         width=132,
         dense=True,
         filled=True,
-        fill_color="#f5fffc",
-        bgcolor="#f5fffc",
-        hover_color="#edfbf8",
-        color="#123b43",
+        fill_color=color("#f5fffc"),
+        bgcolor=color("#f5fffc"),
+        hover_color=color("#edfbf8"),
+        color=color("#123b43"),
         trailing_icon=ft.Icons.KEYBOARD_ARROW_DOWN_ROUNDED,
         selected_trailing_icon=ft.Icons.KEYBOARD_ARROW_UP_ROUNDED,
         border={
             ft.ControlState.DEFAULT: ft.OutlineInputBorder(
                 border_radius=12,
-                side=ft.BorderSide(color="#a8ddd7"),
+                side=ft.BorderSide(color=color("#a8ddd7")),
             ),
             ft.ControlState.FOCUSED: ft.OutlineInputBorder(
                 border_radius=12,
-                side=ft.BorderSide(width=2, color="#087f8c"),
+                side=ft.BorderSide(width=2, color=color("#087f8c")),
             ),
         },
         menu_style=ft.MenuStyle(
-            bgcolor="#f5fffc",
+            bgcolor=color("#f5fffc"),
             elevation=10,
-            shadow_color="#33000000",
+            shadow_color=color("#33000000"),
             shape=ft.RoundedRectangleBorder(radius=14),
-            side=ft.BorderSide(color="#b6e5df", width=1),
+            side=ft.BorderSide(color=color("#b6e5df"), width=1),
             padding=ft.Padding.all(6),
         ),
         expanded_insets=ft.Padding.only(top=6),
@@ -78,8 +78,13 @@ def build_language_select(on_status) -> ft.Dropdown:
     )
 
     def change(_):
-        set_setting("language", select.value or "ru")
-        on_status("Язык сохранён")
+        try:
+            get_db().set_setting("response_language", select.value or "ru")
+        except Exception as exc:
+            select.value = get_setting("response_language", "ru")
+            on_status(f"Не удалось сохранить язык: {exc}")
+            return
+        on_status("Язык ответов сохранён")
 
     select.on_select = change
     return select

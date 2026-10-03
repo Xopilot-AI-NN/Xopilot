@@ -8,11 +8,15 @@
 """
 
 import os
-import platform
 from typing import Optional
 
 try:
-    import advanced_xopilot  # type: ignore  # Rust cdylib из Services/, собирается отдельно
+    import importlib
+    import importlib.util
+    name = "App.advanced_xopilot" if __package__ == "App.services" else "advanced_xopilot"
+    if name != "advanced_xopilot" and importlib.util.find_spec(name) is None:
+        name = "advanced_xopilot"
+    advanced_xopilot = importlib.import_module(name)
     _IMPORT_ERROR: Optional[Exception] = None
 except Exception as exc:  # noqa: BLE001 — на этапе разработки модуль может быть ещё не собран
     advanced_xopilot = None  # type: ignore
@@ -21,13 +25,10 @@ except Exception as exc:  # noqa: BLE001 — на этапе разработк�
 
 def _app_data_dir() -> str:
     """Каталог данных приложения: %APPDATA%\\Xopilot на Windows, ~/.local/share/Xopilot на Linux."""
-    if platform.system() == "Windows":
-        base = os.environ.get("APPDATA", os.path.expanduser("~"))
-    else:
-        base = os.environ.get("XDG_DATA_HOME", os.path.expanduser("~/.local/share"))
-    path = os.path.join(base, "Xopilot")
-    os.makedirs(path, exist_ok=True)
-    return path
+    from .paths import app_data_dir
+    path = app_data_dir()
+    path.mkdir(parents=True, exist_ok=True)
+    return str(path)
 
 
 _db = None  # единственный экземпляр PyDatabase на процесс приложения

@@ -10,7 +10,9 @@ from pathlib import Path
 from typing import Optional
 
 
-VOICE_DIR = Path(__file__).resolve().parents[1] / "data" / "models" / "tts"
+from .paths import LEGACY_MODELS_DIR, models_dir
+
+VOICE_DIR = models_dir() / "tts"
 REVISION = "1162a9173d0ce503555aed757976b7a9912eae4c"
 DEFAULT_VOICE = "cove"
 
@@ -24,12 +26,20 @@ class VoiceModel:
     espeak_voice: str
 
     @property
+    def directory_path(self):
+        for directory in (VOICE_DIR, LEGACY_MODELS_DIR / "tts"):
+            if ((directory / f"{self.name}.onnx").is_file()
+                    and (directory / f"{self.name}.onnx.json").is_file()):
+                return directory
+        return VOICE_DIR
+
+    @property
     def path(self):
-        return VOICE_DIR / f"{self.name}.onnx"
+        return self.directory_path / f"{self.name}.onnx"
 
     @property
     def config_path(self):
-        return VOICE_DIR / f"{self.name}.onnx.json"
+        return self.directory_path / f"{self.name}.onnx.json"
 
     @property
     def installed(self):
@@ -95,22 +105,22 @@ class VoiceProfile:
 
     @property
     def installed(self):
-        return self.ru.model.installed and self.en.model.installed
+        if not (self.ru.model.installed and self.en.model.installed):
+            return False
+        if self.id == "miku":
+            from .miku_models import miku_installed
+            return miku_installed()
+        return True
 
 
-# Как отличаются голоса друг от друга без «бурундука» и без «бабули»:
-#  - length_scale (родной параметр Piper) — темп. Безопасен, используем как основной рычаг.
-#  - noise_w_scale (тоже родной параметр Piper) — вариативность длительности фонем: больше —
-#    живее/энергичнее звучание, меньше — ровнее/спокойнее (именно этот параметр,
-#    а не медленный темп, делает en_US-ljspeech спокойным, а не «старческим»).
-#  - rate_scale (наш собственный питч-трюк через смену sample_rate при проигрывании)
-#    держим в минимуме и только там, где иначе нечем отличить голос (для RU есть
-#    только один женский голос — irina) — больше ~6-7% уже звучит как «бурундук».
+# COVE и Maple сохраняют исходные дикторские модели Piper.
+# Для Miku эти варианты задают только произношение и темп; отдельная RVC-модель
+# переводит аудио в обученный тембр Miku, без смены частоты проигрывания.
 VOICES = {
     "cove": VoiceProfile("cove", "COVE", "Мужской", "Низкий, спокойный",
                          VoiceVariant("ruslan"), VoiceVariant("ryan")),
-    "miku": VoiceProfile("miku", "Miku", "Женский", "Высокий, лёгкий",
-                         VoiceVariant("irina", length_scale=0.92, rate_scale=1.06, noise_w_scale=1.0),
+    "miku": VoiceProfile("miku", "Miku", "Женский", "Тембр Hatsune Miku · локальная модель RVC сообщества",
+                         VoiceVariant("irina", length_scale=0.92, noise_w_scale=1.0),
                          VoiceVariant("amy", length_scale=0.95)),
     "maple": VoiceProfile("maple", "Maple", "Женский", "Мягкий, спокойный",
                           VoiceVariant("irina", length_scale=1.03, noise_w_scale=0.45),

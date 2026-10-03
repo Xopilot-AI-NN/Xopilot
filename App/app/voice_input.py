@@ -6,9 +6,14 @@
 
 import asyncio
 import threading
+import os
 from concurrent.futures import CancelledError
 
 import flet as ft
+try:
+    from .palette import color
+except ImportError:
+    from app.palette import color
 
 from .buttons.microphone import build_microphone_button
 try:
@@ -25,11 +30,11 @@ class VoiceInput:
         self.prompt = prompt
         self.is_sending = is_sending
         self.button = build_microphone_button(on_click=self.toggle)
-        self.status_text = ft.Text(size=12, color="#123b43", expand=True)
+        self.status_text = ft.Text(size=12, color=color("#123b43"), expand=True)
         self.cancel_button = ft.IconButton(
             icon=ft.Icons.CLOSE,
             icon_size=18,
-            icon_color="#087f8c",
+            icon_color=color("#087f8c"),
             tooltip="Отменить диктовку",
             on_click=self.cancel,
         )
@@ -48,6 +53,10 @@ class VoiceInput:
     def busy(self):
         return self._state != "idle"
 
+    def reconnect(self):
+        self._closed = False
+        self._render()
+
     def _render(self, message=""):
         recording = self._state == "recording"
         self.button.content = ft.Icon(
@@ -55,7 +64,9 @@ class VoiceInput:
             color=ft.Colors.WHITE,
             size=20,
         )
-        self.button.bgcolor = "#d9364f" if recording else "#ff6666ff"
+        self.button.bgcolor = color("#d9364f") if recording else None
+        from .buttons.brand import brand_gradient
+        self.button.gradient = None if recording else brand_gradient()
         self.button.tooltip = "Остановить и распознать речь" if recording else "Диктовка"
         self.button.disabled = self.busy and not recording
         self.status_text.value = message
@@ -77,7 +88,7 @@ class VoiceInput:
         if self.is_sending():
             self._render("Завершите Live или дождитесь ответа ИИ, затем включите диктовку.")
             return
-        if self.page.web:
+        if self.page.web and os.environ.get("XOPILOT_LOCAL_WEB") != "1":
             self._render("Диктовка доступна в настольном приложении Xopilot.")
             return
         self._cancelled = threading.Event()

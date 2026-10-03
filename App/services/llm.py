@@ -1,7 +1,7 @@
 """
 Файл: App/services/llm.py
 Рабочий локальный ИИ через LiteRT-LM (Google, litert-lm-api). Чистый Python, без Rust.
-.litertlm НЕ скачивается автоматически — клади в App/data/models/.
+Модели устанавливаются пользователем через «Настройки → Модели».
 Пример (Gemma 4 E2B, мультимодальная):
 huggingface.co/litert-community/gemma-4-E2B-it-litert-lm
 Блокирующие вызовы — через asyncio.to_thread. Диктовка использует отдельный
@@ -21,6 +21,10 @@ import threading
 from concurrent.futures import CancelledError
 from typing import List, Optional
 
+from .paths import LEGACY_MODELS_DIR, models_dir
+from .runtime import cache_dir
+from . import acceleration
+
 try:
     from .stats import record_generation
 except ImportError:
@@ -35,9 +39,16 @@ except Exception as exc:  # noqa: BLE001
     _IMPORT_ERROR = exc
 
 
-MODELS_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "models")
+MODELS_DIR = str(models_dir())
 DEFAULT_FILENAME = "gemma-4-E2B-it.litertlm"
 DEFAULT_SYSTEM_PROMPT = "Ты — Zephyr, полезный ассистент в Xopilot. Отвечай по делу и с подробностью, необходимой для запроса."
+
+
+def response_language_instruction():
+    from .db import get_setting
+    language = get_setting("response_language", "ru")
+    return ("\nPrefer English for your replies unless the user requests a different language."
+            if language == "en" else "\nПредпочитай русский язык ответов, если пользователь не просит другой язык.")
 
 _engine = None
 _conversation = None
@@ -45,16 +56,31 @@ _loaded_filename = None
 _engine_lock = threading.RLock()
 _supports_audio = False
 _supports_vision = False
+_loaded_preference = None
+_execution = {"backend": None, "reason": "Модель ещё не загружена"}
+
+
+def execution_info():
+    return dict(_execution)
+
+
+def execution_label():
+    return ("GPU · видеокарта" if _execution["backend"] == "gpu" else
+            "CPU · процессор" if _execution["backend"] == "cpu" else
+            {"auto": "Авто", "gpu": "GPU", "cpu": "CPU"}[acceleration.preference()] + " · ожидает загрузки")
 
 
 def unload_model():
     """Освободить conversation до engine: нативные сессии зависят от движка."""
     global _engine, _conversation, _loaded_filename, _supports_audio, _supports_vision
+    global _loaded_preference, _execution
     with _engine_lock:
         conversation, engine = _conversation, _engine
         _conversation = _engine = _loaded_filename = None
         _supports_audio = False
         _supports_vision = False
+        _loaded_preference = None
+        _execution = {"backend": None, "reason": "Модель ещё не загружена"}
         try:
             if conversation is not None:
                 conversation.close()
@@ -68,7 +94,19 @@ atexit.register(unload_model)
 
 def list_local_models():
     os.makedirs(MODELS_DIR, exist_ok=True)
-    return sorted(os.path.basename(p) for p in glob.glob(os.path.join(MODELS_DIR, "*.litertlm")))
+    return sorted({os.path.basename(p)
+                   for directory in (MODELS_DIR, str(LEGACY_MODELS_DIR))
+                   for p in glob.glob(os.path.join(directory, "*.litertlm"))})
+
+
+def get_model_path(filename):
+    if os.path.basename(filename) != filename or not filename.endswith(".litertlm"):
+        raise ValueError("Недопустимое имя файла модели")
+    path = os.path.join(MODELS_DIR, filename)
+    if os.path.isfile(path):
+        return path
+    legacy = os.path.join(str(LEGACY_MODELS_DIR), filename)
+    return legacy if os.path.isfile(legacy) else path
 
 
 def is_model_loaded():
@@ -82,7 +120,7 @@ def get_loaded_model():
 def model_supports_audio(filename: str) -> bool:
     if litert_lm is None:
         raise RuntimeError("litert_lm не установлен — выполните pip install litert-lm-api") from _IMPORT_ERROR
-    path = os.path.join(MODELS_DIR, filename)
+    path = get_model_path(filename)
     if not os.path.isfile(path):
         raise FileNotFoundError(f"Файл модели не найден: {path}")
     with litert_lm.Capabilities(path) as capabilities:
@@ -92,7 +130,7 @@ def model_supports_audio(filename: str) -> bool:
 def ensure_model_loaded(filename: str):
     """Загрузить нужную модель только если сейчас активна другая."""
     with _engine_lock:
-        if is_model_loaded() and _loaded_filename == filename:
+        if is_model_loaded() and _loaded_filename == filename and _loaded_preference == acceleration.preference():
             return filename
         return _load_model(filename, DEFAULT_SYSTEM_PROMPT)
 
@@ -104,13 +142,14 @@ def load_model(filename=DEFAULT_FILENAME, system_prompt=DEFAULT_SYSTEM_PROMPT):
 
 def _load_model(filename, system_prompt):
     global _engine, _conversation, _loaded_filename, _supports_audio, _supports_vision
+    global _loaded_preference, _execution
 
     if litert_lm is None:
         raise RuntimeError("litert_lm не установлен — выполните pip install litert-lm-api") from _IMPORT_ERROR
 
-    path = os.path.join(MODELS_DIR, filename)
+    path = get_model_path(filename)
     if not os.path.isfile(path):
-        raise FileNotFoundError(f"Файл модели не найден: {path}. Положите .litertlm в App/data/models/")
+        raise FileNotFoundError(f"Файл модели не найден: {path}. Откройте Настройки → Модели и установите модель.")
 
     with litert_lm.Capabilities(path) as capabilities:
         supports_audio = capabilities.input_modalities.audio
@@ -120,12 +159,24 @@ def _load_model(filename, system_prompt):
 
     # vision_backend аналогичен audio_backend выше: без него send_message с картинкой падает с "Vision
     # executor should not be null, please TryLoadingVisionExecutor() first" даже если модель vision поддерживает.
-    engine = litert_lm.Engine(
-        path,
-        backend=litert_lm.Backend.CPU(),
-        vision_backend=litert_lm.Backend.CPU() if supports_vision else None,
-        audio_backend=litert_lm.Backend.CPU() if supports_audio else None,
-    )
+    requested = acceleration.preference()
+    backends, reason = acceleration.candidates(path, requested)
+    for backend in backends:
+        try:
+            backend_cache = cache_dir() / backend
+            backend_cache.mkdir(parents=True, exist_ok=True)
+            engine = litert_lm.Engine(
+                path,
+                backend=litert_lm.Backend.GPU() if backend == "gpu" else litert_lm.Backend.CPU(),
+                cache_dir=str(backend_cache),
+                vision_backend=litert_lm.Backend.CPU() if supports_vision else None,
+                audio_backend=litert_lm.Backend.CPU() if supports_audio else None,
+            )
+            break
+        except Exception as exc:
+            if backend == backends[-1]:
+                raise RuntimeError(f"Не удалось загрузить модель на {backend.upper()}: {exc}") from exc
+            reason = f"GPU недоступна: {exc}"
     try:
         _conversation = engine.create_conversation(system_message=system_prompt)
     except Exception:
@@ -135,6 +186,8 @@ def _load_model(filename, system_prompt):
     _loaded_filename = filename
     _supports_audio = supports_audio
     _supports_vision = supports_vision
+    _loaded_preference = requested
+    _execution = {"backend": backend, "reason": reason}
     return filename
 
 
@@ -172,10 +225,13 @@ def _build_message(prompt_text, attachments):
     return litert_lm.Contents.of(*parts)
 
 
-def generate_reply(prompt_text, history=None, attachments=None):
+def generate_reply(prompt_text, history=None, attachments=None, *, instructions="", cancelled=None, private=False):
     """attachments: [(имя, путь), ...] вложений ТЕКУЩЕГО сообщения (фото/текст/PDF/DOCX/видео).
     Старые вложения из history повторно не отправляются — только текст истории (см. _recent_messages).
     """
+    if private:
+        history = history or []
+        instructions = ''
     with _engine_lock:
         if litert_lm is None:
             raise RuntimeError("litert_lm не установлен — выполните pip install litert-lm-api") from _IMPORT_ERROR
@@ -189,14 +245,16 @@ def generate_reply(prompt_text, history=None, attachments=None):
             if engine is None:
                 raise RuntimeError("Модель не загружена — вызовите load_model()")
             with engine.create_conversation(
-                system_message=DEFAULT_SYSTEM_PROMPT,
+                system_message=DEFAULT_SYSTEM_PROMPT + ("\nОтвечай на языке запроса." if private else response_language_instruction()) + ("\n\nИнструкции рабочего пространства:\n" + instructions if instructions else ""),
                 messages=_recent_messages(history),
             ) as conversation:
-                result = conversation.send_message(message)
+                result = (_send_cancellable(conversation, message, cancelled)
+                          if cancelled is not None else conversation.send_message(message))
     text = _extract_text(result).strip()
     if not text:
         raise RuntimeError("Модель не вернула ответ. Повторите запрос.")
-    record_generation(text)
+    if not private:
+        record_generation(text)
     return text
 
 
@@ -213,11 +271,11 @@ def prepare_voice_model(cancelled: threading.Event, filename: str | None = None)
             raise RuntimeError("Для распознавания речи установите зависимости приложения (LiteRT-LM).") from _IMPORT_ERROR
         models = list_local_models()
         if not models:
-            raise RuntimeError("Для диктовки нужна локальная модель с поддержкой аудио в App/data/models/.")
+            raise RuntimeError("Для диктовки нужна локальная модель с поддержкой аудио. Установите её в Настройки → Модели.")
         chosen = filename or (DEFAULT_FILENAME if DEFAULT_FILENAME in models else models[0])
         if chosen not in models:
             raise RuntimeError(f"Выбранная модель Live не найдена: {chosen}")
-        if not is_model_loaded() or _loaded_filename != chosen:
+        if not is_model_loaded() or _loaded_filename != chosen or _loaded_preference != acceleration.preference():
             _load_model(chosen, DEFAULT_SYSTEM_PROMPT)
         if cancelled.is_set():
             raise CancelledError()
@@ -318,11 +376,14 @@ def generate_live_reply(
     cancelled: threading.Event,
     model_filename: str | None = None,
     image_bytes: bytes | None = None,
+    *, instructions="", attachments=None, private=False,
 ) -> str:
     """Ответ на последний голосовой вопрос с недавней текстовой историей чата.
     image_bytes — необязательный кадр с камеры/экрана (кнопки Live-камера/Live-экран),
     добавляется к последней реплике пользователя как изображение.
     """
+    if private:
+        instructions = ''
     with _engine_lock:
         prepare_voice_model(cancelled, model_filename)
         lm = litert_lm
@@ -335,7 +396,14 @@ def generate_live_reply(
         if not messages or messages[-1]["role"] != "user":
             raise RuntimeError("Нет голосового вопроса для ответа.")
         current = messages.pop()
+        if attachments:
+            prompt = "".join(p.get("text", "") for p in current["content"])
+            built = _build_message(prompt, attachments)
+            current = {**current, "content": (built.to_json() if not isinstance(built, str)
+                       else [{"type": "text", "text": built}])}
         if image_bytes:
+            if not _supports_vision:
+                raise RuntimeError("Выбранная модель Live не поддерживает камеру и экран. Выберите мультимодальную модель.")
             content = list(current.get("content") or [])
             content.append(lm.Content.ImageBytes(image_bytes).to_json())
             current = {**current, "content": content}
@@ -346,6 +414,8 @@ def generate_live_reply(
                 "опирайся на то, что на нём видно. Отвечай на языке собеседника с подробностью, "
                 "необходимой для его запроса. Ответ будет прочитан вслух: пиши обычным текстом "
                 "без Markdown. Если вопрос непонятен, попроси уточнить."
+                + ("\nОтвечай на языке запроса." if private else response_language_instruction())
+                + ("\n\nИнструкции рабочего пространства:\n" + instructions if instructions else "")
             ),
             messages=messages,
             **_conversation_kwargs(lm, thinking_disabled=True),
@@ -354,5 +424,6 @@ def generate_live_reply(
         text = _extract_text(result).strip()
         if not text:
             raise RuntimeError("Модель не вернула ответ. Повторите вопрос.")
-        record_generation(text)
+        if not private:
+            record_generation(text)
         return text
