@@ -17,7 +17,7 @@ dependencies = [
     "mss==10.2.0",
     "scipy>=1.15,<2",
     "cryptography>=50.0.0",
-    "filelock==3.32.3",
+    "filelock==4.0.9",
 ]
 # Keep dependencies aligned with App/requirements.txt.
 
