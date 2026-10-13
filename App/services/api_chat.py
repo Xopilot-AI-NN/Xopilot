@@ -3,12 +3,55 @@ import base64
 import http.client
 import json
 import socket
+import io
 import threading
 import time
 from concurrent.futures import CancelledError
 from urllib.parse import urlsplit
 from .db import get_db, get_setting
 from .attachments import build_attachment_message_parts
+
+
+class _CancellableReader(io.RawIOBase):
+    """Poll cancellation inside raw reads, preserving HTTP/TLS buffering.
+
+    Socket shutdown from another thread does not reliably wake Winsock's
+    timeout wait. A timeout here stays inside readinto; BufferedReader never
+    sees one and can continue parsing partial headers/chunks safely.
+    """
+    def __init__(self, sock, cancelled):
+        self.sock = sock
+        self.cancelled = cancelled
+        self.lease = sock.makefile('rb', buffering=0)
+        sock.settimeout(.25)
+
+    def readable(self):
+        return True
+
+    def readinto(self, buffer):
+        deadline = time.monotonic() + 120
+        while True:
+            if self.cancelled is not None and self.cancelled.is_set():
+                raise CancelledError()
+            try:
+                return self.sock.recv_into(buffer)
+            except socket.timeout:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError('API response timed out') from None
+
+    def close(self):
+        try:
+            self.lease.close()
+        finally:
+            super().close()
+
+
+class _ResponseSocket:
+    def __init__(self, sock, cancelled):
+        self.sock, self.cancelled = sock, cancelled
+
+    def makefile(self, _mode):
+        return io.BufferedReader(_CancellableReader(self.sock, self.cancelled))
 from .llm import DEFAULT_SYSTEM_PROMPT, response_language_instruction
 from .stats import record_generation
 
@@ -130,8 +173,11 @@ def generate_reply(prompt_text, history=None, attachments=None, *, instructions=
     parsed = urlsplit(config['url'])
     connection_class = http.client.HTTPSConnection if parsed.scheme == 'https' else http.client.HTTPConnection
     connection = connection_class(parsed.hostname, parsed.port, timeout=120)
+    connection.response_class = lambda sock, **kwargs: http.client.HTTPResponse(
+        _ResponseSocket(sock, cancelled), **kwargs)
     finished = threading.Event()
     active_socket = None
+    response = None
 
     def monitor():
         while not finished.wait(.1):
@@ -192,6 +238,8 @@ def generate_reply(prompt_text, history=None, attachments=None, *, instructions=
         raise RuntimeError('Не удалось прочитать ответ API. Проверьте соединение и совместимость Chat Completions.') from exc
     finally:
         finished.set()
+        if response is not None:
+            response.close()
         connection.close()
         watcher.join(timeout=.2)
         if active_socket is not None:

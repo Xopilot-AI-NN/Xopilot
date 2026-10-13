@@ -22,8 +22,8 @@ class RuntimeTests(unittest.TestCase):
                 runtime.configure_runtime()
                 temp = Path(tempfile.mkdtemp())
                 self.assertEqual(temp.parent, (Path(directory) / "tmp").resolve())
-                self.assertEqual(Path.cwd(), Path(directory) / "runtime")
-                self.assertEqual(os.environ["FLET_APP_STORAGE_CACHE"], str(Path(directory) / "cache"))
+                self.assertEqual(Path.cwd(), (Path(directory) / "runtime").resolve())
+                self.assertEqual(Path(os.environ["FLET_APP_STORAGE_CACHE"]).resolve(), (Path(directory) / "cache").resolve())
             finally:
                 os.chdir(previous_cwd)
                 tempfile.tempdir = previous_temp
