@@ -168,9 +168,10 @@ jobs:
           flutter-version: "3.44.8"
           channel: stable
           cache: true
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
         with:
-          packages: 'platform-tools platforms;android-37 build-tools;37.0.0 ndk;29.0.14206865'
+          cmdline-tools-version: '15859902'
+          packages: 'platform-tools platforms;android-37.0 build-tools;37.0.0 ndk;29.0.14206865'
       - uses: actions/cache@v5
         with:
           path: |

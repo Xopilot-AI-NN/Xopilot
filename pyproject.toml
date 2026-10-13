@@ -43,6 +43,12 @@ exclude = ["__pycache__", "*.pyc", ".flet", "build", "data", "native"]
 color = "#0d1117"
 dark_color = "#0d1117"
 
+# Flet 1.0.3 pins jni 1.0.0; newer jni_flutter bindings require jni 1.1.
+# Match the pair used by the locally verified desktop/Android packages.
+[tool.flet.flutter.pubspec.dependency_overrides]
+jni = "1.0.0"
+jni_flutter = "1.0.2"
+
 [tool.flet.android]
 min_sdk_version = 26
 split_per_abi = true
