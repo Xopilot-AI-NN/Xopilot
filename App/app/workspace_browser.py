@@ -9,9 +9,11 @@ from .library_browser import build_library_dialog
 try:
     from ..services import workspaces
     from ..services.chat_store import list_chat_items
+    from ..services.platforms import compact_layout
 except ImportError:
     from services import workspaces
     from services.chat_store import list_chat_items
+    from services.platforms import compact_layout
 
 
 ICON_MAP = dict(zip(workspaces.ICONS, [ft.Icons.FOLDER_OUTLINED, ft.Icons.CODE, ft.Icons.MENU_BOOK, ft.Icons.SCIENCE, ft.Icons.BRUSH, ft.Icons.WORK_OUTLINE, ft.Icons.SCHOOL, ft.Icons.MUSIC_NOTE, ft.Icons.FLIGHT, ft.Icons.ROCKET_LAUNCH, ft.Icons.FAVORITE_BORDER, ft.Icons.LIGHTBULB_OUTLINE]))
@@ -123,6 +125,8 @@ def build_workspaces_dialog(page, on_select=None, on_changed=None, on_open_chat=
             title=ft.Text(item['name'], color=color('#123b43')),
             content=ft.Column(width=width, height=height, spacing=14, controls=[
                 ft.Row(wrap=True, controls=[
+                    ft.OutlinedButton(content='Работа с проектом',icon=ft.Icons.TERMINAL,
+                        on_click=lambda _:__import__(__package__+'.project_browser',fromlist=['open_project']).open_project(page,item)),
                     ft.OutlinedButton(content='Библиотека', icon=ft.Icons.LIBRARY_BOOKS_OUTLINED,
                         on_click=lambda _: page.show_dialog(build_library_dialog(page, item['id'], on_changed=render))),
                     ft.OutlinedButton(content='Инструкции', icon=ft.Icons.TUNE, on_click=lambda _: edit_workspace(item))]),
@@ -160,21 +164,33 @@ def build_workspaces_dialog(page, on_select=None, on_changed=None, on_open_chat=
                 details += ' · инструкции'
             if item.get('materials'):
                 details += f" · {len(item['materials'])} файлов"
+            actions = []
+            if item['id'] != workspaces.DEFAULT:
+                edit = lambda _, i=item: edit_workspace(i)
+                library = lambda _, i=item: page.show_dialog(build_library_dialog(page, i['id'], on_changed=render))
+                remove = lambda _, i=item: confirm_remove(i)
+                if compact_layout(page.width):
+                    actions = [ft.PopupMenuButton(tooltip='Действия пространства',
+                        content=ft.Icon(ft.Icons.MORE_HORIZ, color=color('#087f8c')),
+                        items=[ft.PopupMenuItem(content=ft.Text('Настройки пространства'), on_click=edit),
+                               ft.PopupMenuItem(content=ft.Text('Библиотека пространства'), on_click=library),
+                               ft.PopupMenuItem(content=ft.Text('Удалить пространство'), on_click=remove)])]
+                else:
+                    actions = [ft.IconButton(icon=ft.Icons.TUNE, tooltip='Настройки пространства', icon_color=color('#087f8c'), on_click=edit),
+                               ft.IconButton(icon=ft.Icons.LIBRARY_BOOKS_OUTLINED, tooltip='Библиотека пространства', icon_color=color('#087f8c'), on_click=library),
+                               ft.IconButton(icon=ft.Icons.DELETE_OUTLINE, tooltip='Удалить пространство', icon_color=color('#c94b4b'), on_click=remove)]
             cards.controls.append(ft.Container(
                 bgcolor=color('#dff8f3') if selected == item['id'] else color('#f3fffc'), padding=10, border_radius=14,
                 content=ft.Row(controls=[
                     ft.Icon(ICON_MAP.get(item.get('icon'), ft.Icons.FOLDER_OUTLINED), color=color('#087f8c')),
                     ft.Container(expand=True, ink=True, on_click=lambda _, i=item: open_workspace(i['id']) if i['id'] == workspaces.DEFAULT else workspace_home(i),
                                  content=ft.Column(spacing=3, controls=[
-                                     ft.Text(item['name'], color=color('#123b43'), weight=ft.FontWeight.W_600),
-                                     ft.Text(details, size=11, color=color('#47747a'))
+                                     ft.Text(item['name'], color=color('#123b43'), weight=ft.FontWeight.W_600,
+                                             max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
+                                     ft.Text(details, size=11, color=color('#47747a'), max_lines=2,
+                                             overflow=ft.TextOverflow.ELLIPSIS)
                                  ])),
-                    *([ft.IconButton(icon=ft.Icons.TUNE, tooltip='Настройки пространства', icon_color=color('#087f8c'),
-                                     on_click=lambda _, i=item: edit_workspace(i)),
-                       ft.IconButton(icon=ft.Icons.LIBRARY_BOOKS_OUTLINED, tooltip='Библиотека пространства', icon_color=color('#087f8c'),
-                                     on_click=lambda _, i=item: page.show_dialog(build_library_dialog(page, i['id'], on_changed=render))),
-                       ft.IconButton(icon=ft.Icons.DELETE_OUTLINE, tooltip='Удалить пространство', icon_color=color('#c94b4b'),
-                                     on_click=lambda _, i=item: confirm_remove(i))] if item['id'] != workspaces.DEFAULT else []),
+                    *actions,
                 ])))
 
     render()

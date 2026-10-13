@@ -23,7 +23,7 @@ from services.runtime import configure_runtime
 configure_runtime()
 
 import flet as ft
-from screeninfo import get_monitors
+from services.platforms import is_mobile, is_android
 from ctypes import wintypes
 from app.main import build_app_ui
 from services.stats import start_app_session, persist_app_session
@@ -31,6 +31,7 @@ from services.stats import start_app_session, persist_app_session
 
 class Init():
     def get_screen_size(self):
+        from screeninfo import get_monitors
         m = get_monitors()[0]
         return m.width, m.height
 
@@ -96,6 +97,23 @@ class Init():
             await asyncio.sleep(0.015)
 
     async def main(self, page: ft.Page):
+        if is_android():
+            loading = ft.Column(expand=True, alignment=ft.MainAxisAlignment.CENTER,
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                controls=[ft.ProgressRing(), ft.Text("Открываем защищённую историю…")])
+            page.add(loading)
+            try:
+                from services.mobile_runtime import initialize
+                await initialize()
+            except Exception:
+                # Do not silently create an unencrypted database or new key
+                # when a restored installation has lost its Keystore entry.
+                loading.controls = [ft.Icon(ft.Icons.LOCK_OUTLINE), ft.Text(
+                    "Не удалось открыть защищённое хранилище. Перезапустите приложение. "
+                    "Если данные восстановлены из резервной копии, потребуется исходное устройство.")]
+                page.update()
+                return
+            page.remove(loading)
         start_app_session()
 
         async def persist_loop():
@@ -103,13 +121,38 @@ class Init():
                 await asyncio.sleep(30)
                 try:
                     persist_app_session()
+                    if getattr(page,'_xopilot_connected',False) and getattr(page,'_xopilot_can_sync',lambda:False)():
+                        # Avoid importing beneath a form the user is editing.
+                        if not any(dialog.open for dialog in page._dialogs.controls):
+                            from services import cloud_sync,cloud_account
+                            if cloud_account.state():
+                                result=await asyncio.to_thread(cloud_sync.run_auto_if_due)
+                                if result and result.get('received'):page._xopilot_sync_refresh()
                 except Exception:
                     pass
 
-        page.title = "Xopilot 2.0.0"
+        page.title = "Xopilot 2.0.7"
+        from services.runtime import IdleMemoryCleanup
+        idle_memory = IdleMemoryCleanup()
+        page._xopilot_memory_activity = idle_memory.activity
+        async def memory_cleanup_loop():
+            from services.llm import unload_if_idle
+            while True:
+                await asyncio.sleep(5)
+                if getattr(page, '_xopilot_can_release_model', lambda: False)():
+                    try:
+                        released = await asyncio.to_thread(unload_if_idle)
+                        if released:
+                            getattr(page, '_xopilot_model_state_changed', lambda: None)()
+                        await idle_memory.poll(page, model_released=released)
+                    except Exception as exc:
+                        import logging
+                        logging.getLogger(__name__).warning("Не удалось освободить модель: %s", type(exc).__name__)
+
         page.theme = ft.Theme(color_scheme_seed="#087f8c", font_family="Google Sans")
         page.theme_mode = ft.ThemeMode.LIGHT
-        if not page.web:
+        desktop_window = not page.web and not is_mobile(page)
+        if desktop_window:
             try:
                 w, h = self.auto_screen_size()
             except Exception:
@@ -126,8 +169,9 @@ class Init():
         page.add(build_app_ui(page))
         page.update()
         page.run_task(persist_loop)
+        page.run_task(memory_cleanup_loop)
 
-        if page.web:
+        if not desktop_window:
             return
         if platform.system() == "Windows":
             await self.animate_position(page)

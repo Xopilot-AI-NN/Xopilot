@@ -9,7 +9,7 @@ import re
 import urllib.error
 import urllib.request
 
-VERSION = "2.0.0"
+VERSION = "2.0.7"
 RELEASES_URL = "https://github.com/Xopilot-AI-NN/Xopilot/releases"
 API_URL = "https://api.github.com/repos/Xopilot-AI-NN/Xopilot/releases/latest"
 

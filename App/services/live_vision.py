@@ -17,18 +17,11 @@ import sys
 import tempfile
 import time
 
-try:
-    import cv2
-except Exception:
-    cv2 = None
-try:
-    import mss
-except Exception:
-    mss = None
-try:
-    from PIL import Image
-except Exception:
-    Image = None
+from .lazy_imports import OptionalModule
+
+cv2 = OptionalModule("cv2")
+mss = OptionalModule("mss")
+Image = OptionalModule("PIL.Image")
 
 MAX_SIDE = 1024
 # Автоэкспозиция веб-камеры сходится за десятые доли секунды: первые кадры серые/тёмные.
@@ -41,7 +34,15 @@ BLANK_MAX_LEVEL = 8
 
 def capture_camera_frame(device_index: int = 0) -> bytes:
     """Один кадр с веб-камеры как JPEG-байты. Бросает RuntimeError, если камера недоступна."""
-    if cv2 is None:
+    from .platforms import is_android
+    if is_android():
+        import base64
+        from .mobile_runtime import call
+        try:
+            return base64.b64decode(call('cameraFrame'), validate=True)
+        finally:
+            call('cameraClose')
+    if not cv2:
         raise RuntimeError("Для камеры в Live нужен opencv-python — не установлен.")
     backend = cv2.CAP_V4L2 if sys.platform.startswith("linux") else cv2.CAP_ANY
     cap = cv2.VideoCapture(device_index, backend)
@@ -77,7 +78,7 @@ def _is_blank(image) -> bool:
 
 
 def _grab_mss(monitor_index: int):
-    if mss is None:
+    if not mss:
         raise RuntimeError("не установлен mss")
     with mss.mss() as sct:
         monitors = sct.monitors
@@ -114,7 +115,12 @@ def capture_screen_frame(monitor_index: int = 0) -> bytes:
     """Снимок экрана как JPEG-байты, уменьшенный до MAX_SIDE по длинной стороне.
     Бросает RuntimeError с причиной, если снять экран не удалось или кадр получился чёрным.
     """
-    if Image is None:
+    from .platforms import is_android
+    if is_android():
+        import base64
+        from .mobile_runtime import call
+        return base64.b64decode(call('screenFrame'), validate=True)
+    if not Image:
         raise RuntimeError("Для трансляции экрана в Live нужен Pillow — не установлен.")
     grabbers = [("mss", _grab_mss), ("снимок композитора", _grab_cli)]
     if _is_wayland():
@@ -145,10 +151,17 @@ class CameraStream:
         self._closed = False
 
     def frame(self):
+        from .platforms import is_android
+        if is_android():
+            import base64
+            from .mobile_runtime import call
+            with self._lock:
+                if self._closed: raise RuntimeError('Камера закрыта')
+                return base64.b64decode(call('cameraFrame'), validate=True)
         with self._lock:
             if self._closed:
                 raise RuntimeError("Камера уже отключена.")
-            if cv2 is None:
+            if not cv2:
                 raise RuntimeError("Для камеры установите opencv-python-headless.")
             if self._capture is None:
                 backend = cv2.CAP_V4L2 if sys.platform.startswith("linux") else cv2.CAP_ANY
@@ -174,6 +187,11 @@ class CameraStream:
     def close(self):
         with self._lock:
             self._closed = True
+            from .platforms import is_android
+            if is_android():
+                from .mobile_runtime import call
+                call('cameraClose')
+                return
             if self._capture is not None:
                 self._capture.release()
                 self._capture = None

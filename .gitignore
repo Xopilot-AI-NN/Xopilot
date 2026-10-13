@@ -12,6 +12,7 @@ target
 *.xnnpack_cache
 build
 *.lock
+!Services/Cargo.lock
 DEV.md
 App/data/models/tts/*.onnx
 App/data/models/tts/*.onnx.json
@@ -19,3 +20,14 @@ App/data/models/tts/*.part
 run.sh
 App/advanced_xopilot*.so
 App/advanced_xopilot*.pyd
+/docs/
+/.idea/
+**/.gradle/
+*.jks
+*.keystore
+*.env
+key.properties
+
+extensions/flet_xopilot_mobile/src/flutter/flet_xopilot_mobile/android/src/main/jniLibs/
+extensions/**/build/
+extensions/**/*.egg-info/

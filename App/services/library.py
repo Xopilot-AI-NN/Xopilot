@@ -11,7 +11,9 @@ EXCLUDED = {'.git', '__pycache__', 'node_modules', '.venv', 'venv', 'target', 'b
 
 
 def material_id(material):
-    return hashlib.sha256(material['path'].encode()).hexdigest()[:16]
+    # Missing cloud copies have an empty path; labels still identify separate
+    # entries, including files with equal content in different source folders.
+    return hashlib.sha256((material['name']+'\0'+material['path']).encode()).hexdigest()[:16]
 
 
 def entries(workspace_id):
@@ -21,8 +23,9 @@ def entries(workspace_id):
     result = []
     for material in item.get('materials', []):
         path = Path(material['path'])
-        result.append({**material, 'id': material_id(material), 'size': path.stat().st_size if path.exists() else 0,
-                       'available': path.exists(), 'enabled': material.get('enabled', True),
+        available=bool(material['path']) and path.is_file()
+        result.append({**material, 'id': material_id(material), 'size': path.stat().st_size if available else 0,
+                       'available': available, 'enabled': material.get('enabled', True),
                        'type': material.get('type', path.suffix.lstrip('.').upper() or 'Файл')})
     return result
 

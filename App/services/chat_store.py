@@ -52,6 +52,19 @@ def switch_active_chat(chat_id: int) -> None:
     _active_chat_id = chat_id
 
 
+def chat_is_unused(chat_id):
+    if chat_id is None or chat_id < 0:
+        return False
+    db = get_db()
+    if not any(row[0] == chat_id for row in db.list_chats()) or db.get_messages(chat_id):
+        return False
+    draft = json.loads(db.get_setting(f'draft:{chat_id}') or '{}')
+    if draft.get('text', '').strip() or draft.get('files'):
+        return False
+    canvases = json.loads(db.get_setting('canvases_v1') or '[]')
+    return not any(item.get('chat_id') == chat_id for item in canvases)
+
+
 def create_new_chat(title: str = "Новый чат") -> int:
     """Создаёт новый пустой чат и делает его активным. Возвращает id нового чата."""
     global _active_chat_id
@@ -219,6 +232,18 @@ def rename_chat(chat_id, title):
 def clear_chat_messages(chat_id):
     """Стирает все сообщения чата из БД (вложения — каскадно). Сам чат остаётся."""
     get_db().clear_chat_messages(chat_id)
+
+
+def clear_all_chats():
+    """Delete ordinary chat records and their drafts; private vaults are separate."""
+    from . import workspaces
+    db=get_db()
+    identifiers=[row[0] for row in db.list_chats()]
+    for identifier in identifiers:
+        if not delete_chat(identifier):raise RuntimeError('История изменилась во время удаления')
+        db.set_setting(f'draft:{identifier}','')
+        workspaces.forget_chat(identifier)
+    return len(identifiers)
 
 
 def auto_name_chat(chat_id):

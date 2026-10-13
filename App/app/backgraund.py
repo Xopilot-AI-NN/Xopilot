@@ -10,9 +10,9 @@
 
 import flet as ft
 try:
-    from .palette import color
+    from .palette import color, outline_color
 except ImportError:
-    from app.palette import color
+    from app.palette import color, outline_color
 import platform
 
 def build_background() -> ft.Container:
@@ -27,10 +27,12 @@ def build_background_layout(
     menu: ft.Control,
     menu_overlay: ft.Control | None = None,
     header: ft.Control | None = None,
-    empty_state: ft.Control | None = None
+    empty_state: ft.Control | None = None,
+    visual_background: ft.Control | None = None,
+    compact: bool = False,
 ) -> ft.Container:
     bg = build_background()
-    bg.padding = ft.Padding.all(10)
+    bg.padding = ft.Padding.all(4 if compact else 10)
     linux_layout = platform.system() == "Linux"
     input_side_margin = 12 if linux_layout else 4
     input_bottom_margin = 8 if linux_layout else 0
@@ -48,7 +50,8 @@ def build_background_layout(
         spacing=0,
         controls=[
             *([header] if header is not None else []),
-            ft.Stack(expand=True, controls=[chat, *([empty_state] if empty_state is not None else [])]),
+            ft.Stack(expand=True, controls=[*([visual_background] if visual_background is not None else []),
+                chat, *([empty_state] if empty_state is not None else [])]),
             ft.Container(
                 margin=ft.Margin.only(bottom=input_bottom_margin),
                 content=input_area,
@@ -60,10 +63,11 @@ def build_background_layout(
         expand=True,
         bgcolor=color("#d9ffe6"),
         border_radius=16,
-        border=ft.Border.all(2, ft.Colors.WHITE),
+        border=ft.Border.all(2, outline_color()),
         content=main_column,
     )
 
+    menu.visible = not compact
     main_row = ft.Row(
         expand=True,
         spacing=8,
@@ -80,4 +84,13 @@ def build_background_layout(
     else:
         bg.content = main_row
 
+    def set_compact(value):
+        menu.visible = not value
+        bg.padding = ft.Padding.all(0 if value else 10)
+        main_content.border_radius = 0 if value else 16
+        main_content.border = None if value else ft.Border.all(2, outline_color())
+        input_area.padding = ft.Padding.symmetric(horizontal=8 if value else input_side_margin)
+        main_column.controls[-1].margin = ft.Margin.only(bottom=8 if value else input_bottom_margin)
+    set_compact(compact)
+    bg._xopilot_set_compact = set_compact
     return bg

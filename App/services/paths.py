@@ -7,11 +7,21 @@
 import os
 import platform
 from pathlib import Path
+from .platforms import is_android
+
+# Preserve the app-private root supplied by Flet before configure_runtime moves
+# its working/temp directories. Re-reading the rewritten variable would nest
+# a new Xopilot/runtime directory on every call.
+_ANDROID_DATA_ROOT = os.environ.get("FLET_APP_STORAGE_DATA")
 
 LEGACY_MODELS_DIR = Path(__file__).resolve().parents[1] / "data" / "models"
 
 
 def app_data_dir() -> Path:
+    if is_android():
+        if not _ANDROID_DATA_ROOT:
+            raise RuntimeError("Android не предоставил закрытый каталог данных приложения.")
+        return Path(_ANDROID_DATA_ROOT) / "Xopilot"
     if platform.system() == "Windows":
         base = os.environ.get("APPDATA", str(Path.home()))
     else:

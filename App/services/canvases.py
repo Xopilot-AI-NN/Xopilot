@@ -31,6 +31,13 @@ def get_document(identifier):
         return copy.deepcopy(doc)
 
 
+def delete_document(identifier):
+    with _lock:
+        docs=_read();remaining=[d for d in docs if d['id']!=identifier]
+        if len(remaining)==len(docs):raise ValueError('Canvas не найден')
+        get_db().set_setting(KEY,json.dumps(remaining,ensure_ascii=False))
+
+
 def create_document(title='Новый Canvas', kind='text', content='', *, chat_id=None, workspace_id='all', source_request=None):
     if kind not in KINDS:
         raise ValueError('Неизвестный тип Canvas')
@@ -67,7 +74,8 @@ def save_document(document):
 def export_document(document):
     title = document['title'].replace('/', '_').replace('\\', '_')
     if document['kind'] != 'drawing':
-        return title + ('.py' if document['kind'] == 'code' else '.md'), document.get('content', '').encode('utf-8')
+        from pathlib import Path
+        return title + ('' if Path(title).suffix else '.py' if document['kind']=='code' else '.md'),document.get('content','').encode('utf-8')
     from PIL import Image, ImageDraw
     import math
     logical_width, logical_height = document.get('drawing_size', [1200, 700])

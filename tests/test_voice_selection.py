@@ -7,7 +7,7 @@
 import threading
 import unittest
 from concurrent.futures import CancelledError
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 from App.services import speech_output, voice_catalog, voice_settings, miku_models
 from App.settings.voice.main import build_voice_page
@@ -165,6 +165,37 @@ class SpeechRoutingTests(unittest.TestCase):
 
 
 class VoicePageTests(unittest.IsolatedAsyncioTestCase):
+    async def test_android_without_engine_does_not_start_synthesis_or_change_desktop_voice(self):
+        page, status = Mock(), Mock()
+        with patch('App.services.platforms.is_android', return_value=True), \
+                patch('App.settings.voice.main.set_selected_voice') as save, \
+                patch('App.settings.voice.android.call_async', new=AsyncMock(return_value={'engines': []})), \
+                patch('App.settings.voice.android.AndroidSpeechOutput') as speaker:
+            content = build_voice_page(page, status)
+            controls = content.controls[1]
+            await page.run_task.call_args.args[0]()
+            self.assertIn('не установлен', controls.controls[-1].value)
+            preview = controls.controls[2].controls[-1]
+            await preview.on_click(None)
+            self.assertIn('Сначала установите', controls.controls[-1].value)
+            self.assertFalse(preview.disabled)
+            speaker.assert_not_called()
+            save.assert_not_called()
+
+    async def test_android_settings_opens_native_settings_and_download_only_on_click(self):
+        page = Mock()
+        with patch('App.services.platforms.is_android', return_value=True), \
+                patch('App.settings.voice.android.call_async', new=AsyncMock()) as bridge, \
+                patch('App.settings.voice.android.open_external', new=AsyncMock()) as browser:
+            content = build_voice_page(page, Mock())
+            settings, download, _ = content.controls[1].controls[2].controls
+            bridge.assert_not_called()
+            browser.assert_not_called()
+            await settings.on_click(None)
+            bridge.assert_awaited_once_with('speechSettings')
+            await download.on_click(None)
+            self.assertTrue(browser.await_args.args[0].startswith('https://f-droid.org/packages/'))
+
     async def test_selector_has_three_voices_and_saves_choice(self):
         page, status = Mock(), Mock()
         with patch("App.settings.voice.main.get_selected_voice", return_value="maple"), \
@@ -174,7 +205,7 @@ class VoicePageTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(select.value, "maple")
             self.assertEqual(len(select.content.controls), 3)
             select.value = "miku"
-            await select.on_change(None)
+            await select.on_select(None)
             save.assert_called_once_with("miku")
             self.assertEqual(select.value, "miku")
             self.assertFalse(select.disabled)
@@ -197,7 +228,7 @@ class VoicePageTests(unittest.IsolatedAsyncioTestCase):
             content = build_voice_page(page, status)
             select = content.controls[3]
             select.value = "maple"
-            await select.on_change(None)
+            await select.on_select(None)
             self.assertEqual(select.value, "cove")
             self.assertFalse(select.disabled)
             self.assertEqual(status.call_args.args[0], "Голос не изменён")

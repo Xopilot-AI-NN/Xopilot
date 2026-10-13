@@ -10,7 +10,7 @@ import threading
 import unittest
 import wave
 from concurrent.futures import CancelledError
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 from App.app.live_conversation import LiveConversation
 from App.services import live_audio, llm
@@ -90,6 +90,118 @@ class SegmentationTests(unittest.TestCase):
 
 
 class LiveControllerTests(unittest.IsolatedAsyncioTestCase):
+    def test_short_viewport_bounds_live_panel_without_replacing_controls(self):
+        controls = list(self.live.status.controls)
+        for width, height in ((360, 720), (720, 360), (360, 400)):
+            self.live.fit_viewport(width, height)
+            self.assertLessEqual(self.live.status.height, height * 0.28)
+            self.assertEqual(self.live.status.controls, controls)
+        self.live.fit_viewport(1366, 768)
+        self.assertIsNone(self.live.status.height)
+
+    def test_landscape_keyboard_hides_panel_but_preserves_capture_and_restores_it(self):
+        self.live._android = True
+        self.live._inline_open = True
+        self.live.screen_on = True
+        self.live.fit_viewport(720, 180)
+        self.assertFalse(self.live.status.visible)
+        self.live._render('Экран включён')
+        self.assertFalse(self.live.status.visible)
+        self.assertTrue(self.live.screen_on)
+        self.live.fit_viewport(720, 360)
+        self.assertTrue(self.live.status.visible)
+        self.assertTrue(self.live.screen_on)
+
+    def test_portrait_keyboard_leaves_chat_space_without_stopping_camera(self):
+        self.live._android = True
+        self.live._inline_open = True
+        self.live.camera_on = True
+        self.live.fit_viewport(360, 445, keyboard=275)
+        self.live._render('Камера включена')
+        self.assertFalse(self.live.status.visible)
+        self.assertTrue(self.live.camera_on)
+        self.live.fit_viewport(360, 720, keyboard=0)
+        self.assertTrue(self.live.status.visible)
+
+    async def test_successful_source_change_clears_old_permission_error_but_keeps_busy_status(self):
+        with patch('App.services.platforms.is_android', return_value=True), \
+             patch('App.services.mobile_runtime.call_async', AsyncMock()), \
+             patch.object(self.live, '_restart_preview', new_callable=AsyncMock):
+            self.live._render('Доступ к экрану отменён')
+            await self.live.toggle_screen()
+            self.assertNotIn('отменён', self.live.status_text.value)
+            self.live._state = 'thinking'
+            self.live._render('Готовлю ответ…')
+            await self.live.toggle_camera()
+            self.assertEqual(self.live.status_text.value, 'Готовлю ответ…')
+
+    async def test_android_screen_requires_consent_and_closes_native_capture(self):
+        native = AsyncMock()
+        with patch('App.services.platforms.is_android', return_value=True), \
+             patch('App.services.mobile_runtime.call_async', native), \
+             patch.object(self.live, '_restart_preview', new_callable=AsyncMock):
+            await self.live.toggle_screen()
+            native.assert_awaited_once_with('screenStart')
+            self.assertTrue(self.live.screen_on)
+            self.assertFalse(self.live.camera_on)
+        self.live.screen_on = False
+        with patch('App.services.platforms.is_android', return_value=True), \
+             patch('App.services.mobile_runtime.call_async', native):
+            await self.live._replace_preview()
+            self.assertIn(unittest.mock.call('screenStop'), native.await_args_list)
+            self.assertIn(unittest.mock.call('overlayStop'), native.await_args_list)
+            self.assertFalse(self.live.background_image.visible)
+
+    async def test_floating_mute_cancels_real_recorder_before_publishing_state(self):
+        self.live._android = True
+        self.live._overlay_requested = True
+        self.live.screen_on = True
+        native = AsyncMock()
+        with patch('App.app.live_conversation.mobile_call', native):
+            await self.live.toggle_mute()
+        self.assertTrue(self.live.microphone_muted)
+        self.assertEqual(native.await_args_list[0], unittest.mock.call('audioCancel'))
+        self.assertTrue(native.await_args_list[1].args[1]['muted'])
+
+    async def test_floating_stop_reaches_capture_cleanup_and_closes_panel(self):
+        self.live._android = True
+        self.live._overlay_requested = True
+        self.live.screen_on = True
+        self.live._inline_open = True
+        native = AsyncMock(return_value={'foreground': False, 'actions': ['stop']})
+        with patch('App.app.live_conversation.mobile_call', native), \
+                patch('App.services.mobile_runtime.call_async', native), \
+                patch('App.services.platforms.is_android', return_value=True):
+            await self.live._watch_overlay()
+        self.assertFalse(self.live.screen_on)
+        self.assertFalse(self.live.camera_on)
+        self.assertFalse(self.live._overlay_requested)
+        self.assertFalse(self.live.status.visible)
+        self.assertIn(unittest.mock.call('screenStop'), native.await_args_list)
+        self.assertIn(unittest.mock.call('overlayStop'), native.await_args_list)
+
+    async def test_android_screen_denial_preserves_existing_camera_selection(self):
+        self.live.camera_on = True
+        with patch('App.services.platforms.is_android', return_value=True), \
+             patch('App.services.mobile_runtime.call_async', AsyncMock(side_effect=RuntimeError('Permission cancelled'))), \
+             patch.object(self.live, '_restart_preview', new_callable=AsyncMock) as preview:
+            await self.live.toggle_screen()
+            self.assertFalse(self.live.screen_on)
+            self.assertTrue(self.live.camera_on)
+            self.assertIn('Permission cancelled', self.live.status_text.value)
+            preview.assert_not_awaited()
+
+    async def test_android_screen_denial_shows_message_without_platform_exception_wrapper(self):
+        native_error = RuntimeError('PlatformException(screen_unavailable, Доступ к экрану отменён, null, null)')
+        with patch('App.services.platforms.is_android', return_value=True), \
+             patch('App.services.mobile_runtime.call_async', AsyncMock(side_effect=native_error)):
+            await self.live.toggle_screen()
+        self.assertEqual(self.live.status_text.value, 'Доступ к экрану отменён')
+        self.assertFalse(self.live.screen_on)
+        self.live._android = True
+        self.live._refresh_vision_buttons()
+        self.assertEqual(self.live.screen_button.tooltip, 'Live — трансляция экрана')
+
     def setUp(self):
         self.page = Mock(web=False)
         self.history = []
@@ -257,6 +369,37 @@ class LiveControllerTests(unittest.IsolatedAsyncioTestCase):
         await self.live.ask_frame()
         await self.wait_answer()
         self.assertEqual(self.mocks["generate_live_reply"].call_args.kwargs["attachments"], [])
+        await self.live.stop()
+        await self.finish()
+
+    async def test_main_composer_files_are_consumed_once_after_message_save(self):
+        import flet as ft
+        file=ft.FilePickerFile(name="shared.txt",path="/shared.txt",size=12,id=2)
+        pending=[file]
+        saved=[]
+        async def add_user(text,attachments=None):
+            saved.append((text,attachments))
+            self.history.append({"role":"user","content":text})
+        async def consumed(files):
+            self.assertTrue(saved, "Save the message before clearing visible attachments")
+            pending[:]=[item for item in pending if item not in files]
+        self.live.on_user_message=add_user
+        self.live.get_pending_files=lambda:list(pending)
+        self.live.on_pending_files_consumed=consumed
+        self.live.files=[file]  # Deduplicate typed and visible pending copies.
+        self.live.microphone_muted=True
+        self.live.voice_output_enabled=False
+        self.live.frame_question.value="Посмотри материал"
+        await self.live.ask_frame()
+        await self.wait_answer()
+        self.assertEqual(pending,[])
+        self.assertEqual(saved[0][1],[("shared.txt","/shared.txt")])
+        self.assertEqual(self.mocks["generate_live_reply"].call_args.kwargs["attachments"],[("shared.txt","/shared.txt")])
+        self.live.frame_question.value="Следующий вопрос"
+        self.live.reply_text.value=""
+        await self.live.ask_frame()
+        await self.wait_answer()
+        self.assertEqual(self.mocks["generate_live_reply"].call_args.kwargs["attachments"],[])
         await self.live.stop()
         await self.finish()
 

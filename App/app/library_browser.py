@@ -4,10 +4,13 @@ from pathlib import Path
 import flet as ft
 from .palette import color, apply_palette
 from .file_selection import pick_materials
+from .material_viewer import open_material,export_material
 try:
     from ..services import library, workspaces
+    from ..services.platforms import is_android
 except ImportError:
     from services import library, workspaces
+    from services.platforms import is_android
 
 
 def build_library_dialog(page, workspace_id, on_changed=None):
@@ -51,15 +54,17 @@ def build_library_dialog(page, workspace_id, on_changed=None):
 
     async def preview(entry):
         try:
-            text, images = await asyncio.to_thread(library.read_entry, entry)
-            contents = [ft.Text(text, selectable=True, color=color('#123b43'))] if text else []
-            contents += [ft.Image(src=image, fit=ft.BoxFit.CONTAIN) for image in images]
-            page.show_dialog(ft.AlertDialog(bgcolor=color('#eafffa'), title=ft.Text(entry['name'], color=color('#123b43')),
-                content=ft.ListView(width=width, height=height-60, controls=contents),
-                actions=[ft.TextButton(content='Закрыть', on_click=lambda _: page.pop_dialog())]))
+            await open_material(page,entry['path'],entry['name'])
         except Exception as exc:
             feedback.value = str(exc)
             page.update()
+
+    async def save_copy(_,entry):
+        try:
+            saved=await export_material(page,entry['path'],entry['name'])
+            feedback.value='Копия сохранена' if saved else 'Сохранение отменено'
+        except Exception as exc:feedback.value=str(exc)
+        page.update()
 
     def render(e=None):
         query = (search.value or '').casefold().strip()
@@ -80,6 +85,8 @@ def build_library_dialog(page, workspace_id, on_changed=None):
                         *([ft.IconButton(icon=ft.Icons.EDIT_OUTLINED, tooltip='Редактировать заметку',
                             icon_color=color('#087f8c'), on_click=lambda _, entry=entry: note_dialog(None, entry))]
                             if entry['type'] == 'Заметка' else []),
+                        ft.IconButton(icon=ft.Icons.DOWNLOAD_OUTLINED,tooltip='Скачать материал',icon_color=color('#087f8c'),
+                            on_click=lambda e,entry=entry: page.run_task(save_copy,e,entry)),
                         ft.IconButton(icon=ft.Icons.DELETE_OUTLINE, tooltip='Убрать материал',
                             icon_color=color('#c94b4b'), on_click=lambda _, entry=entry: remove_entry(entry))])))
             rows.controls = controls or [ft.Text('Библиотека пуста' if not query else 'Материалы не найдены', color=color('#47747a'))]
@@ -92,8 +99,16 @@ def build_library_dialog(page, workspace_id, on_changed=None):
 
     async def add_files(_):
         try:
-            files = await pick_materials(page, picker)
-            library.append_materials(workspace_id, [{'name': f.name, 'path': f.path, 'enabled': True} for f in files])
+            if is_android() and not page.web:
+                try:
+                    from ..services.mobile_documents import pick_workspace_documents
+                except ImportError:
+                    from services.mobile_documents import pick_workspace_documents
+                result = await pick_workspace_documents(workspace_id)
+                files = (result or {}).get('files', [])
+            else:
+                files = await pick_materials(page, picker)
+                library.append_materials(workspace_id, [{'name': f.name, 'path': f.path, 'enabled': True} for f in files])
             feedback.value = f'Добавлено файлов: {len(files)}'
             render()
             if on_changed:
@@ -165,7 +180,7 @@ def build_library_dialog(page, workspace_id, on_changed=None):
         content=ft.Column(width=width, height=height, spacing=14, controls=[search,
             ft.Row(wrap=True, spacing=8, controls=[
                 ft.OutlinedButton(content='Файлы', icon=ft.Icons.ATTACH_FILE, on_click=add_files),
-                ft.OutlinedButton(content='Папка', icon=ft.Icons.CREATE_NEW_FOLDER_OUTLINED, on_click=folder_dialog),
+                *([] if is_android() else [ft.OutlinedButton(content='Папка', icon=ft.Icons.CREATE_NEW_FOLDER_OUTLINED, on_click=folder_dialog)]),
                 ft.OutlinedButton(content='Заметка', icon=ft.Icons.NOTE_ADD_OUTLINED, on_click=note_dialog)]),
             feedback, ft.ListView(expand=True, controls=[rows])]),
         actions=[ft.TextButton(content='Закрыть', on_click=lambda _: page.pop_dialog())])

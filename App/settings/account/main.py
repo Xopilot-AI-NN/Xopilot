@@ -1,23 +1,27 @@
 """
 Файл: /App/settings/account/main.py
 Описание: __Страница «Аккаунт»__.
-           Профиль пока муляж (облачный аккаунт — фаза 2), а статистика теперь реальная —
-           читается из локальной БД через services/stats.py (сообщения точные, токены/часы — приближённые).
+           Локальный профиль, статистика и облачный вход с управлением устройствами.
 """
 
 import asyncio
 import flet as ft
 try:
-    from ...app.palette import color
+    from ...app.palette import color, modern_input
+    from ...app.buttons.actions import action_button
 except ImportError:
-    from app.palette import color
+    from app.palette import color, modern_input
+    from app.buttons.actions import action_button
 
 from ..common import section_title
+from .cloud import build_cloud_card
 
 try:
+    from ...services import profile
     from ...services.stats import get_stats
     from ...services.db import get_setting, get_db
 except ImportError:
+    from services import profile
     from services.stats import get_stats
     from services.db import get_setting, get_db
 
@@ -75,13 +79,18 @@ def _format_bytes(value):
 
 
 def build_account_page(page: ft.Page) -> ft.Column:
+    try:
+        from ...services.platforms import is_android, compact_layout
+    except ImportError:
+        from services.platforms import is_android, compact_layout
+    compact = compact_layout(getattr(page, 'width', None))
     stats = get_stats()
-    profile_title = ft.Text(get_setting('profile_name', 'Пользователь'), size=22,
+    profile_title = ft.Text(profile.read()['name'], size=20 if compact else 22,
                             color=color('#123b43'), weight=ft.FontWeight.BOLD)
-    feedback = ft.Text('', color=color('#47747a'), size=12, text_align=ft.TextAlign.CENTER)
+    feedback = ft.Text('', visible=False, color=color('#47747a'), size=12, text_align=ft.TextAlign.CENTER)
 
     def edit_name(_):
-        name = ft.TextField(label='Имя пользователя', value=profile_title.value, autofocus=True)
+        name = modern_input(ft.TextField(label='Имя пользователя', value=profile_title.value, autofocus=True))
         def save(_):
             requested = (name.value or '').strip()
             if not requested:
@@ -89,9 +98,10 @@ def build_account_page(page: ft.Page) -> ft.Column:
                 page.update()
                 return
             try:
-                get_db().set_setting('profile_name', requested)
+                profile.update(name=requested)
                 profile_title.value = requested
                 feedback.value = 'Имя сохранено'
+                feedback.visible=True
                 page.pop_dialog()
             except Exception as exc:
                 name.error_text = str(exc)
@@ -100,21 +110,46 @@ def build_account_page(page: ft.Page) -> ft.Column:
             title=ft.Text('Изменить имя', color=color('#123b43')),
             content=ft.Column(tight=True, width=320, controls=[name]),
             actions=[ft.TextButton(content='Отмена', on_click=lambda _: page.pop_dialog()),
-                     ft.FilledButton(content='Сохранить', on_click=save)]))
+                     action_button('Сохранить', on_click=save)]))
 
-    avatar = ft.Container(width=76, height=76, border_radius=38,
-        gradient=ft.LinearGradient(colors=['#00d6a3', '#7657ff']),
-        alignment=ft.Alignment.CENTER, border=ft.Border.all(3, ft.Colors.WHITE),
-        content=ft.Icon(ft.Icons.PERSON, color=ft.Colors.WHITE, size=38))
-    profile_card = ft.Container(bgcolor=color('#ffffff'), border_radius=20, padding=20,
+    picker=ft.FilePicker()
+    async def choose_avatar(_):
+        try:
+            if is_android() and not page.web:
+                try:
+                    from ...services.mobile_documents import pick_avatar
+                except ImportError:
+                    from services.mobile_documents import pick_avatar
+                result = await pick_avatar()
+                if result and result.get('profile'):
+                    refresh_profile();feedback.value='Аватарка сохранена';feedback.visible=True;page.update()
+                return
+            selected=await picker.pick_files(dialog_title='Выберите аватарку',allow_multiple=False,
+                file_type=ft.FilePickerFileType.CUSTOM,allowed_extensions=['jpg','jpeg','png','webp'],with_data=bool(page.web) or is_android())
+            if not selected:return
+            chosen=selected[0]
+            await asyncio.to_thread(profile.set_avatar,path=chosen.path,data=chosen.bytes)
+            refresh_profile();feedback.value='Аватарка сохранена';feedback.visible=True;page.update()
+        except Exception as exc:feedback.value=str(exc);feedback.visible=True;page.update()
+    avatar_size = 56 if compact else 76
+    avatar = ft.Container(width=avatar_size,height=avatar_size,border_radius=avatar_size/2,clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
+        gradient=ft.LinearGradient(colors=['#00d6a3','#7657ff']),alignment=ft.Alignment.CENTER,
+        border=ft.Border.all(3,ft.Colors.WHITE),ink=True,tooltip='Изменить аватарку',on_click=choose_avatar)
+    def refresh_profile():
+        import base64
+        data=profile.read();profile_title.value=data['name']
+        avatar.content=ft.Image(src=base64.b64decode(data['avatar']),width=avatar_size,height=avatar_size,fit=ft.BoxFit.COVER,exclude_from_semantics=True) if data['avatar'] else ft.Icon(ft.Icons.PERSON,color=ft.Colors.WHITE,size=38)
+    refresh_profile()
+    page._xopilot_profile_refresh=refresh_profile
+    profile_card = ft.Container(bgcolor=color('#ffffff'), border_radius=20, padding=12 if compact else 20,
         border=ft.Border.all(1, color('#b9eee4')),
-        content=ft.Row(spacing=16, controls=[avatar,
+        content=ft.Row(spacing=10 if compact else 16, controls=[avatar,
             ft.Column(expand=True, spacing=6, controls=[
                 ft.Row(spacing=4, controls=[ft.Container(expand=True, content=profile_title),
                     ft.IconButton(icon=ft.Icons.EDIT_OUTLINED, tooltip='Изменить имя',
                                   icon_color=color('#087f8c'), on_click=edit_name)]),
-                ft.Text('Локальный профиль', color=color('#087f8c'), size=12),
-                ft.Text('История хранится на этом устройстве', color=color('#47747a'), size=11)])]))
+                ft.Text('Ваш профиль · нажмите на фото, чтобы изменить', color=color('#087f8c'), size=12),
+                ft.Text('Имя и аватарка синхронизируются при включённой синхронизации профиля', color=color('#47747a'), size=11)])]))
     values = [
         (ft.Icons.FORUM_OUTLINED, 'Чатов', str(stats.get('chats', 0))),
         (ft.Icons.CHAT_BUBBLE_ROUNDED, 'Сообщений', f"{stats['messages']:,}".replace(',', ' ')),
@@ -125,7 +160,7 @@ def build_account_page(page: ft.Page) -> ft.Column:
     cards = ft.Row(wrap=True, spacing=12, run_spacing=12, alignment=ft.MainAxisAlignment.CENTER,
                   controls=[_stat_card(*value) for value in values])
     return ft.Column(spacing=16, horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
-        controls=[profile_card, feedback, section_title('Статистика использования'), cards,
+        controls=[profile_card, feedback, build_cloud_card(page), section_title('Статистика использования'), cards,
             ft.Text('Размер базы включает журналы WAL и SHM. Материалы и модели хранятся отдельно. '
                     'Токены оцениваются по тексту ответов.', size=11, color=color('#47747a'),
                     text_align=ft.TextAlign.CENTER)])

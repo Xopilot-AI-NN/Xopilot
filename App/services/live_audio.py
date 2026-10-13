@@ -29,6 +29,9 @@ SILENCE_SECONDS = 0.9
 
 
 def check_live_audio():
+    from .platforms import is_android
+    if is_android():
+        return
     if sd is None:
         raise RuntimeError("Для Live нужны sounddevice и PortAudio.")
     if webrtcvad is None:
@@ -88,6 +91,10 @@ class SpeechSegmenter:
 
 def record_utterance(cancelled: threading.Event) -> bytes:
     """Блокирующее ожидание одной фразы. Отмена закрывает устройство за один цикл ожидания."""
+    from .platforms import is_android
+    if is_android():
+        from .mobile_audio import record_utterance as record
+        return record(cancelled)
     check_live_audio()
     from .devices import selected_audio_device
     device = selected_audio_device("input")

@@ -22,8 +22,9 @@ const CURRENT_SCHEMA_VERSION: i32 = 2;
 
 /// Одно сообщение со всеми полями: цитата/ответ — произвольный текст (не ссылка на другое сообщение по id),
 /// вложения — список (имя_файла, путь_к_файлу).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct StoredMessage {
+    #[serde(default, skip_serializing)]
     pub id: i64,
     pub role: String,
     pub content: String,
@@ -312,6 +313,66 @@ impl Database {
     }
 
     /// Общее число сообщений во всех чатах — для статистики на странице «Аккаунт».
+    /// A consistent semantic snapshot for the account-scoped sync bridge.
+    pub fn sync_chat_snapshot(&self, chat_id: i64) -> Result<Option<String>> {
+        let header: Option<(String,i64)> = self.conn.query_row(
+            "SELECT COALESCE(title,''),created_at FROM chats WHERE id=?1", [chat_id],
+            |r| Ok((r.get(0)?,r.get(1)?))).optional()?;
+        header.map(|(title,created_at)| {
+            let messages=self.get_messages(chat_id)?;
+            Ok(serde_json::json!({"title":title,"created_at":created_at,"messages":messages}).to_string())
+        }).transpose()
+    }
+    /// CAS preserves concurrent local edits; chat and sync receipt commit together.
+    pub fn apply_sync_chat(&self, chat_id: Option<i64>, expected: Option<&str>, payload: Option<&str>, ledger_key: &str, ledger: &str) -> Result<Option<i64>> {
+        let tx=self.conn.unchecked_transaction()?;
+        if let Some(id)=chat_id {
+            if self.sync_chat_snapshot(id)?.as_deref()!=expected { return Ok(None); }
+        }
+        let id=if let Some(payload)=payload {
+            let value:serde_json::Value=serde_json::from_str(payload).map_err(|_|rusqlite::Error::InvalidQuery)?;
+            let title=value["title"].as_str().ok_or(rusqlite::Error::InvalidQuery)?;
+            let created=value["created_at"].as_i64().unwrap_or_else(now);
+            let messages:Vec<StoredMessage>=serde_json::from_value(value["messages"].clone()).map_err(|_|rusqlite::Error::InvalidQuery)?;
+            let id=if let Some(id)=chat_id {
+                tx.execute("UPDATE chats SET title=?1,created_at=?2 WHERE id=?3",params![title,created,id])?;
+                tx.execute("DELETE FROM messages WHERE chat_id=?1",[id])?;
+                id
+            } else {
+                tx.execute("INSERT INTO chats(title,created_at) VALUES(?1,?2)",params![title,created])?;
+                tx.last_insert_rowid()
+            };
+            for m in messages {
+                tx.execute("INSERT INTO messages(chat_id,role,content,quote,reply_to,created_at) VALUES(?1,?2,?3,?4,?5,?6)",params![id,m.role,m.content,m.quote,m.reply_to,m.created_at])?;
+                let mid=tx.last_insert_rowid();
+                for (name,path) in m.attachments {tx.execute("INSERT INTO message_attachments(message_id,name,path) VALUES(?1,?2,?3)",params![mid,name,path])?;}
+            }
+            id
+        } else {
+            if let Some(id)=chat_id {tx.execute("DELETE FROM chats WHERE id=?1",[id])?;}
+            chat_id.unwrap_or(0)
+        };
+        let mut receipt:serde_json::Value=serde_json::from_str(ledger).map_err(|_|rusqlite::Error::InvalidQuery)?;
+        if let Some(entity)=receipt.get("applying").and_then(|v|v.as_str()).map(str::to_owned) {
+            let entry=receipt.get_mut("records").and_then(|v|v.as_object_mut()).and_then(|v|v.get_mut(&entity)).and_then(|v|v.as_object_mut()).ok_or(rusqlite::Error::InvalidQuery)?;
+            entry.insert("local_id".into(),serde_json::json!(id));
+            receipt.as_object_mut().ok_or(rusqlite::Error::InvalidQuery)?.remove("applying");
+        }
+        tx.execute("INSERT INTO settings(key,value,updated_at) VALUES(?1,?2,?3) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at",params![ledger_key,receipt.to_string(),now()])?;
+        tx.commit()?; Ok(Some(id))
+    }
+    pub fn apply_sync_settings(&self, expected: &[(String,Option<String>)], updates: &[(String,String)]) -> Result<bool> {
+        let tx=self.conn.unchecked_transaction()?;
+        for (key,value) in expected {
+            let current:Option<String>=tx.query_row("SELECT value FROM settings WHERE key=?1",[key],|r|r.get(0)).optional()?;
+            if &current!=value {return Ok(false);}
+        }
+        for (key,value) in updates {
+            tx.execute("INSERT INTO settings(key,value,updated_at) VALUES(?1,?2,?3) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at",params![key,value,now()])?;
+        }
+        tx.commit()?; Ok(true)
+    }
+
     pub fn total_message_count(&self) -> Result<i64> {
         self.conn
             .query_row("SELECT COUNT(*) FROM messages", [], |row| row.get(0))

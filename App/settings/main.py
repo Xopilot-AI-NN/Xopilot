@@ -10,8 +10,10 @@
 import flet as ft
 try:
     from ..app.palette import color, apply_palette
+    from ..services.platforms import compact_layout
 except ImportError:
     from app.palette import color, apply_palette
+    from services.platforms import compact_layout
 
 from .abaut.main import build_about_page
 from .account.main import build_account_page
@@ -22,6 +24,11 @@ from .history.main import build_history_page
 from .models.main import build_models_page
 from .personalizations.main import build_personalizations_page
 from .updates.main import build_updates_page
+from .memory import build_memory_page
+try:
+    from ..services import navigation, platforms
+except ImportError:
+    from services import navigation, platforms
 
 
 BRAND_GRADIENT = ft.LinearGradient(
@@ -40,6 +47,8 @@ def build_settings_dialog(
     on_live_model_changed=None,
     on_clear_history=None,
     on_select_chat=None,
+    on_delete_chat=None,
+    restore_section=None,
 ) -> ft.AlertDialog:
     status = ft.Text("Изменения применяются сразу", size=11, color=ft.Colors.WHITE, expand=True)
 
@@ -57,7 +66,7 @@ def build_settings_dialog(
     # «Персонализация» сразу увидит новые локальные файлы без перезапуска приложения.
     sections = [
         (
-            "Локальный профиль",
+            "Профиль и аккаунт",
             ft.Icons.PERSON_OUTLINE,
             "Имя и статистика использования",
             lambda: build_account_page(page),
@@ -71,6 +80,7 @@ def build_settings_dialog(
                 set_status,
                 on_chat_model_changed=on_chat_model_changed,
                 on_live_model_changed=on_live_model_changed,
+                on_open_memory=lambda: select_page(6),
             ),
         ),
         (
@@ -87,7 +97,7 @@ def build_settings_dialog(
             "История",
             ft.Icons.HISTORY,
             "Удаление и управление сообщениями",
-            lambda: build_history_page(chat_list, set_status, chat_id, on_clear_history, page=page, on_select=on_select_chat),
+            lambda: build_history_page(chat_list, set_status, chat_id, on_clear_history, page=page, on_select=on_select_chat, on_delete=on_delete_chat),
         ),
         (
             "Обновления",
@@ -101,22 +111,53 @@ def build_settings_dialog(
             "Версия, описание и разработчик",
             build_about_page,
         ),
+        ("Память обо мне", ft.Icons.PSYCHOLOGY_OUTLINED,
+         "Сведения, которые ИИ использует в будущих разговорах",
+         lambda: build_memory_page(page, set_status)),
     ]
 
     page_title = ft.Text("Настройки", size=18, color=ft.Colors.WHITE, weight=ft.FontWeight.BOLD,
                          max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)
     page_host = ft.Column(spacing=0, expand=True)
+    selected_page = [None]
+
+    async def load_personalization(index, generation):
+        # Reading model metadata can initialize LiteRT. Do it only in the
+        # requested section, without blocking navigation or the Flutter loop.
+        try:
+            try:
+                from ..services import mobile_runtime
+            except ImportError:
+                from services import mobile_runtime
+            await mobile_runtime.refresh_capabilities()
+        finally:
+            if selected_page[0] == generation:
+                page_host.controls = [apply_palette(sections[index][3]())]
+                page.update()
 
     def select_page(index: int):
-        page_host.controls = [apply_palette(sections[index][3]())]
+        generation = object()
+        selected_page[0] = generation
+        if index == 1 and platforms.is_android():
+            page_host.controls = [ft.Row(controls=[ft.ProgressRing(width=24, height=24),
+                                                  ft.Text('Проверяем установленные модели…')])]
+            page.run_task(load_personalization, index, generation)
+        else:
+            page_host.controls = [apply_palette(sections[index][3]())]
         page_title.value = sections[index][0]
         back_button.visible = True
+        navigation.save(settings=sections[index][0], storage=None)
         page.update()
 
     def show_home(_=None):
+        if page_title.value == 'Память обо мне':
+            select_page(1)
+            return
+        selected_page[0] = None
         page_host.controls = [home_page]
         page_title.value = "Настройки"
         back_button.visible = False
+        navigation.save(settings='home', storage=None)
         page.update()
 
     home_page = ft.Column(
@@ -130,7 +171,7 @@ def build_settings_dialog(
                     subtitle,
                     lambda _, selected=index: select_page(selected),
                 )
-                for index, (label, icon, subtitle, _builder) in enumerate(sections)
+                for index, (label, icon, subtitle, _builder) in enumerate(sections) if index != 6
             ],
         ],
     )
@@ -139,10 +180,26 @@ def build_settings_dialog(
 
     if start_section is not None:
         select_page(start_section)
+    elif restore_section:
+        index = next((i for i, section in enumerate(sections) if section[0] == restore_section), None)
+        if index is not None:
+            select_page(index)
+    else:
+        navigation.save(settings='home', storage=None)
 
+    def close(_=None):
+        selected_page[0] = None
+        navigation.clear()
+        page.pop_dialog()
+
+    def dismissed(_=None):
+        selected_page[0] = None
+        navigation.clear()
+
+    mobile_form = compact_layout(getattr(page, 'width', None))
     content = ft.Column(
-        width=max(220, min(750, page.width - 112)) if isinstance(page.width, (int, float)) else 750,
-        height=max(220, min(600, page.height - 140)) if isinstance(page.height, (int, float)) else 600,
+        width=max(220, min(750, page.width - (24 if mobile_form else 112))) if isinstance(page.width, (int, float)) else 750,
+        height=max(220, min(900 if start_section==0 else 600, page.height - (48 if mobile_form else 140))) if isinstance(page.height, (int, float)) else 600,
         spacing=0,
         scroll=ft.ScrollMode.AUTO,
         controls=[
@@ -168,7 +225,7 @@ def build_settings_dialog(
                             ],
                         ),
                         ft.Row(controls=[status, ft.IconButton(icon=ft.Icons.CLOSE, icon_color=ft.Colors.WHITE,
-                                  tooltip="Закрыть настройки", on_click=lambda _: page.pop_dialog())]),
+                                  tooltip="Закрыть настройки", on_click=close)]),
                     ],
                 ),
             ),
@@ -183,11 +240,15 @@ def build_settings_dialog(
     # Keep its mounted layout out of recursive value-style replacement.
     content.controls[0].__dict__['_xopilot_fixed_colors'] = True
 
-    return ft.AlertDialog(
+    dialog = ft.AlertDialog(
         modal=False,
         content=content,
         bgcolor=color("#eafffa"),
         shape=ft.RoundedRectangleBorder(radius=16),
-        inset_padding=ft.Padding.symmetric(horizontal=32, vertical=20),
+        inset_padding=ft.Padding.all(12) if mobile_form else ft.Padding.symmetric(horizontal=32, vertical=20),
+        content_padding=ft.Padding.all(0) if mobile_form else None,
         barrier_color=color("#88000000"),
+        on_dismiss=dismissed,
     )
+    dialog.__dict__['_xopilot_full_width'] = True
+    return dialog

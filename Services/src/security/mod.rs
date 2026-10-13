@@ -22,8 +22,14 @@ const KEY_LEN: usize = 32;
 /// Возвращает ключ шифрования (hex-строка — формат, который ожидает PRAGMA key у SQLCipher).
 /// Генерируется один раз при первом запуске, дальше всегда читается оттуда же.
 /// `fallback_dir` — куда класть файл соли для фоллбэк-ветки (обычно — папка рядом с БД).
+#[cfg(not(target_os = "android"))]
 pub fn get_db_keys(fallback_dir: &Path, existing_database: bool) -> Result<Vec<String>, String> {
     resolve_db_keys(fallback_dir, existing_database, get_or_create_from_keyring)
+}
+
+#[cfg(target_os = "android")]
+pub fn get_db_keys(_fallback_dir: &Path, _existing_database: bool) -> Result<Vec<String>, String> {
+    Err("Для Android требуется ключ из Android Keystore.".into())
 }
 
 fn resolve_db_keys(
@@ -65,6 +71,12 @@ fn get_or_create_from_keyring(allow_create: bool) -> Result<String, keyring::Err
     }
 }
 
+#[cfg(target_os = "android")]
+fn get_or_create_fallback_key(_dir: &Path) -> Result<String, String> {
+    Err("На Android резервный ключ machine-id не используется.".into())
+}
+
+#[cfg(not(target_os = "android"))]
 fn get_or_create_fallback_key(dir: &Path) -> Result<String, String> {
     let salt_path = dir.join(".xopilot_salt");
     let salt: Vec<u8> = match std::fs::read(&salt_path) {

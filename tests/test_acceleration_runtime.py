@@ -55,12 +55,70 @@ class FileSelectionTests(unittest.IsolatedAsyncioTestCase):
 
 
 class AccelerationTests(unittest.TestCase):
-    def test_busy_or_full_gpu_uses_cpu_in_auto_but_explicit_gpu_is_honored(self):
-        with tempfile.NamedTemporaryFile() as model, patch.object(acceleration, "nvidia_devices", return_value=[("RTX", 512 * 1024**2, 0)]):
+    def test_auto_retries_a_previously_busy_gpu_on_a_later_request(self):
+        cpu_engine, gpu_engine = Mock(), Mock()
+        capabilities = Mock(__enter__=Mock(return_value=Mock(input_modalities=Mock(audio=False, vision=False))),
+                            __exit__=Mock(return_value=False))
+        sdk = Mock(Capabilities=Mock(return_value=capabilities), Engine=Mock(side_effect=[cpu_engine, gpu_engine]))
+        with tempfile.TemporaryDirectory() as directory, patch.multiple(llm,
+                litert_lm=sdk, get_model_path=Mock(return_value=__file__), cache_dir=Mock(return_value=Path(directory)),
+                _engine=None, _conversation=None, _loaded_filename=None, _loaded_preference=None,
+                _deferred_gpu_retry_at=None, _stateful_history=[], _loaded_modalities=frozenset()), \
+                patch.object(acceleration, 'preference', return_value='auto'), \
+                patch.object(acceleration, 'candidates', side_effect=[(['cpu'], 'GPU busy'), (['gpu', 'cpu'], '')]) as inspect, \
+                patch.object(llm.time, 'monotonic', return_value=100) as clock:
+            llm.ensure_model_loaded('model.litertlm')
+            llm._stateful_history = [{'role':'user', 'content':[{'type':'text','text':'Keep my context'}]}]
+            clock.return_value=110
+            llm.ensure_model_loaded('model.litertlm')
+            self.assertEqual(inspect.call_count, 1)
+            clock.return_value=131
+            llm.ensure_model_loaded('model.litertlm')
+            self.assertEqual(llm.execution_info()['backend'], 'gpu')
+            self.assertEqual(llm._stateful_history[0]['content'][0]['text'], 'Keep my context')
+            cpu_engine.close.assert_called_once()
+            self.assertEqual(sdk.Engine.call_count, 2)
+            self.assertEqual(inspect.call_count, 2)
+            llm.unload_model()
+
+    def test_model_button_reports_actual_backend_and_fallback_then_clears_on_unload(self):
+        from App.app.buttons import model as model_ui
+        with patch.object(model_ui.api_chat, 'is_api_selected', return_value=False), \
+                patch.object(model_ui, 'get_selected_chat_model', return_value=llm.DEFAULT_FILENAME), \
+                patch.object(model_ui, 'get_loaded_model', return_value=llm.DEFAULT_FILENAME) as loaded, \
+                patch.object(model_ui, 'execution_info', return_value={'backend':'cpu', 'reason':'GPU busy'}) as state:
+            button, refresh = model_ui.build_model_button()
+            label = button.content.controls[1]
+            self.assertIn('CPU', label.value)
+            self.assertIn('GPU busy', button.tooltip)
+            state.return_value={'backend':'gpu', 'reason':''}
+            refresh()
+            self.assertIn('GPU', label.value)
+            self.assertNotIn('GPU busy', button.tooltip)
+            loaded.return_value=None
+            state.return_value={'backend':None, 'reason':'Idle'}
+            refresh()
+            self.assertNotIn('GPU', label.value)
+            self.assertNotIn('CPU', label.value)
+
+    def test_full_or_sustained_busy_gpu_defers_to_cpu_but_explicit_gpu_is_honored(self):
+        with tempfile.NamedTemporaryFile() as model, patch.object(acceleration, "nvidia_devices", return_value=[("RTX", 0, 0)]):
             self.assertEqual(acceleration.candidates(model.name, "auto")[0], ["cpu"])
             self.assertEqual(acceleration.candidates(model.name, "gpu")[0], ["gpu"])
-        with tempfile.NamedTemporaryFile() as model, patch.object(acceleration, "nvidia_devices", return_value=[("RTX", 6 * 1024**3, 99)]):
+        with tempfile.NamedTemporaryFile() as model, patch.object(acceleration, "time") as timer, \
+                patch.object(acceleration, "nvidia_devices", return_value=[("RTX", 6 * 1024**3, 99)]):
             self.assertEqual(acceleration.candidates(model.name, "auto")[0], ["cpu"])
+            timer.sleep.assert_called_once_with(1.1)
+
+    def test_container_size_and_moderate_display_activity_do_not_reject_gpu(self):
+        with tempfile.NamedTemporaryFile() as model, patch.object(acceleration, "nvidia_devices", return_value=[("RTX", 4 * 1024**3, 35)]), \
+                patch.object(acceleration.Path, 'stat', return_value=Mock(st_size=5 * 1024**3)):
+            self.assertEqual(acceleration.candidates(model.name, "auto")[0], ["gpu", "cpu"])
+
+    def test_transient_utilization_spike_does_not_force_cpu(self):
+        with tempfile.NamedTemporaryFile() as model, patch.object(acceleration, "time"), \
+                patch.object(acceleration, "nvidia_devices", side_effect=[[("RTX", 6 * 1024**3, 99)], [("RTX", 6 * 1024**3, 0)]]):
+            self.assertEqual(acceleration.candidates(model.name, "auto")[0], ["gpu", "cpu"])
 
     def test_gpu_init_failure_falls_back_only_in_auto(self):
         capabilities = Mock()
@@ -73,7 +131,7 @@ class AccelerationTests(unittest.TestCase):
                 litert_lm=sdk, get_model_path=Mock(return_value=__file__),
                 cache_dir=Mock(return_value=Path(directory)),
                 _engine=None, _conversation=None, _loaded_filename=None,
-                _loaded_preference=None, _execution={"backend": None, "reason": ""}), \
+                _loaded_preference=None, _loaded_modalities=frozenset(), _execution={"backend": None, "reason": ""}), \
                 patch.object(acceleration, "preference", return_value="auto"), \
                 patch.object(acceleration, "candidates", return_value=(["gpu", "cpu"], "")):
             llm.load_model("model.litertlm")

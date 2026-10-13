@@ -2,6 +2,7 @@
 import os
 import platform
 import subprocess
+import time
 from pathlib import Path
 from .db import get_setting, set_setting
 
@@ -37,13 +38,27 @@ def nvidia_devices():
 def candidates(model_path, mode):
     if mode == "cpu":
         return ["cpu"], "Выбран процессор"
+    from .platforms import is_android
+    if is_android():
+        # Mobile GPUs share system memory; desktop NVIDIA/DRI probes do not
+        # describe them. Ask the Android runtime/driver and keep Auto fallback.
+        return (["gpu", "cpu"] if mode == "auto" else ["gpu"]), ""
     devices = nvidia_devices()
     if mode == "auto" and devices:
-        # Weight size plus space for KV cache, kernels and working buffers. Driver
-        # allocation remains the final check; failed GPU initialization falls back.
-        required = Path(model_path).stat().st_size + 1024**3
-        if not any(free >= required and busy < 20 for _, free, busy in devices):
-            return ["cpu"], "Видеокарта занята или недостаточно свободной видеопамяти"
+        # The container also includes CPU embedders, encoders and tokenizer data:
+        # its total size is not the GPU allocation size. Let the driver validate
+        # capacity, instead of rejecting a model which could fit on the GPU.
+        if not any(free > 0 for _, free, _ in devices):
+            return ["cpu"], "Нет свободной видеопамяти; используется CPU"
+        if not any(free > 0 and busy < 80 for _, free, busy in devices):
+            # One utilization sample can capture a desktop redraw or a previous
+            # model's final kernels. Avoid taking a GPU with sustained heavy work.
+            # NVIDIA's utilization window can span one second; 250 ms still
+            # sees the unloaded engine's work and incorrectly selects CPU.
+            time.sleep(1.1)
+            second = nvidia_devices() or devices
+            if not any(free > 0 and busy < 80 for _, free, busy in second):
+                return ["cpu"], "Видеокарта загружена; используется CPU"
     if devices and platform.system() == "Linux":
         # On hybrid laptops keep the integrated display GPU available for the UI.
         icd = Path("/usr/share/vulkan/icd.d/nvidia_icd.json")

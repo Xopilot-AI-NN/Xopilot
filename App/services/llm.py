@@ -18,12 +18,15 @@ import atexit
 import glob
 import os
 import threading
+import time
 from concurrent.futures import CancelledError
+from contextlib import contextmanager
 from typing import List, Optional
 
 from .paths import LEGACY_MODELS_DIR, models_dir
-from .runtime import cache_dir
+from .runtime import cache_dir, release_unused_memory
 from . import acceleration
+from .platforms import is_android
 
 try:
     from .stats import record_generation
@@ -31,7 +34,10 @@ except ImportError:
     from services.stats import record_generation  # type: ignore
 
 try:
-    import litert_lm
+    if is_android():
+        from . import mobile_litert as litert_lm
+    else:
+        import litert_lm
 
     _IMPORT_ERROR: Optional[Exception] = None
 except Exception as exc:  # noqa: BLE001
@@ -57,7 +63,37 @@ _engine_lock = threading.RLock()
 _supports_audio = False
 _supports_vision = False
 _loaded_preference = None
+_loaded_modalities = frozenset()
+_loaded_system_prompt = DEFAULT_SYSTEM_PROMPT
+_last_used_at = 0.0
+_deferred_gpu_retry_at = None
+_stateful_history = []
+IDLE_UNLOAD_SECONDS = 60
 _execution = {"backend": None, "reason": "Модель ещё не загружена"}
+
+
+@contextmanager
+def _model_activity():
+    global _last_used_at
+    with _engine_lock:
+        try:
+            yield
+        finally:
+            _last_used_at = time.monotonic()
+
+
+def unload_if_idle(timeout=IDLE_UNLOAD_SECONDS):
+    """A timer must neither interrupt inference nor wait for its lock."""
+    if not _engine_lock.acquire(blocking=False):
+        return False
+    try:
+        if _engine is None or time.monotonic() - _last_used_at < timeout:
+            return False
+        unload_model()
+        _execution['reason'] = "Модель выгружена после простоя; следующий запрос загрузит её снова"
+        return True
+    finally:
+        _engine_lock.release()
 
 
 def execution_info():
@@ -73,23 +109,33 @@ def execution_label():
 def unload_model():
     """Освободить conversation до engine: нативные сессии зависят от движка."""
     global _engine, _conversation, _loaded_filename, _supports_audio, _supports_vision
-    global _loaded_preference, _execution
+    global _loaded_preference, _loaded_modalities, _execution
+    global _stateful_history, _deferred_gpu_retry_at
     with _engine_lock:
         conversation, engine = _conversation, _engine
         _conversation = _engine = _loaded_filename = None
         _supports_audio = False
         _supports_vision = False
         _loaded_preference = None
+        _loaded_modalities = frozenset()
+        _stateful_history = []
+        _deferred_gpu_retry_at = None
         _execution = {"backend": None, "reason": "Модель ещё не загружена"}
         try:
             if conversation is not None:
                 conversation.close()
         finally:
             if engine is not None:
-                engine.close()
+                try:
+                    engine.close()
+                finally:
+                    release_unused_memory()
 
 
-atexit.register(unload_model)
+if not is_android():
+    # Android owns native resources through the Flutter lifecycle. Its event
+    # loop has already stopped by Python atexit, so a bridge call cannot run.
+    atexit.register(unload_model)
 
 
 def list_local_models():
@@ -110,7 +156,7 @@ def get_model_path(filename):
 
 
 def is_model_loaded():
-    return _engine is not None and _conversation is not None
+    return _engine is not None
 
 
 def get_loaded_model():
@@ -129,20 +175,35 @@ def model_supports_audio(filename: str) -> bool:
 
 def ensure_model_loaded(filename: str):
     """Загрузить нужную модель только если сейчас активна другая."""
-    with _engine_lock:
+    global _deferred_gpu_retry_at, _stateful_history
+    with _model_activity():
         if is_model_loaded() and _loaded_filename == filename and _loaded_preference == acceleration.preference():
+            # A busy GPU at startup must not pin Auto to CPU for the entire
+            # session. Retry on a later request, while keeping active inference
+            # under the same lock. Driver failures wait for normal idle unload.
+            if _deferred_gpu_retry_at is not None and time.monotonic() >= _deferred_gpu_retry_at:
+                _deferred_gpu_retry_at = time.monotonic() + 30
+                plan = acceleration.candidates(get_model_path(filename), "auto")
+                if "gpu" in plan[0]:
+                    history = _stateful_history
+                    result = _load_model(filename, _loaded_system_prompt,
+                        vision="vision" in _loaded_modalities, audio="audio" in _loaded_modalities,
+                        device_plan=plan)
+                    _stateful_history = history
+                    return result
             return filename
         return _load_model(filename, DEFAULT_SYSTEM_PROMPT)
 
 
 def load_model(filename=DEFAULT_FILENAME, system_prompt=DEFAULT_SYSTEM_PROMPT):
-    with _engine_lock:
+    with _model_activity():
         return _load_model(filename, system_prompt)
 
 
-def _load_model(filename, system_prompt):
+def _load_model(filename, system_prompt, *, vision=False, audio=False, device_plan=None):
     global _engine, _conversation, _loaded_filename, _supports_audio, _supports_vision
-    global _loaded_preference, _execution
+    global _loaded_preference, _loaded_modalities, _loaded_system_prompt, _execution
+    global _deferred_gpu_retry_at
 
     if litert_lm is None:
         raise RuntimeError("litert_lm не установлен — выполните pip install litert-lm-api") from _IMPORT_ERROR
@@ -155,12 +216,16 @@ def _load_model(filename, system_prompt):
         supports_audio = capabilities.input_modalities.audio
         supports_vision = capabilities.input_modalities.vision
 
+    if vision and not supports_vision:
+        raise RuntimeError("Текущая модель не поддерживает изображения.")
+    if audio and not supports_audio:
+        raise RuntimeError("Текущая модель не поддерживает звук.")
     unload_model()
 
-    # vision_backend аналогичен audio_backend выше: без него send_message с картинкой падает с "Vision
-    # executor should not be null, please TryLoadingVisionExecutor() first" даже если модель vision поддерживает.
+    # CPU encoders are substantial even when the LLM runs on GPU. Load them only
+    # for a request which actually needs that modality; keep just one engine.
     requested = acceleration.preference()
-    backends, reason = acceleration.candidates(path, requested)
+    backends, reason = device_plan or acceleration.candidates(path, requested)
     for backend in backends:
         try:
             backend_cache = cache_dir() / backend
@@ -169,26 +234,45 @@ def _load_model(filename, system_prompt):
                 path,
                 backend=litert_lm.Backend.GPU() if backend == "gpu" else litert_lm.Backend.CPU(),
                 cache_dir=str(backend_cache),
-                vision_backend=litert_lm.Backend.CPU() if supports_vision else None,
-                audio_backend=litert_lm.Backend.CPU() if supports_audio else None,
+                vision_backend=litert_lm.Backend.CPU() if vision else None,
+                audio_backend=litert_lm.Backend.CPU() if audio else None,
             )
             break
         except Exception as exc:
             if backend == backends[-1]:
                 raise RuntimeError(f"Не удалось загрузить модель на {backend.upper()}: {exc}") from exc
             reason = f"GPU недоступна: {exc}"
-    try:
-        _conversation = engine.create_conversation(system_message=system_prompt)
-    except Exception:
-        engine.close()
-        raise
+        # A partially initialized GPU engine may have released substantial host
+        # buffers. Return those allocations before attempting the CPU fallback.
+        release_unused_memory()
+    # UI requests supply their history and open a short-lived conversation.
+    # A second, unused persistent conversation retains another native session
+    # and its buffers. Create it only for callers using the stateful API.
     _engine = engine
     _loaded_filename = filename
     _supports_audio = supports_audio
     _supports_vision = supports_vision
     _loaded_preference = requested
+    _loaded_modalities = frozenset(name for name, enabled in (("vision", vision), ("audio", audio)) if enabled)
+    _loaded_system_prompt = system_prompt
     _execution = {"backend": backend, "reason": reason}
+    _deferred_gpu_retry_at = time.monotonic() + 30 if requested == "auto" and backends == ["cpu"] else None
     return filename
+
+
+def _ensure_modalities(*, vision=False, audio=False, retain=False):
+    """Replace the engine before opening a conversation, never while it is active."""
+    global _stateful_history
+    required = frozenset(name for name, enabled in (("vision", vision), ("audio", audio)) if enabled)
+    if retain:
+        required |= _loaded_modalities
+    if required != _loaded_modalities:
+        if _loaded_filename is None:
+            raise RuntimeError("Модель не загружена — вызовите load_model()")
+        history = _stateful_history
+        _load_model(_loaded_filename, _loaded_system_prompt,
+                    vision="vision" in required, audio="audio" in required)
+        _stateful_history = history
 
 
 def _extract_text(result):
@@ -199,12 +283,13 @@ def _extract_text(result):
         return str(result)
 
 
-def _build_message(prompt_text, attachments):
+def _build_message(prompt_text, attachments, *, retain_modalities=False):
     """Собирает аргумент для send_message: простая строка, если вложений нет или из них
     ничего не вышло; иначе — Contents с текстом (промпт + извлечённый текст вложений) и
     картинками (фото, кадры видео). attachments: [(имя, путь), ...] или None.
     """
     if not attachments:
+        _ensure_modalities(retain=retain_modalities)
         return prompt_text
     try:
         from .attachments import build_attachment_message_parts
@@ -216,11 +301,13 @@ def _build_message(prompt_text, attachments):
         joined = "\n\n".join(text_notes)
         full_text = f"{full_text}\n\n{joined}" if full_text.strip() else joined
     if not images or litert_lm is None:
+        _ensure_modalities(retain=retain_modalities)
         return full_text
     if not _supports_vision:
         # Загруженная модель не умеет vision — отправка картинок всё равно упадёт с ошибкой движка,
         # лучше честно предупредить модель в тексте, чем падать с непонятной ошибкой FFI.
         return full_text + "\n\n[Вложены изображения/видео, но текущая модель не поддерживает vision — они не были проанализированы]"
+    _ensure_modalities(vision=True, retain=retain_modalities)
     parts = [full_text] + [litert_lm.Content.ImageBytes(img) for img in images]
     return litert_lm.Contents.of(*parts)
 
@@ -229,17 +316,27 @@ def generate_reply(prompt_text, history=None, attachments=None, *, instructions=
     """attachments: [(имя, путь), ...] вложений ТЕКУЩЕГО сообщения (фото/текст/PDF/DOCX/видео).
     Старые вложения из history повторно не отправляются — только текст истории (см. _recent_messages).
     """
+    global _conversation
     if private:
         history = history or []
         instructions = ''
-    with _engine_lock:
+    with _model_activity():
         if litert_lm is None:
             raise RuntimeError("litert_lm не установлен — выполните pip install litert-lm-api") from _IMPORT_ERROR
-        if _conversation is None:
+        if _conversation is None and _engine is None:
             raise RuntimeError("Модель не загружена — вызовите load_model()")
-        message = _build_message(prompt_text, attachments)
+        message = _build_message(prompt_text, attachments, retain_modalities=history is None)
         if history is None:
+            if _conversation is None:
+                _conversation = _engine.create_conversation(system_message=_loaded_system_prompt,
+                                                             messages=_stateful_history)
             result = _conversation.send_message(message)
+            text = _extract_text(result).strip()
+            if text:
+                parts = [{'type': 'text', 'text': message}] if isinstance(message, str) else [
+                    part for part in message.to_json() if part.get('type') == 'text']
+                _stateful_history.extend([{'role': 'user', 'content': parts},
+                                          {'role': 'model', 'content': [{'type': 'text', 'text': text}]}])
         else:
             engine = _engine
             if engine is None:
@@ -262,9 +359,9 @@ class SpeechNotRecognizedError(RuntimeError):
     pass
 
 
-def prepare_voice_model(cancelled: threading.Event, filename: str | None = None):
+def prepare_voice_model(cancelled: threading.Event, filename: str | None = None, *, audio=True):
     """Загрузить и проверить модель до начала голосового разговора."""
-    with _engine_lock:
+    with _model_activity():
         if cancelled.is_set():
             raise CancelledError()
         if litert_lm is None:
@@ -275,12 +372,15 @@ def prepare_voice_model(cancelled: threading.Event, filename: str | None = None)
         chosen = filename or (DEFAULT_FILENAME if DEFAULT_FILENAME in models else models[0])
         if chosen not in models:
             raise RuntimeError(f"Выбранная модель Live не найдена: {chosen}")
-        if not is_model_loaded() or _loaded_filename != chosen or _loaded_preference != acceleration.preference():
-            _load_model(chosen, DEFAULT_SYSTEM_PROMPT)
+        ensure_model_loaded(chosen)
         if cancelled.is_set():
             raise CancelledError()
         if not _supports_audio:
             raise RuntimeError("Текущая модель не поддерживает звук. Для диктовки нужна модель с аудиовходом.")
+        if audio:
+            _ensure_modalities(audio=True, retain=True)
+        if cancelled.is_set():
+            raise CancelledError()
 
 
 def _send_cancellable(conversation, message, cancelled, **kwargs):
@@ -312,7 +412,7 @@ def _send_cancellable(conversation, message, cancelled, **kwargs):
 
 def transcribe_audio(wav_bytes: bytes, cancelled: threading.Event, model_filename: str | None = None) -> str:
     """Распознать речь локально, без ответа ассистента и записи в статистику/БД."""
-    with _engine_lock:
+    with _model_activity():
         prepare_voice_model(cancelled, model_filename)
         lm = litert_lm
         engine = _engine
@@ -384,8 +484,8 @@ def generate_live_reply(
     """
     if private:
         instructions = ''
-    with _engine_lock:
-        prepare_voice_model(cancelled, model_filename)
+    with _model_activity():
+        prepare_voice_model(cancelled, model_filename, audio=False)
         lm = litert_lm
         engine = _engine
         if lm is None:
@@ -398,15 +498,17 @@ def generate_live_reply(
         current = messages.pop()
         if attachments:
             prompt = "".join(p.get("text", "") for p in current["content"])
-            built = _build_message(prompt, attachments)
+            built = _build_message(prompt, attachments, retain_modalities=True)
             current = {**current, "content": (built.to_json() if not isinstance(built, str)
                        else [{"type": "text", "text": built}])}
         if image_bytes:
             if not _supports_vision:
                 raise RuntimeError("Выбранная модель Live не поддерживает камеру и экран. Выберите мультимодальную модель.")
+            _ensure_modalities(vision=True, retain=True)
             content = list(current.get("content") or [])
             content.append(lm.Content.ImageBytes(image_bytes).to_json())
             current = {**current, "content": content}
+        engine = _engine
         with engine.create_conversation(
             system_message=(
                 "Ты — Zephyr, голосовой собеседник в Xopilot. Веди естественный разговор, "

@@ -21,6 +21,14 @@ except ImportError:
 
 
 def build_voice_page(page, on_status):
+    try:
+        from ...services.platforms import is_android
+    except ImportError:
+        from services.platforms import is_android
+    if is_android():
+        from .android import build_android_voice_controls
+        return ft.Column(spacing=12, controls=[section_title('Голос Live'),
+            build_android_voice_controls(page, on_status)])
     saved = get_selected_voice() or "cove"
     if saved not in VOICES:
         saved = "cove"
@@ -80,7 +88,7 @@ def build_voice_page(page, on_status):
             select.disabled = False
             page.update()
 
-    select.on_change = change
+    select.on_select = change
     return ft.Column(
         spacing=12,
         controls=[

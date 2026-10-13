@@ -173,12 +173,20 @@ def build_personalizations_page(
     on_status,
     on_chat_model_changed=None,
     on_live_model_changed=None,
+    on_open_memory=None,
 ) -> ft.Column:
     models = list_local_models()
     live_models = list_audio_models()
     installed_voices = {
         voice_id: profile for voice_id, profile in VOICES.items() if profile.installed
     }
+    try:
+        from ...services.platforms import is_android
+    except ImportError:
+        from services.platforms import is_android
+    mobile = is_android()
+    if mobile:
+        installed_voices = {}
 
     try:
         from ...services import api_chat
@@ -241,6 +249,10 @@ def build_personalizations_page(
         ft.Icons.RECORD_VOICE_OVER,
         "Сначала установите голос в разделе «Модели»",
     )
+    if mobile:
+        voice_select.options = [ft.DropdownOption(key='android-system', text='Системный офлайн-голос Android')]
+        voice_select.value = 'android-system'
+        voice_feedback.value = 'Установите русский и английский офлайн-голоса в настройках синтеза речи Android. COVE, Miku и Maple доступны в настольной версии.'
 
     async def change_chat(_):
         requested = chat_select.value
@@ -351,6 +363,12 @@ def build_personalizations_page(
         page.update()
     backend_select.on_select = change_backend
 
+    voice_control = voice_select
+    if mobile:
+        from ..voice.android import build_android_voice_controls
+        voice_control = build_android_voice_controls(page, on_status)
+        voice_feedback.value = ''
+
     return ft.Column(
         spacing=8,
         controls=[
@@ -368,6 +386,9 @@ def build_personalizations_page(
                 build_language_select(on_status),
             ),
             section_title("ИИ и Live"),
+            *([setting_row(ft.Icons.PSYCHOLOGY_OUTLINED,'Память обо мне',
+                'Сохранённые сведения, предпочтения и управление памятью',
+                ft.Icon(ft.Icons.CHEVRON_RIGHT,color=_MUTED),lambda _:on_open_memory())] if on_open_memory else []),
             _preference_card(ft.Icons.MEMORY, "Устройство вычислений",
                 "Авто предпочитает видеокарту со свободной памятью; при ошибке использует CPU.",
                 backend_select, backend_feedback),
@@ -389,7 +410,7 @@ def build_personalizations_page(
                 ft.Icons.RECORD_VOICE_OVER,
                 "Голос Live",
                 "Тембр, которым Xopilot озвучивает ответы.",
-                voice_select,
+                voice_control,
                 voice_feedback,
             ),
         ],

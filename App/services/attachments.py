@@ -13,22 +13,12 @@
 import io
 import os
 
-try:
-    from PIL import Image
-except Exception:
-    Image = None
-try:
-    import cv2
-except Exception:
-    cv2 = None
-try:
-    import pypdf
-except Exception:
-    pypdf = None
-try:
-    import docx
-except Exception:
-    docx = None
+from .lazy_imports import OptionalModule
+
+Image = OptionalModule("PIL.Image")
+cv2 = OptionalModule("cv2")
+pypdf = OptionalModule("pypdf")
+docx = OptionalModule("docx")
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"}
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"}
@@ -48,7 +38,7 @@ def _downscale_image_bytes(raw: bytes) -> bytes:
     и упираются в бюджет визуальных токенов модели (max_vision_token_budget). При отсутствии Pillow
     возвращает исходные байты как есть — модель всё равно попробует принять исходный формат.
     """
-    if Image is None:
+    if not Image:
         return raw
     try:
         with Image.open(io.BytesIO(raw)) as img:
@@ -71,7 +61,7 @@ def _read_text_file(path: str) -> str:
 
 
 def _read_pdf(path: str) -> str:
-    if pypdf is None:
+    if not pypdf:
         return "[PDF: для чтения нужен pypdf — не установлен]"
     try:
         reader = pypdf.PdfReader(path)
@@ -86,7 +76,7 @@ def _read_pdf(path: str) -> str:
 
 
 def _read_docx(path: str) -> str:
-    if docx is None:
+    if not docx:
         return "[DOCX: для чтения нужен python-docx — не установлен]"
     try:
         document = docx.Document(path)
@@ -104,7 +94,7 @@ def _extract_video_frames(path: str, count: int = VIDEO_FRAME_COUNT) -> list[byt
     """Равномерно распределённые кадры видео как JPEG-байты (litert_lm не имеет отдельного
     типа для видеофайлов — только для живого видео-модальности, которую текущая модель не поддерживает).
     """
-    if cv2 is None:
+    if not cv2:
         return []
     cap = cv2.VideoCapture(path)
     frames: list[bytes] = []

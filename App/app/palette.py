@@ -1,10 +1,11 @@
 """The existing aqua palette with a matching dark appearance."""
 from dataclasses import fields, is_dataclass, replace
+from weakref import WeakValueDictionary
 import flet as ft
 from flet.controls.base_control import BaseControl
 
 DARK = {
-    '#b3f2ff': '#10262e', '#d9ffe6': '#152f31', '#eafffa': '#17343a',
+    '#fefefe': '#3b6266', '#b3f2ff': '#10262e', '#d9ffe6': '#152f31', '#eafffa': '#17343a',
     '#f3fffc': '#203e44', '#f5fffc': '#203e44', '#effffc': '#203e44',
     '#ffffff': '#24434b', '#e6ffffff': '#e624434b', '#dff8f3': '#26494d',
     '#c9f1e9': '#30575a', '#edfbf8': '#31565b', '#e3f7f2': '#31565b',
@@ -18,6 +19,10 @@ DARK = {
     '#b3261e': '#ffaaa6', '#d9364f': '#ff9baf',
 }
 _mode = 'light'
+
+def outline_color():
+    return color('#fefefe')
+
 THEMES = {
     'light': ('Аква · светлая', False, {}),
     'dark': ('Аква · тёмная', True, DARK),
@@ -34,7 +39,7 @@ for key, title, dark, values in [
     mapping.update({'#b3f2ff': background, '#d9ffe6': surface, '#eafffa': surface,
                     '#e6ffffff': '#e6' + raised[1:], '#123b43': text, '#000000': text,
                     '#47747a': muted, '#6a8d91': muted, '#087f8c': accent,
-                    '#b9eee4': border, '#b6e5df': border, '#a8ddd7': border,
+                    '#fefefe': border if dark else '#ffffff', '#b9eee4': border, '#b6e5df': border, '#a8ddd7': border,
                     '#b3261e': '#ffaaa6' if dark else '#b3261e',
                     '#c94b4b': '#ff9b9b' if dark else '#c94b4b',
                     '#d9364f': '#ff9baf' if dark else '#d9364f',
@@ -95,6 +100,8 @@ def apply_palette(root):
 
     def visit(obj):
         if getattr(obj, '__dict__', {}).get('_xopilot_fixed_colors'):
+            if getattr(obj, 'border', None):
+                obj.border = style_value(obj.border)
             return
         if id(obj) in seen:
             return
@@ -105,6 +112,10 @@ def apply_palette(root):
         elif is_dataclass(obj):
             if isinstance(obj, ft.TextField) and not obj.__dict__.get('_xopilot_borderless'):
                 modern_input(obj)
+            elif isinstance(obj, ft.Markdown):
+                # Syntax tokens inherit the chat text colour. A light Github
+                # background with dark-theme foreground makes code unreadable.
+                obj.code_theme = ft.MarkdownCodeTheme.ATOM_ONE_DARK if THEMES[_mode][1] else ft.MarkdownCodeTheme.GITHUB
             elif isinstance(obj, ft.Dropdown):
                 obj.border = {state: ft.OutlineInputBorder(border_radius=16,
                     side=ft.BorderSide(width=2 if state == ft.ControlState.FOCUSED else 1,
@@ -150,8 +161,13 @@ def set_theme(page, mode):
     _mode = mode if mode in THEMES else 'light'
     page.theme_mode = ft.ThemeMode.DARK if THEMES[_mode][1] else ft.ThemeMode.LIGHT
     page.bgcolor = color('#b3f2ff')
-    for control in [*page.controls, *page.overlay, *page.__dict__.get('_xopilot_dialogs', [])]:
+    for control in [*page.controls, *page.overlay, *open_dialogs(page)]:
         apply_palette(control)
+
+
+def open_dialogs(page):
+    registry = page.__dict__.get('_xopilot_dialogs')
+    return tuple(dialog for dialog in registry.values() if dialog.open) if registry is not None else ()
 
 
 def modern_input(control):
@@ -172,8 +188,14 @@ def install_theme(page, mode):
     set_theme(page, mode)
     show = page.show_dialog
     def show_dialog(dialog, *args, **kwargs):
-        dialogs = page.__dict__.setdefault('_xopilot_dialogs', [])
-        dialogs[:] = [item for item in dialogs if item.open]
-        dialogs.append(dialog)
-        return show(apply_palette(dialog), *args, **kwargs)
+        # Flet owns the dismissal animation. Theme/resize tracking must not
+        # retain the last closed editor, its image bytes or callback closures.
+        dialogs = page.__dict__.setdefault('_xopilot_dialogs', WeakValueDictionary())
+        dialogs[id(dialog)] = dialog
+        getattr(page, '_xopilot_memory_activity', lambda: None)()
+        try:
+            from ..services.platforms import fit_dialog
+        except ImportError:
+            from services.platforms import fit_dialog
+        return show(apply_palette(fit_dialog(page, dialog)), *args, **kwargs)
     page.show_dialog = show_dialog

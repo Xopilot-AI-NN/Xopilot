@@ -17,6 +17,10 @@ except ImportError:
 
 from ..common import section_title
 try:
+    from ...app.model_download import ModelDownloadPanel
+except ImportError:
+    from app.model_download import ModelDownloadPanel
+try:
     from ...services.model_installer import GEMMA_4_E2B, DOWNLOADABLE_MODELS, install_model, MODELS_DIR
     from ...services.voice_catalog import VOICES
     from ...services.voice_installer import install_voice
@@ -93,9 +97,6 @@ def build_models_page(page, on_status, on_models_changed=None):
     )
     busy = False
 
-    model_buttons = {key: ft.FilledButton(content='Переустановить' if model.installed else 'Скачать',
-                         icon=ft.Icons.DOWNLOAD) for key, model in DOWNLOADABLE_MODELS.items()}
-
     voice_buttons: dict[str, ft.FilledButton] = {
         voice_id: ft.FilledButton(
             content="Переустановить" if profile.installed else "Скачать",
@@ -107,12 +108,10 @@ def build_models_page(page, on_status, on_models_changed=None):
     def set_busy(value: bool):
         nonlocal busy
         busy = value
-        for button in model_buttons.values():
-            button.disabled = value
         for button in voice_buttons.values():
             button.disabled = value
         if not value:
-            for catalogue, buttons in ((DOWNLOADABLE_MODELS, model_buttons), (VOICES, voice_buttons)):
+            for catalogue, buttons in ((VOICES, voice_buttons),):
                 for identifier, button in buttons.items():
                     installed = catalogue[identifier].installed
                     button.content = "Переустановить" if installed else "Скачать"
@@ -120,38 +119,6 @@ def build_models_page(page, on_status, on_models_changed=None):
                     button._xopilot_status_chip.bgcolor = status.bgcolor
                     button._xopilot_status_chip.content = status.content
         page.update()
-
-    async def install_gemma(model):
-        if busy:
-            return
-        set_busy(True)
-        model_buttons[model.id].content = "Загрузка…"
-        feedback.value = f"Скачиваю {model.name} ({model.size_label})…"
-        feedback.color = _MUTED
-        on_status("Загрузка модели…")
-        page.update()
-        try:
-            path = await asyncio.to_thread(install_model, model.id)
-        except Exception as exc:
-            feedback.value = f"Не удалось скачать {model.name}: {exc}"
-            feedback.color = _ERROR
-            on_status("Ошибка загрузки модели")
-        else:
-            feedback.value = f"{model.name} установлена: {path.name}"
-            feedback.color = _MUTED
-            model_buttons[model.id].content = "Переустановить"
-            on_status(f"{model.name} установлена")
-            if on_models_changed is not None:
-                on_models_changed()
-        finally:
-            set_busy(False)
-
-    def installer(model):
-        async def handle(_):
-            await install_gemma(model)
-        return handle
-    for key, button in model_buttons.items():
-        button.on_click = installer(DOWNLOADABLE_MODELS[key])
 
     def make_voice_installer(voice_id: str):
         async def handle(_):
@@ -192,7 +159,7 @@ def build_models_page(page, on_status, on_models_changed=None):
 
     model_cards = [_install_card(ft.Icons.SMART_TOY_OUTLINED, model.name, model.description,
                     f'{model.size_label} · Hugging Face · SHA-256 проверяется после загрузки',
-                    model.installed, model_buttons[model.id]) for model in DOWNLOADABLE_MODELS.values()]
+                    model.installed, ModelDownloadPanel(model, on_models_changed)) for model in DOWNLOADABLE_MODELS.values()]
     try:
         from ...app.api_settings import open_api_settings
     except ImportError:
@@ -210,6 +177,13 @@ def build_models_page(page, on_status, on_models_changed=None):
         )
         for voice_id, profile in VOICES.items()
     ]
+    try:
+        from ...services.platforms import is_android
+    except ImportError:
+        from services.platforms import is_android
+    if is_android():
+        from ..voice.android import build_android_voice_controls
+        voice_cards = [build_android_voice_controls(page, on_status)]
 
     return ft.Column(
         spacing=10,
