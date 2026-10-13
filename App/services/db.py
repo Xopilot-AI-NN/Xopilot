@@ -13,10 +13,22 @@ from typing import Optional
 try:
     import importlib
     import importlib.util
+    from .platforms import is_android
     name = "App.advanced_xopilot" if __package__ == "App.services" else "advanced_xopilot"
-    if name != "advanced_xopilot" and importlib.util.find_spec(name) is None:
-        name = "advanced_xopilot"
-    advanced_xopilot = importlib.import_module(name)
+    if is_android():
+        from importlib.machinery import ExtensionFileLoader, ModuleSpec
+        # Android's linker loads the ABI-specific jniLib from the APK or its
+        # native-library directory, rather than from the Python app-data folder.
+        prefix = os.environ.get('ANDROID_APK_NATIVE_PREFIX') or os.environ.get('ANDROID_NATIVE_LIBRARY_DIR')
+        library = prefix.rstrip('/') + '/libadvanced_xopilot.so' if prefix else 'libadvanced_xopilot.so'
+        loader = ExtensionFileLoader("advanced_xopilot", library)
+        spec = ModuleSpec("advanced_xopilot", loader, origin=library)
+        advanced_xopilot = importlib.util.module_from_spec(spec)
+        loader.exec_module(advanced_xopilot)
+    else:
+        if name != "advanced_xopilot" and importlib.util.find_spec(name) is None:
+            name = "advanced_xopilot"
+        advanced_xopilot = importlib.import_module(name)
     _IMPORT_ERROR: Optional[Exception] = None
 except Exception as exc:  # noqa: BLE001 — на этапе разработки модуль может быть ещё не собран
     advanced_xopilot = None  # type: ignore
@@ -32,6 +44,20 @@ def _app_data_dir() -> str:
 
 
 _db = None  # единственный экземпляр PyDatabase на процесс приложения
+_mobile_key = None
+
+
+def configure_mobile_key(key):
+    """Keep the unwrapped key in memory; never export it to disk or environment."""
+    global _mobile_key
+    if not isinstance(key, str) or len(key) != 64 or any(c not in '0123456789abcdefABCDEF' for c in key):
+        raise ValueError("Android Keystore вернул некорректный ключ")
+    key = key.lower()
+    if _db is not None:
+        if _mobile_key == key:
+            return  # A page reconnect must not reject the same Keystore key.
+        raise RuntimeError("Нельзя заменить ключ открытой базы данных")
+    _mobile_key = key
 
 
 def get_db():
@@ -47,7 +73,13 @@ def get_db():
                 "advanced_xopilot не собран — выполните `maturin develop` в Services/"
             ) from _IMPORT_ERROR
         db_path = os.path.join(_app_data_dir(), "xopilot.db")
-        _db = advanced_xopilot.PyDatabase(db_path)
+        from .platforms import is_android
+        if is_android():
+            if _mobile_key is None:
+                raise RuntimeError("Android Keystore ещё не готов")
+            _db = advanced_xopilot.PyDatabase(db_path, key=_mobile_key)
+        else:
+            _db = advanced_xopilot.PyDatabase(db_path)
     return _db
 
 

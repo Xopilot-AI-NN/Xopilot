@@ -9,8 +9,17 @@ import re
 from concurrent.futures import CancelledError
 
 from .piper_voice import PiperSpeechVoice
-from .miku_voice import MikuConverter, MikuSpeechVoice
 from .voice_settings import get_selected_voice, require_voice
+
+
+def MikuConverter():
+    from .miku_voice import MikuConverter as converter
+    return converter()
+
+
+def MikuSpeechVoice(variant, converter):
+    from .miku_voice import MikuSpeechVoice as voice
+    return voice(variant, converter)
 
 
 def spoken_text(text):
@@ -44,6 +53,13 @@ def speech_segments(text, last_language="ru"):
 
 
 class SpeechOutput:
+    def __new__(cls, voice_id=None):
+        from .platforms import is_android
+        if cls is SpeechOutput and is_android():
+            from .mobile_audio import AndroidSpeechOutput
+            return AndroidSpeechOutput()
+        return super().__new__(cls)
+
     def __init__(self, voice_id=None):
         self._fixed_voice_id = voice_id
         self._voices = {}

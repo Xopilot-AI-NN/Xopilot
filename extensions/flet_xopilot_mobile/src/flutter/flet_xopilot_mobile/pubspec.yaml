@@ -1,0 +1,23 @@
+name: flet_xopilot_mobile
+description: Android Keystore and LiteRT-LM services for Xopilot
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: '>=3.6.0 <4.0.0'
+  flutter: '>=3.27.0'
+
+dependencies:
+  record: 7.1.1
+  camera: 0.12.1
+  flutter_tts: 4.2.5
+  flet: 1.0.3
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: ru.xopilot.mobile
+        pluginClass: XopilotMobilePlugin

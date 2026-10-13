@@ -20,7 +20,7 @@ def main():
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--offline", action="store_true")
     args = parser.parse_args()
-    command = ["cargo", "build", "--manifest-path", str(ROOT / "Services/Cargo.toml")]
+    command = ["cargo", "build", "--locked", "--manifest-path", str(ROOT / "Services/Cargo.toml")]
     if not args.debug:
         command.append("--release")
     if args.offline:

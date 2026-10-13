@@ -76,6 +76,15 @@ def get_selected_live_model() -> str | None:
     return selected
 
 
+def live_model_for_display() -> str | None:
+    """A label must not load the native inference library or inspect model data.
+
+    Audio compatibility is still checked by get_selected_live_model when starting
+    Live and when offering the actual model selector.
+    """
+    return _resolve(_session_live_model or get_setting(LIVE_MODEL_SETTING_KEY), list_local_models())
+
+
 def set_selected_chat_model(filename: str) -> bool:
     global _session_chat_model
     if filename not in list_local_models():

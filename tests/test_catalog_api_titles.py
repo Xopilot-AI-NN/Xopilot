@@ -1,4 +1,5 @@
 """New catalog, persisted icons/titles, and real HTTP transport contracts."""
+import base64
 import json
 import threading
 import unittest
@@ -72,6 +73,73 @@ class CatalogPersistenceTests(unittest.TestCase):
 
 
 class ApiTransportTests(unittest.TestCase):
+    def test_text_only_model_rejects_images_before_sending_chat(self):
+        config = {'url': 'https://openrouter.ai/api/v1', 'model': 'text-only', 'key': 'private-test-key'}
+        catalog = {'data': [
+            {'id': 'text-only', 'architecture': {'input_modalities': ['text']}},
+            {'id': 'vision', 'architecture': {'input_modalities': ['text', 'image']}},
+        ]}
+        connection = Mock()
+        response = connection.getresponse.return_value
+        response.status = 200
+        response.read.return_value = json.dumps(catalog).encode()
+        with patch.object(api_chat, '_modality_cache', (0, {})), \
+             patch.object(api_chat, 'configuration', return_value=config), \
+             patch.object(api_chat, 'build_attachment_message_parts', return_value=([], [b'image'])), \
+             patch.object(api_chat.http.client, 'HTTPSConnection', return_value=connection) as factory:
+            with self.assertRaisesRegex(RuntimeError, 'не поддерживает изображения'):
+                api_chat.generate_reply('Что на экране?')
+            connection.request.assert_called_once_with('GET', '/api/v1/models', headers={'Accept': 'application/json'})
+            self.assertEqual(factory.call_count, 1, 'No chat request may be opened for an incompatible model')
+            self.assertTrue(api_chat.image_support(dict(config, model='vision')))
+            self.assertIsNone(api_chat.image_support(dict(config, model='not-in-catalog')))
+            self.assertEqual(factory.call_count, 1, 'A model change must reuse catalog capabilities, not a cached bool')
+
+    def test_unavailable_catalog_is_unknown_and_does_not_leak_key(self):
+        config = {'url': 'https://openrouter.ai/api/v1', 'model': 'm', 'key': 'private-test-key'}
+        connection = Mock()
+        connection.request.side_effect = OSError('offline')
+        with patch.object(api_chat, '_modality_cache', (0, {})), \
+             patch.object(api_chat.http.client, 'HTTPSConnection', return_value=connection) as factory:
+            self.assertIsNone(api_chat.image_support(config))
+            self.assertIsNone(api_chat.image_support(config))
+            self.assertEqual(factory.call_count, 1)
+            self.assertNotIn('private-test-key', str(connection.request.call_args))
+            connection.close.assert_called_once()
+
+    def test_text_and_custom_models_do_not_fetch_catalog(self):
+        with patch.object(api_chat.http.client, 'HTTPSConnection') as factory:
+            self.assertIsNone(api_chat.image_support({'url': 'https://custom.example/v1', 'model': 'm'}))
+            factory.assert_not_called()
+        config = {'url': 'http://localhost/v1', 'model': 'm'}
+        with patch.object(api_chat, 'configuration', return_value=config), \
+             patch.object(api_chat, 'build_attachment_message_parts', return_value=([], [])), \
+             patch.object(api_chat, 'image_support') as lookup, \
+             patch.object(api_chat.http.client, 'HTTPConnection', side_effect=OSError('offline')):
+            with self.assertRaises(OSError):
+                api_chat.generate_reply('Только текст')
+            lookup.assert_not_called()
+
+    def test_google_ai_studio_preset_uses_compatible_endpoint_and_separates_provider_keys(self):
+        import flet as ft
+        from types import SimpleNamespace
+        from App.app.api_settings import open_api_settings
+        page = Mock(width=360, height=720)
+        config = {'url': 'https://openrouter.ai/api/v1', 'model': 'old-model', 'key': 'old-provider-test-key'}
+        with patch.object(api_chat, 'configuration', return_value=config):
+            open_api_settings(page)
+        form = page.show_dialog.call_args.args[0].content.controls
+        provider, url, model, key = form[:4]
+        provider.value = 'google'
+        provider.on_select(None)
+        self.assertEqual(url.value, 'https://generativelanguage.googleapis.com/v1beta/openai')
+        self.assertEqual(key.value, '')
+        self.assertEqual(model.value, '')
+        provider.value = 'openrouter'
+        provider.on_select(None)
+        self.assertEqual(key.value, config['key'])
+        self.assertEqual(api_chat.provider_for({'url': api_chat.PROVIDERS['google'][1]}), 'google')
+
     def test_api_http_transmits_full_history_and_attachments(self):
         received = {}
         class Handler(BaseHTTPRequestHandler):
@@ -89,13 +157,17 @@ class ApiTransportTests(unittest.TestCase):
         thread.start()
         try:
             config = {'url':f'http://127.0.0.1:{server.server_port}/v1', 'model':'qa-model', 'key':'test-only'}
+            frame = b'\xff\xd8screen-frame'
             with patch.object(api_chat, 'configuration', return_value=config), patch.object(api_chat, 'record_generation'), \
-                 patch.object(api_chat, 'build_attachment_message_parts', return_value=(['Факт из файла'], [])):
+                 patch.object(api_chat, 'build_attachment_message_parts', return_value=(['Факт из файла'], [frame])):
                 answer = api_chat.generate_reply('Вопрос', history=[{'role':'user','content':'Первый'},{'role':'ai','content':'Второй'}], instructions='Инструкция')
             self.assertEqual(answer, 'Ответ транспорта')
             self.assertEqual(received['path'], '/v1/chat/completions')
             self.assertEqual(received['auth'], 'Bearer test-only')
-            self.assertIn('Факт из файла', received['json']['messages'][-1]['content'])
+            content = received['json']['messages'][-1]['content']
+            self.assertIn('Факт из файла', content[0]['text'])
+            self.assertEqual(content[1]['image_url']['url'],
+                             'data:image/jpeg;base64,' + base64.b64encode(frame).decode('ascii'))
             self.assertEqual(received['json']['messages'][2]['role'], 'assistant')
             self.assertNotIn('max_tokens', received['json'])
         finally:

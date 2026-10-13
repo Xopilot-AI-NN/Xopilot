@@ -16,9 +16,9 @@ from concurrent.futures import CancelledError
 
 import flet as ft
 try:
-    from .palette import color
+    from .palette import color, outline_color
 except ImportError:
-    from app.palette import color
+    from app.palette import color, outline_color
 
 from .buttons.live import build_live_button
 from .buttons.live_camera import build_live_camera_button
@@ -32,16 +32,18 @@ try:
     from ..services.llm import (
         SpeechNotRecognizedError, generate_live_reply, prepare_voice_model, transcribe_audio, execution_label,
     )
-    from ..services.model_settings import get_selected_live_model, model_display_name
+    from ..services.model_settings import get_selected_live_model, live_model_for_display, model_display_name
     from ..services.live_vision import capture_camera_frame, capture_screen_frame, CameraStream
+    from ..services.mobile_runtime import call_async as mobile_call
 except ImportError:
     from services.live_audio import check_live_audio, record_utterance
     from services.speech_output import SpeechOutput
     from services.llm import (
         SpeechNotRecognizedError, generate_live_reply, prepare_voice_model, transcribe_audio, execution_label,
     )
-    from services.model_settings import get_selected_live_model, model_display_name
+    from services.model_settings import get_selected_live_model, live_model_for_display, model_display_name
     from services.live_vision import capture_camera_frame, capture_screen_frame, CameraStream
+    from services.mobile_runtime import call_async as mobile_call
 
 
 class VisionCaptureError(RuntimeError):
@@ -49,8 +51,10 @@ class VisionCaptureError(RuntimeError):
 
 
 class LiveConversation:
-    def __init__(self, page, is_busy, get_history, on_user_message, on_ai_message, get_resources=None, is_private=None, material_store=None, get_material_store=None):
+    def __init__(self, page, is_busy, get_history, on_user_message, on_ai_message, get_resources=None, is_private=None, material_store=None, get_material_store=None, get_pending_files=None, on_pending_files_consumed=None):
         self.page = page
+        self.get_pending_files = get_pending_files or (lambda: [])
+        self.on_pending_files_consumed = on_pending_files_consumed
         self.is_busy = is_busy
         self.get_history = get_history
         self.on_user_message = on_user_message
@@ -64,6 +68,11 @@ class LiveConversation:
         self.screen_on = False
         self.camera_button = build_live_camera_button(on_click=self.toggle_camera)
         self.screen_button = build_live_display_button(on_click=self.toggle_screen)
+        try:
+            from ..services.platforms import is_android
+        except ImportError:
+            from services.platforms import is_android
+        self._android = is_android()
         self.status_text = ft.Text(size=13, color=color("#47747a"), text_align=ft.TextAlign.CENTER)
         self.state_title = ft.Text("Готов к разговору", size=22, weight=ft.FontWeight.W_600,
                                    color=color("#123b43"), text_align=ft.TextAlign.CENTER)
@@ -83,16 +92,23 @@ class LiveConversation:
         self.mute_button = brand_button(ft.Icons.MIC, "Выключить микрофон", self.toggle_mute, size=46)
         self.mute_label = ft.Text("Микрофон", size=11, color=color("#47747a"))
         self.voice_output_enabled = True
+        self._speaker = None
         self.sound_button = brand_button(ft.Icons.VOLUME_UP, "Выключить озвучивание", self.toggle_sound, size=46)
         self.sound_label = ft.Text("Звук", size=11, color=color("#47747a"))
-        self.preview = ft.Image(src=b"", height=200, fit=ft.BoxFit.CONTAIN, visible=False)
+        # Decode the small preview, while keeping the original frame for AI.
+        self.preview = ft.Image(src=b"", height=120, cache_height=240, fit=ft.BoxFit.CONTAIN, visible=False)
+        self.background_image = ft.Image(src=b"", fit=ft.BoxFit.COVER, cache_height=640, visible=False)
+        # A permanent stack slot keeps the message list/keyboard stable when a
+        # source starts or stops. The low opacity preserves text contrast.
+        self.chat_background = ft.Container(left=0, right=0, top=0, bottom=0,
+            opacity=0.16, ignore_interactions=True, content=self.background_image)
         self.preview_note = ft.Text(size=11, color=color("#47747a"))
         self.frame_question = ft.TextField(
             hint_text="Напишите вопрос или говорите…", expand=True, text_size=13,
             color=color("#123b43"), bgcolor=color("#f3fffc"), on_submit=self.ask_frame,
         )
         self.visual_panel = ft.Column(visible=False, spacing=6,
-            horizontal_alignment=ft.CrossAxisAlignment.STRETCH, controls=[self.preview, self.preview_note])
+            horizontal_alignment=ft.CrossAxisAlignment.STRETCH, controls=[self.preview_note])
         self.files = []
         self.file_picker = None
         self.attachments = build_file_attachments(self.files, self.remove_file)
@@ -118,12 +134,21 @@ class LiveConversation:
                       ft.Row(spacing=8, controls=[brand_button(ft.Icons.ATTACH_FILE, "Добавить файлы в Live", self.add_files),
                           self.frame_question, brand_button(ft.Icons.SEND_ROUNDED, "Отправить вопрос в Live", self.ask_frame)]),
                       ft.Row(alignment=ft.MainAxisAlignment.CENTER, controls=[self.interrupt_button])])
-        self.summary = ft.Text(size=12, color=color("#123b43"), expand=True)
-        self.status = ft.Row(visible=False, controls=[self.summary,
-            ft.IconButton(icon=ft.Icons.OPEN_IN_FULL, tooltip="Открыть Live", on_click=self.open_call,
-                          icon_color=color("#087f8c"))])
+        self.summary = self.status_text
         self.start_button = ft.FilledButton(content="Начать разговор", icon=ft.Icons.CALL,
                                            on_click=self.toggle)
+        self.floating_button = brand_button(ft.Icons.OPEN_IN_NEW, "Плавающее окно", self.minimize, size=46)
+        self._inline_open = False
+        self._viewport_collapsed = False
+        self.status = ft.Column(visible=False, spacing=8, scroll=ft.ScrollMode.AUTO, controls=[
+            self.status_text,
+            ft.Row(wrap=True, spacing=8, controls=[self.start_button,
+                self.mute_button, self.camera_button, self.screen_button, self.sound_button,
+                *([self.floating_button] if self._android else []),
+                *([] if self._android else [brand_button(ft.Icons.SETTINGS_OUTLINED, "Устройства звонка", self.open_devices)]),
+                self.interrupt_button, self.end_button]),
+            self.attachments, self.visual_panel,
+        ])
         self._state = "idle"
         self._stopped = threading.Event()
         self._turn_cancelled = threading.Event()
@@ -136,6 +161,9 @@ class LiveConversation:
         self._last_frame_time = 0
         self._preview_lock = asyncio.Lock()
         self._camera = None
+        self._overlay_requested = False
+        self._overlay_task = None
+        self._app_foreground = True
         self._typed_question = None
         self._question_ready = asyncio.Event()
         self._vision_note = ""  # причина, по которой кадр камеры/экрана не получено
@@ -146,6 +174,17 @@ class LiveConversation:
     def busy(self):
         return self._state != "idle"
 
+    def fit_viewport(self, width, height, *, keyboard=0):
+        """Keep capture controls scrollable above the composer on phones and short windows."""
+        if isinstance(height, (int, float)) and height >= 0:
+            self._viewport_collapsed = self._android and (height < 260 or keyboard > 0)
+            constrained = (isinstance(width, (int, float)) and width < 600) or height < 600
+            self.status.height = max(72, min(200, height * 0.28)) if constrained else None
+        else:
+            self._viewport_collapsed = False
+            self.status.height = None
+        self.status.visible = (self._inline_open or self.busy or self.camera_on or self.screen_on) and not self._viewport_collapsed
+
     def reconnect(self):
         self._closed = False
         self._render("")
@@ -154,14 +193,14 @@ class LiveConversation:
         self._refresh_vision_buttons(update=False)
         self.status_text.value = message
         self.summary.value = message
-        self.status.visible = bool(message) or self.camera_on or self.screen_on
+        self.status.visible = (self._inline_open or self.busy or self.camera_on or self.screen_on) and not self._viewport_collapsed
         self.panel.visible = True
         self.state_title.value = {"idle": "Готов к разговору", "preparing": "Подключаю модель…",
             "listening": "Микрофон выключен" if self.microphone_muted else "Слушаю вас",
             "transcribing": "Распознаю речь…", "thinking": "Готовлю ответ…",
             "speaking": "Отвечаю", "interrupting": "Останавливаю ответ…",
             "stopping": "Завершаю разговор…"}.get(self._state, "Голосовой разговор")
-        self.engine_text.value = model_display_name(self._live_model or get_selected_live_model()) + " · " + execution_label()
+        self.engine_text.value = model_display_name(self._live_model or live_model_for_display()) + " · " + execution_label()
         self.start_button.content = "Завершить разговор" if self.busy else "Начать разговор"
         self.start_button.icon = ft.Icons.CALL_END if self.busy else ft.Icons.CALL
         self.interrupt_button.visible = self._state in {"transcribing", "thinking", "speaking", "interrupting"}
@@ -177,35 +216,65 @@ class LiveConversation:
         self.button.tooltip = (
             "Открыть текущий разговор Live"
             if self.busy
-            else f"Live — {model_display_name(get_selected_live_model())}"
+            else f"Live — {model_display_name(live_model_for_display())}"
         )
         if not self._closed:
             self.page.update()
 
     async def open_call(self, _=None):
-        self._render(self.status_text.value or "Говорите, пишите, прикрепляйте файлы. Камеру и экран можно включить по желанию.")
-        if self._dialog is not None and self._dialog.open:
-            return
-        self._dialog = ft.AlertDialog(
-            bgcolor=color("#eafffa"), modal=False, shape=ft.RoundedRectangleBorder(radius=18),
-            title=ft.Row(controls=[ft.Icon(ft.Icons.GRAPHIC_EQ, color=color("#087f8c")),
-                ft.Text("Live", size=20, weight=ft.FontWeight.W_600, color=color("#123b43"), expand=True),
-                ft.IconButton(icon=ft.Icons.SETTINGS_OUTLINED, tooltip="Устройства Live", on_click=self.open_devices,
-                    icon_color=color("#087f8c")),
-                ft.IconButton(icon=ft.Icons.CLOSE, tooltip="Свернуть Live", on_click=lambda _: self.page.pop_dialog(),
-                    icon_color=color("#087f8c"))]),
-            content=ft.Column(width=max(220, min(620, self.page.width - 112)),
-                height=max(200, min(540, self.page.height - 210)),
-                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
-                controls=[ft.Column(expand=True, scroll=ft.ScrollMode.AUTO,
-                    horizontal_alignment=ft.CrossAxisAlignment.STRETCH, controls=[self.panel]), self.composer]),
-            actions=[ft.TextButton(content="Свернуть", on_click=lambda _: self.page.pop_dialog()), self.start_button])
-        self.page.show_dialog(self._dialog)
+        self._inline_open = True
+        hint = 'Говорите, пишите, прикрепляйте файлы. Камеру и экран можно включить по желанию.'
+        self._render(self.status_text.value or hint)
 
     async def end_call(self, _=None):
         await self.stop()
-        if self._dialog is not None and self._dialog.open:
-            self.page.pop_dialog()
+        self.camera_on = self.screen_on = False
+        await self._restart_preview()
+        self._inline_open = False
+        self._render("")
+
+    async def minimize(self, _=None):
+        if not (self.camera_on or self.screen_on):
+            self._render('Сначала включите камеру или экран')
+            return
+        self._overlay_requested = True
+        try:
+            ready = await mobile_call('overlayRequest', self._overlay_state())
+            if ready:
+                await mobile_call('minimizeLive')
+            else:
+                self._render('Разрешите Xopilot показ поверх приложений, затем нажмите «Плавающее окно»')
+            self._ensure_overlay_watch()
+        except Exception as exc:
+            self._render(f'Не удалось открыть плавающее окно: {exc}')
+
+    def _overlay_state(self):
+        return {'source': 'camera' if self.camera_on else 'screen' if self.screen_on else '',
+                'muted': self.microphone_muted, 'microphone': self.busy}
+
+    def _ensure_overlay_watch(self):
+        if self._overlay_task is None or self._overlay_task.done():
+            self._overlay_task = asyncio.create_task(self._watch_overlay())
+
+    async def _watch_overlay(self):
+        while not self._closed and self._overlay_requested:
+            try:
+                state = await mobile_call('overlayPoll')
+                self._app_foreground = bool(state.get('foreground', True))
+                for action in state.get('actions', []):
+                    if action == 'stop':
+                        self._overlay_requested = False
+                        await self.end_call()
+                        return
+                    if action in {'mute', 'unmute'} and self.microphone_muted != (action == 'mute'):
+                        await self.toggle_mute()
+                if self.camera_on or self.screen_on:
+                    await mobile_call('overlayState', self._overlay_state())
+            except Exception:
+                # The platform can revoke the overlay independently of capture.
+                # A denied permission must never prevent ending the call in-app.
+                pass
+            await asyncio.sleep(0.4)
 
     async def toggle_mute(self, _=None):
         self.microphone_muted = not self.microphone_muted
@@ -216,6 +285,11 @@ class LiveConversation:
         if self._state == "listening":
             self._turn_cancelled.set()
         self._question_ready.set()
+        if self._android:
+            if self.microphone_muted:
+                await mobile_call('audioCancel')
+            if self._overlay_requested:
+                await mobile_call('overlayState', self._overlay_state())
         self.page.update()
 
     async def toggle_sound(self, _=None):
@@ -226,6 +300,10 @@ class LiveConversation:
         self.sound_label.value = "Звук" if self.voice_output_enabled else "Без звука"
         if not self.voice_output_enabled and self._state == "speaking":
             self._turn_cancelled.set()
+        if not self.voice_output_enabled:
+            # A running bound speak() call retains its own reference until
+            # cancellation finishes; future turns must not retain these models.
+            self._speaker = None
         self.page.update()
 
     def remove_file(self, file):
@@ -291,18 +369,18 @@ class LiveConversation:
 
     def refresh_model_label(self, _filename=None):
         if not self.busy:
-            self.button.tooltip = f"Live — {model_display_name(get_selected_live_model())}"
+            self.button.tooltip = f"Live — {model_display_name(live_model_for_display())}"
             try:
                 self.button.update()
             except Exception:
                 pass
 
     def _refresh_vision_buttons(self, update=True):
-        self.camera_button.border = ft.Border.all(3 if self.camera_on else 2, color("#087f8c") if self.camera_on else ft.Colors.WHITE)
+        self.camera_button.border = ft.Border.all(3 if self.camera_on else 2, color("#087f8c") if self.camera_on else outline_color())
         self.camera_button.content = ft.Icon(ft.Icons.VIDEOCAM if self.camera_on else ft.Icons.VIDEOCAM_OFF_OUTLINED,
                                              color=ft.Colors.WHITE, size=20)
         self.camera_button.tooltip = "Live — камера включена" if self.camera_on else "Live — показать с камеры"
-        self.screen_button.border = ft.Border.all(3 if self.screen_on else 2, color("#087f8c") if self.screen_on else ft.Colors.WHITE)
+        self.screen_button.border = ft.Border.all(3 if self.screen_on else 2, color("#087f8c") if self.screen_on else outline_color())
         self.screen_button.content = ft.Icon(ft.Icons.STOP_SCREEN_SHARE_OUTLINED if self.screen_on else ft.Icons.SCREEN_SHARE_OUTLINED,
                                              color=ft.Colors.WHITE, size=20)
         self.screen_button.tooltip = "Live — экран включён" if self.screen_on else "Live — трансляция экрана"
@@ -317,14 +395,33 @@ class LiveConversation:
             self.screen_on = False
         self._refresh_vision_buttons()
         await self._restart_preview()
+        if not self.busy:
+            self._render("")
 
     async def toggle_screen(self, _=None):
         """Вкл/выкл передачи снимка экрана модели перед каждым ответом."""
+        try:
+            from ..services.platforms import is_android
+            from ..services.mobile_runtime import call_async
+        except ImportError:
+            from services.platforms import is_android
+            from services.mobile_runtime import call_async
+        if is_android() and not self.screen_on:
+            try:
+                await call_async('screenStart')
+            except Exception as exc:
+                message = str(exc)
+                if message.startswith('PlatformException(screen_unavailable, '):
+                    message = message.split(', ', 1)[1].rsplit(', ', 2)[0]
+                self._render(message)
+                return
         self.screen_on = not self.screen_on
         if self.screen_on:
             self.camera_on = False
         self._refresh_vision_buttons()
         await self._restart_preview()
+        if not self.busy:
+            self._render("")
 
     async def _restart_preview(self):
         async with self._preview_lock:
@@ -335,11 +432,26 @@ class LiveConversation:
             self._preview_task.cancel()
             await asyncio.gather(self._preview_task, return_exceptions=True)
             self._preview_task = None
+        try:
+            from ..services.platforms import is_android
+            from ..services.mobile_runtime import call_async
+        except ImportError:
+            from services.platforms import is_android
+            from services.mobile_runtime import call_async
+        if is_android() and not self.screen_on:
+            await call_async('screenStop')
         if self._camera is not None:
             await asyncio.to_thread(self._camera.close)
             self._camera = None
         self._last_frame = self._last_source = None
+        self.preview.src = b""
         self.preview.visible = False
+        self.background_image.src = b""
+        self.background_image.visible = False
+        if is_android() and not (self.camera_on or self.screen_on):
+            await call_async('overlayStop')
+            self._overlay_requested = False
+            self._app_foreground = True
         self.visual_panel.visible = self.camera_on or self.screen_on
         if self.visual_panel.visible and not self._closed:
             self.preview_note.value = "Подключаю камеру…" if self.camera_on else "Подключаю экран…"
@@ -369,12 +481,17 @@ class LiveConversation:
                     self._last_frame_time = time.monotonic()
                     self.preview.src = frame
                     self.preview.visible = True
+                    if self._app_foreground:
+                        self.background_image.src = frame
+                        self.background_image.visible = True
                     self.preview_note.value = "Камера включена · кадр передаётся с каждым вопросом" if source == "camera" else "Экран включён · кадр передаётся с каждым вопросом"
                 except Exception as exc:
                     self._last_frame = None
                     self.preview.visible = False
+                    self.background_image.visible = False
                     self.preview_note.value = str(exc)
-                self.page.update()
+                if self._app_foreground:
+                    self.page.update()
                 await asyncio.sleep(0.6 if source == "camera" else 1.2)
         except asyncio.CancelledError:
             pass
@@ -397,6 +514,7 @@ class LiveConversation:
             self.frame_question.error_text = "Дождитесь завершения ответа в чате"
             self.page.update()
             return
+        self._inline_open = True
         self._typed_question = text
         if not self.busy:
             await self.toggle()
@@ -409,6 +527,7 @@ class LiveConversation:
         self._question_ready.set()
         if self._state != "preparing":
             self._turn_cancelled.set()
+        return True
 
     async def toggle(self, _=None):
         if self._closed:
@@ -422,9 +541,18 @@ class LiveConversation:
         if self.page.web and os.environ.get("XOPILOT_LOCAL_WEB") != "1":
             self._render("Live доступен в настольном приложении Xopilot.")
             return
-        selected_model = get_selected_live_model()
+        self._stopped = threading.Event()
+        self._turn_cancelled = threading.Event()
+        self._set_state('preparing', 'Live · Проверяю выбранную модель…')
+        try:
+            selected_model = await asyncio.to_thread(get_selected_live_model)
+        except Exception as exc:
+            self._set_state('idle', f'Live: не удалось проверить модель: {exc}')
+            return
+        if self._stopped.is_set() or self._closed:
+            return
         if not selected_model:
-            self._render("Live: нужна модель с поддержкой аудио. Установите её в «Настройки → Модели».")
+            self._set_state('idle', "Live: нужна модель с поддержкой аудио. Установите её в «Настройки → Модели».")
             return
         self._live_model = selected_model
         self._stopped = threading.Event()
@@ -441,7 +569,7 @@ class LiveConversation:
         if self._turn_cancelled.is_set() or self._stopped.is_set():
             raise CancelledError()
 
-    async def _capture_vision_frame(self):
+    async def _capture_vision_frame(self, *, update_state=True):
         """Кадр с камеры/экрана для текущей реплики, если включена соответствующая кнопка.
         Ошибка захвата (камера занята, Wayland без скриншотера и т.п.) не прерывает
         разговор — отвечаем без картинки, но причина показывается в статусе (_vision_note).
@@ -453,7 +581,8 @@ class LiveConversation:
             source, message, capture = "Экран", "Live · Смотрю на экран…", capture_screen_frame
         else:
             return None
-        self._set_state("thinking", message)
+        if update_state:
+            self._set_state("thinking", message)
         expected = "camera" if self.camera_on else "screen"
         if self._last_frame is not None and self._last_source == expected and time.monotonic() - self._last_frame_time < 3:
             return self._last_frame
@@ -470,11 +599,11 @@ class LiveConversation:
         try:
             if not self.microphone_muted:
                 await asyncio.to_thread(check_live_audio)
-            speaker = None
-            model_filename = self._live_model or get_selected_live_model()
+            model_filename = self._live_model or await asyncio.to_thread(get_selected_live_model)
             if not model_filename:
                 raise RuntimeError("Не выбрана модель Live.")
-            await asyncio.to_thread(prepare_voice_model, self._stopped, model_filename)
+            await asyncio.to_thread(prepare_voice_model, self._stopped, model_filename,
+                                    audio=not self.microphone_muted)
             hint = "Говорите — отвечу после паузы."
             while not self._stopped.is_set():
                 self._turn_cancelled = threading.Event()
@@ -495,14 +624,17 @@ class LiveConversation:
                     else:
                         wav = await asyncio.to_thread(record_utterance, self._turn_cancelled)
                         self._check_turn()
+                        getattr(self.page, '_xopilot_memory_cancel', lambda: None)()
                         self._set_state("transcribing", "Live · Распознаю вашу реплику…")
                         transcript = await asyncio.to_thread(
                             transcribe_audio, wav, self._turn_cancelled, model_filename
                         )
                         self._check_turn()
+                    getattr(self.page, '_xopilot_memory_cancel', lambda: None)()
                     image_bytes = await self._capture_vision_frame()
                     self._check_turn()
                     sent_files = list(self.files)
+                    sent_files.extend(file for file in self.get_pending_files() if file not in sent_files)
                     attachments = [(file.name, file.path) for file in sent_files]
                     if attachments:
                         await self.on_user_message(transcript, attachments=attachments)
@@ -511,6 +643,8 @@ class LiveConversation:
                     for file in sent_files:
                         if file in self.files:
                             self.files.remove(file)
+                    if self.on_pending_files_consumed:
+                        await self.on_pending_files_consumed(sent_files)
                     self.user_text.value, self.reply_text.value = transcript, ""
                     self.transcript.visible = True
                     self._render_files()
@@ -518,6 +652,12 @@ class LiveConversation:
                     history = self.get_history()
                     self._set_state("thinking", "Live · Готовлю ответ…")
                     instructions, shared_files = self.get_resources()
+                    if not self.is_private():
+                        try:
+                            from ..services import user_memory
+                        except ImportError:
+                            from services import user_memory
+                        instructions += user_memory.context(transcript)
                     reply = await asyncio.to_thread(
                         generate_live_reply, history, self._turn_cancelled, model_filename, image_bytes,
                         instructions=instructions, attachments=[*shared_files, *attachments],
@@ -532,9 +672,9 @@ class LiveConversation:
                     if self.voice_output_enabled:
                         self._set_state("speaking", "Говорю. Можно перебить кнопкой или выключить звук.")
                         try:
-                            if speaker is None:
-                                speaker = await asyncio.to_thread(SpeechOutput)
-                            await asyncio.to_thread(speaker.speak, reply, self._turn_cancelled)
+                            if self._speaker is None:
+                                self._speaker = await asyncio.to_thread(SpeechOutput)
+                            await asyncio.to_thread(self._speaker.speak, reply, self._turn_cancelled)
                         except (CancelledError, asyncio.CancelledError):
                             raise
                         except Exception as exc:
@@ -542,6 +682,8 @@ class LiveConversation:
                     # Дать динамикам закончить звучание перед повторным открытием микрофона.
                     await asyncio.sleep(0.25)
                     hint = speech_error or self._vision_note or "Говорите — отвечу после паузы."
+                    if not self.is_private():
+                        getattr(self.page, '_xopilot_memory_capture', lambda *_: None)(transcript)
                 except SpeechNotRecognizedError:
                     hint = "Не разобрал речь. Повторите фразу."
                 except VisionCaptureError as exc:
@@ -571,9 +713,16 @@ class LiveConversation:
             if not self._stopped.is_set():
                 error = f"Live: {exc}"
         finally:
+            # Drop ONNX sessions after cancellation/playback has finished.
+            self._speaker = None
             self.camera_on = self.screen_on = False
             self._typed_question = None
             await self._restart_preview()
+            try:
+                from ..services.runtime import release_unused_memory
+            except ImportError:
+                from services.runtime import release_unused_memory
+            await asyncio.to_thread(release_unused_memory)
             self._set_state("idle", error)
 
     async def interrupt(self, _=None):
@@ -596,6 +745,8 @@ class LiveConversation:
 
     def clear_chat(self):
         """Discard the previous chat's visible transcript and pending attachments."""
+        self._inline_open = False
+        self.status.visible = False
         self.files.clear()
         self.attachments.controls.clear()
         self.attachments.visible = False

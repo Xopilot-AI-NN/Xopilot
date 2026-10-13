@@ -18,11 +18,22 @@ import io
 import asyncio
 from pathlib import Path
 from PIL import Image
+from functools import lru_cache
 
 
 def image_preview(path):
         try:
+                stat=Path(path).stat()
+                return _image_preview(path,stat.st_size,stat.st_mtime_ns)
+        except OSError:return b''
+
+
+@lru_cache(maxsize=32)
+def _image_preview(path,_size,_modified):
+        try:
                 with Image.open(path) as image:
+                        if image.width*image.height>20_000_000:return b''
+                        image.draft('RGB',(256,256))
                         image.thumbnail((256, 256))
                         buffer = io.BytesIO()
                         image.convert("RGB").save(buffer, format="JPEG")
@@ -50,16 +61,16 @@ def file_icon(file: ft.FilePickerFile):
 
 
 def build_file_tile(file: ft.FilePickerFile) -> ft.Container:
-        async def save_copy(e):
-                picker = ft.FilePicker()
+        async def view_file(e):
                 try:
-                        data = await asyncio.to_thread(Path(file.path).read_bytes)
-                        path = await picker.save_file(dialog_title="Сохранить копию вложения", file_name=file.name,
-                                                       src_bytes=data)
-                        if path and not e.page.web:
-                                await asyncio.to_thread(Path(path).write_bytes, data)
+                        from .material_viewer import open_material
+                        if not Path(file.path).is_file():
+                                try:from ..services.storage import restore_local_material
+                                except ImportError:from services.storage import restore_local_material
+                                await asyncio.to_thread(restore_local_material,file.path)
+                        await open_material(e.page,file.path,file.name)
                 except Exception as exc:
-                        e.page.show_dialog(ft.SnackBar(ft.Text(f"Не удалось сохранить файл: {exc}")))
+                        e.page.show_dialog(ft.SnackBar(ft.Text(f"Не удалось открыть материал: {exc}")))
         preview = (
                 ft.Image(
                         src=image_preview(file.path),
@@ -72,8 +83,8 @@ def build_file_tile(file: ft.FilePickerFile) -> ft.Container:
                 else ft.Icon(file_icon(file), size=34, color=color("#087f8c"))
         )
         return ft.Container(
-                tooltip=f"Сохранить копию: {file.name}",
-                on_click=save_copy,
+                tooltip=f"Просмотреть материал: {file.name}",
+                on_click=view_file,
                 ink=True,
                 width=96,
                 height=94,

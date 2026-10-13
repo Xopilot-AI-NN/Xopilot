@@ -7,6 +7,7 @@
 //              cloud_sync / mcp / updates — заглушки под фазу 2.
 //              Рабочий ИИ больше НЕ здесь — переехали на LiteRT-LM (App/services/llm.py, чистый Python).
 
+#[cfg(feature = "sentiment")]
 mod ai;
 mod cloud_sync;
 mod db;
@@ -14,6 +15,7 @@ mod mcp;
 mod security;
 mod updates;
 
+#[cfg(feature = "sentiment")]
 use ai::SentimentClassifier;
 use db::{Database, StoredMessage};
 use pyo3::exceptions::PyRuntimeError;
@@ -68,10 +70,11 @@ struct PyDatabase {
 
 #[pymethods]
 impl PyDatabase {
-    /// PyDatabase(path) — ключ больше не передаётся из Python: берётся автоматически из OS keyring
-    /// (или из фоллбэка на основе machine-id, если keyring недоступен).
+    /// Android supplies a random key unwrapped by Android Keystore. Desktop
+    /// callers may keep using the existing system key resolver.
     #[new]
-    fn new(path: String) -> PyResult<Self> {
+    #[pyo3(signature = (path, key=None))]
+    fn new(path: String, key: Option<String>) -> PyResult<Self> {
         let db_path = std::path::PathBuf::from(&path);
         let fallback_dir = db_path
             .parent()
@@ -79,8 +82,14 @@ impl PyDatabase {
             .unwrap_or_else(|| std::path::PathBuf::from("."));
 
         let existing = db_path.metadata().map(|m| m.len() > 0).unwrap_or(false);
-        let keys = security::get_db_keys(&fallback_dir, existing)
-            .map_err(PyRuntimeError::new_err)?;
+        let keys = if let Some(key) = key {
+            if key.len() != 64 || !key.bytes().all(|c| c.is_ascii_hexdigit()) {
+                return Err(PyRuntimeError::new_err("Ключ БД должен содержать 32 байта в hex-формате."));
+            }
+            vec![key]
+        } else {
+            security::get_db_keys(&fallback_dir, existing).map_err(PyRuntimeError::new_err)?
+        };
         let mut last_error = None;
         for key in keys {
             match Database::open(&path, &key) {
@@ -175,6 +184,17 @@ impl PyDatabase {
         self.inner.lock().unwrap().list_chat_summaries().map_err(to_py_err)
     }
 
+    fn sync_chat_snapshot(&self, chat_id: i64) -> PyResult<Option<String>> {
+        self.inner.lock().unwrap().sync_chat_snapshot(chat_id).map_err(to_py_err)
+    }
+    #[pyo3(signature=(chat_id, expected, payload, ledger_key, ledger))]
+    fn apply_sync_chat(&self, chat_id: Option<i64>, expected: Option<String>, payload: Option<String>, ledger_key: String, ledger: String) -> PyResult<Option<i64>> {
+        self.inner.lock().unwrap().apply_sync_chat(chat_id,expected.as_deref(),payload.as_deref(),&ledger_key,&ledger).map_err(to_py_err)
+    }
+    fn apply_sync_settings(&self, expected: Vec<(String,Option<String>)>, updates: Vec<(String,String)>) -> PyResult<bool> {
+        self.inner.lock().unwrap().apply_sync_settings(&expected,&updates).map_err(to_py_err)
+    }
+
     fn schema_version(&self) -> PyResult<i32> {
         self.inner.lock().unwrap().schema_version().map_err(to_py_err)
     }
@@ -190,11 +210,13 @@ impl PyDatabase {
 
 /// Python-обёртка над тестовым ONNX-классификатором тональности (пункт 5 плана).
 #[pyclass]
+#[cfg(feature = "sentiment")]
 struct PySentimentClassifier {
     inner: SentimentClassifier,
 }
 
 #[pymethods]
+#[cfg(feature = "sentiment")]
 impl PySentimentClassifier {
     #[new]
     fn new(model_path: String) -> PyResult<Self> {
@@ -216,6 +238,7 @@ impl PySentimentClassifier {
 fn advanced_xopilot(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyDatabase>()?;
     m.add_class::<PyMessage>()?;
+    #[cfg(feature = "sentiment")]
     m.add_class::<PySentimentClassifier>()?;
     Ok(())
 }

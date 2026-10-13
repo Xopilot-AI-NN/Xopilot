@@ -66,6 +66,15 @@ class DocumentWorkflowTests(unittest.TestCase):
         self.assertTrue(entry['available'])
         self.assertIn('print(137)', library.read_entry(entry)[0])
 
+    def test_missing_cloud_copies_have_distinct_library_actions_and_are_not_directories(self):
+        materials=[{'name':'src/main.py','path':''},{'name':'tests/main.py','path':''}]
+        workspaces.update_workspace(self.workspace['id'],'Проект',materials=materials)
+        entries=library.entries(self.workspace['id'])
+        self.assertEqual(len({entry['id'] for entry in entries}),2)
+        self.assertFalse(any(entry['available'] for entry in entries))
+        for entry in entries:
+            with self.assertRaisesRegex(ValueError,'недоступна'):library.read_entry(entry)
+
     def test_disabled_material_is_not_given_to_chat_or_agent(self):
         note = library.add_note('Секрет', 'Не использовать')
         note['enabled'] = False
@@ -126,6 +135,22 @@ class DocumentWorkflowTests(unittest.TestCase):
 
 
 class ThemeRoundtripTests(unittest.TestCase):
+    def test_code_blocks_follow_all_dark_and_light_palettes(self):
+        from App.app.message import build_ai_message
+        message=build_ai_message('```python\nvalue = 42\n```')
+        page=Mock(controls=[message],overlay=[])
+        self.addCleanup(palette.set_theme,page,'light')
+        def descendants(node):
+            yield node
+            for child in getattr(node,'controls',[]) or []: yield from descendants(child)
+            child=getattr(node,'content',None)
+            if child is not None and not isinstance(child,str): yield from descendants(child)
+        markdown=next(c for c in descendants(message) if isinstance(c,ft.Markdown))
+        for theme in (*palette.THEMES,'light'):
+            palette.set_theme(page,theme)
+            expected=ft.MarkdownCodeTheme.ATOM_ONE_DARK if palette.THEMES[theme][1] else ft.MarkdownCodeTheme.GITHUB
+            self.assertEqual(markdown.code_theme,expected)
+
     def test_all_seven_palettes_restore_shared_styles_and_text(self):
         panel = ft.Container(bgcolor=palette.color('#d9ffe6'), border=ft.Border.all(2, ft.Colors.WHITE),
             content=ft.Text('Текст', color=palette.color('#123b43')))

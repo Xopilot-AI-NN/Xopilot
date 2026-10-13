@@ -8,11 +8,12 @@ on:
       - "dev-*"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
@@ -32,7 +33,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v7
         with:
-          python-version: "3.14"
+          python-version: "3.14.7"
 
       - name: Install dependencies
         run: |
@@ -42,6 +43,33 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux build dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev perl
+
+      - name: Configure Windows native build tools
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $perlDir = 'C:\Strawberry\perl\bin'
+          if (-not (Test-Path "$perlDir\perl.exe")) {
+            throw 'Strawberry Perl is required to build vendored OpenSSL.'
+          }
+          $perlDir | Out-File -FilePath $env:GITHUB_PATH -Append
+          "PYTHONUTF8=1" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "PYTHONIOENCODING=utf-8" | Out-File -FilePath $env:GITHUB_ENV -Append
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $vs) { throw 'Visual Studio C++ build tools are required.' }
+          & "$vs\Common7\Tools\Launch-VsDevShell.ps1" -Arch amd64 -HostArch amd64 -SkipAutomaticLocation
+          foreach ($name in @('PATH', 'INCLUDE', 'LIB', 'LIBPATH', 'VCINSTALLDIR', 'VCToolsInstallDir', 'WindowsSdkDir', 'WindowsSDKVersion', 'VSCMD_ARG_TGT_ARCH')) {
+            $value = [Environment]::GetEnvironmentVariable($name)
+            if ($value) { "$name=$value" | Out-File -FilePath $env:GITHUB_ENV -Append }
+          }
+          & "$perlDir\perl.exe" -v
+          Get-Command cl, nmake
 
       - name: Build native database
         run: python scripts/build_native.py
@@ -59,32 +87,15 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Install Linux build dependencies
-        if: matrix.platform == 'linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            clang \
-            cmake \
-            ninja-build \
-            pkg-config \
-            libgtk-3-dev \
-            liblzma-dev
-
-      - name: Configure Windows UTF-8 console
-        if: matrix.platform == 'windows'
-        shell: pwsh
-        run: |
-          chcp 65001
-          "PYTHONUTF8=1" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "PYTHONIOENCODING=utf-8" | Out-File -FilePath $env:GITHUB_ENV -Append
-
       - name: Determine version
         shell: bash
         run: |
           TAG="${GITHUB_REF_NAME}"
 
-          if [[ "$TAG" == dev-* ]]; then
+          if [[ "$GITHUB_REF" != refs/tags/* ]]; then
+            VERSION=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+            BUILD_TYPE="Dev"
+          elif [[ "$TAG" == dev-* ]]; then
             VERSION="${TAG#dev-}"
             BUILD_TYPE="Dev"
           else
@@ -92,6 +103,7 @@ jobs:
             BUILD_TYPE="Release"
           fi
 
+          VERSION="${VERSION#v}"
           VERSION_UNDERSCORE="${VERSION//./_}"
 
           echo "BUILD_TYPE=$BUILD_TYPE" >> "$GITHUB_ENV"
@@ -99,8 +111,9 @@ jobs:
           echo "VERSION_UNDERSCORE=$VERSION_UNDERSCORE" >> "$GITHUB_ENV"
 
       - name: Build Flet
+        shell: bash
         run: |
-          flet build ${{ matrix.platform }} --python-version 3.14 --yes
+          flet build ${{ matrix.platform }} --python-version 3.14 --yes --build-version "$VERSION" --build-number "$((3000 + GITHUB_RUN_NUMBER))"
 
       - name: Create ZIP - Linux
         if: matrix.platform == 'linux'
@@ -127,10 +140,85 @@ jobs:
         with:
           name: ${{ matrix.system_name }}
           path: ${{ env.ZIP_NAME }}
+          if-no-files-found: error
+
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14.7"
+      - name: Install packaging dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install 'flet[cli]==1.0.3' 'pillow==12.3.0'
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build perl pkg-config
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,x86_64-linux-android
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.44.8"
+          channel: stable
+          cache: true
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-37 build-tools;37.0.0 ndk;29.0.14206865'
+      - uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            Services/target
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: android-${{ runner.os }}-ndk29-${{ hashFiles('Services/Cargo.lock', 'Services/Cargo.toml', 'scripts/build_android.py') }}
+      - name: Configure optional persistent APK signing
+        env:
+          APK_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          FLET_ANDROID_SIGNING_KEY_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          FLET_ANDROID_SIGNING_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          FLET_ANDROID_SIGNING_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: python scripts/configure_android_signing.py
+      - name: Build and verify ARM64 and x86_64 APKs
+        env:
+          FLET_ANDROID_SIGNING_KEY_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          FLET_ANDROID_SIGNING_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          FLET_ANDROID_SIGNING_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#dev-}"
+          VERSION="${VERSION#v}"
+          if [[ "$GITHUB_REF" != refs/tags/* ]]; then
+            VERSION=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+          fi
+          python scripts/build_android.py --jdk "$JAVA_HOME" --ndk "$ANDROID_HOME/ndk/29.0.14206865" --build-version "$VERSION" --build-number "$((3000 + GITHUB_RUN_NUMBER))"
+          "$ANDROID_HOME/build-tools/37.0.0/zipalign" -c -P 16 4 build/apk/Xopilot-arm64-v8a.apk
+          "$ANDROID_HOME/build-tools/37.0.0/zipalign" -c -P 16 4 build/apk/Xopilot-x86_64.apk
+          "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify build/apk/Xopilot-arm64-v8a.apk
+          "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify build/apk/Xopilot-x86_64.apk
+          cd build/apk
+          sha256sum Xopilot-*.apk > SHA256SUMS-Android.txt
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Android
+          path: |
+            build/apk/*.apk
+            build/apk/SHA256SUMS-Android.txt
+          if-no-files-found: error
 
   release:
-    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [build, android]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Download Linux
@@ -145,6 +233,12 @@ jobs:
           name: Windows
           path: artifacts
 
+      - name: Download Android
+        uses: actions/download-artifact@v8
+        with:
+          name: Android
+          path: artifacts
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
@@ -154,3 +248,5 @@ jobs:
           generate_release_notes: true
           files: |
             artifacts/*.zip
+            artifacts/*.apk
+            artifacts/SHA256SUMS-Android.txt

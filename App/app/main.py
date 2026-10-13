@@ -16,6 +16,12 @@ except ImportError:
 import asyncio
 import platform
 import threading
+import json
+import time
+try:
+    from ..services.platforms import available_height, compact_layout, is_android
+except ImportError:
+    from services.platforms import available_height, compact_layout, is_android
 from concurrent.futures import CancelledError
 from typing import cast
 
@@ -26,6 +32,11 @@ from .message import build_user_message, build_ai_message
 from .prompt import build_prompt, build_prompt_container
 from .buttons.model import build_model_button
 from .buttons.brand import brand_button
+from .palette import outline_color
+try:
+    from ..services.chat_store import chat_is_unused
+except ImportError:
+    from services.chat_store import chat_is_unused
 from .buttons.send import build_send_button
 from .voice_input import VoiceInput
 from .live_conversation import LiveConversation
@@ -194,6 +205,8 @@ def build_app_ui(page: ft.Page) -> ft.Control:
     composer_status.content.controls.extend([stop_button, retry_button])
 
     def refresh_composer(update=True):
+        send_button.visible = bool(prompt.value or selected_files or editing_message is not None or is_sending)
+        live.button.visible = not send_button.visible
         send_button.disabled = is_sending
         send_button.opacity = 0.5 if is_sending else 1
         cancel_edit_button.visible = editing_message is not None and not is_sending
@@ -204,7 +217,11 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         composer_label.tooltip = failed_reason if failed_request is not None and not is_sending else None
         stop_button.visible = is_sending
         retry_button.visible = failed_request is not None and not is_sending and editing_message is None
-        empty_state.visible = not chat_context
+        height = available_height(page)
+        short_phone = is_android() and isinstance(height, (int, float)) and height < 440
+        attachment_strip.visible = bool(selected_files) and not (is_android() and isinstance(height, (int, float)) and height < 260)
+        empty_state.visible = not chat_context and not short_phone
+        cast(ft.ListView, chat.content).scroll = ft.ScrollMode.AUTO if chat_context else ft.ScrollMode.HIDDEN
         if update:
             page.update()
     attachment_strip = build_file_attachments(selected_files, lambda _: None)
@@ -231,10 +248,11 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         page.update()
         chat_context.append({"role": role, "content": text, "id": message_id})
         empty_state.visible = False
+        chat_list.scroll = ft.ScrollMode.AUTO
         build = build_user_message if role == "user" else build_ai_message
         chat_list.controls.insert(0, build(text, on_action=handle_message_action, message_id=message_id,
             **({"files": [file_from_path(path) for _, path in attachments]} if role == "user" and attachments else {})))
-        chat_list.update()
+        page.update()
 
     async def add_live_user_message(text, attachments=None):
         await add_live_message("user", text, attachments)
@@ -242,6 +260,21 @@ def build_app_ui(page: ft.Page) -> ft.Control:
     async def add_live_ai_message(text):
         await add_live_message("ai", text)
 
+    async def consume_live_files(files):
+        for file in files:
+            if file in selected_files:
+                selected_files.remove(file)
+        await refresh_attachments()
+
+    try:
+        from .memory_capture import MemoryCapture
+        from ..services import user_memory, navigation
+    except ImportError:
+        from app.memory_capture import MemoryCapture
+        from services import user_memory, navigation
+    memory_capture = MemoryCapture(page)
+    page._xopilot_memory_cancel = memory_capture.cancel
+    page._xopilot_memory_capture = lambda text: memory_capture.submit(text, generate_reply)
     voice_input = VoiceInput(page, prompt, lambda: is_sending or live.busy)
     live = LiveConversation(
         page,
@@ -252,7 +285,13 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         get_resources=lambda: ("", []) if is_private(active_chat_id) else workspaces.chat_resources(active_chat_id),
         is_private=lambda: is_private(active_chat_id), material_store=store_chat_material,
         get_material_store=lambda: material_for_chat(active_chat_id),
+        get_pending_files=lambda: selected_files.copy(),
+        on_pending_files_consumed=consume_live_files,
     )
+    page._xopilot_can_release_model = lambda: not (is_sending or voice_input.busy or live.busy or memory_capture.busy)
+    page._xopilot_can_release_memory = lambda: page._xopilot_can_release_model() and not (live.camera_on or live.screen_on)
+    # Typed call questions and recoverable errors use the visible chat field.
+    live.frame_question = prompt
 
     async def choose_chat_model(filename: str):
         if is_private(active_chat_id) and filename == 'api':
@@ -265,47 +304,23 @@ def build_app_ui(page: ft.Page) -> ft.Control:
             return False
         return True
 
-    model_button, refresh_model_button = build_model_button(on_select=choose_chat_model)
     agent_mode = get_setting('agent_level', 'off')
-    agent_button = brand_button(ft.Icons.AUTO_AWESOME_OUTLINED, 'Агентность: выключена')
-
-    def agent_settings(_):
+    def change_agent_level(value):
+        nonlocal agent_mode
         if is_private(active_chat_id):
-            page.show_dialog(ft.SnackBar(ft.Text('В анонимном чате агент не имеет доступа к общей библиотеке.')))
             return
-        choice = ft.Dropdown(label='Уровень агентности', value=agent_mode,
-            options=[ft.DropdownOption(key='off', text='Выключена'),
-                     *[ft.DropdownOption(key=key, text=f'{label} · до {steps} действий' if key != 'auto' else 'Автоматически · по ходу задачи')
-                       for key, (label, steps) in LEVELS.items()]])
-        feedback = ft.Text('Агент ищет и читает библиотеку, читает и создаёт Canvas. '
-                           'Ход работы отображается рядом с кнопкой остановки.', color=color('#47747a'), size=12)
-        def save(_):
-            nonlocal agent_mode
-            try:
-                get_db().set_setting('agent_level', choice.value)
-                agent_mode = choice.value
-                refresh_agent_button()
-                page.pop_dialog()
-            except Exception as exc:
-                feedback.value = str(exc)
-            page.update()
-        page.show_dialog(ft.AlertDialog(bgcolor=color('#eafffa'), title=ft.Text('Агентность', color=color('#123b43')),
-            content=ft.Column(width=300, tight=True, controls=[choice, feedback]),
-            actions=[ft.TextButton(content='Отмена', on_click=lambda _: page.pop_dialog()),
-                     ft.FilledButton(content='Применить', on_click=save)]))
-
-    def refresh_agent_button():
-        enabled = agent_mode in LEVELS
-        agent_button.content.icon = ft.Icons.AUTO_AWESOME if enabled else ft.Icons.AUTO_AWESOME_OUTLINED
-        agent_button.border = ft.Border.all(2, ft.Colors.WHITE)
-        agent_button.content.size = 22 if enabled else 20
-        agent_button.tooltip = 'Агентность: ' + (LEVELS[agent_mode][0] if enabled else 'выключена')
-    agent_button.on_click = agent_settings
-    refresh_agent_button()
+        if value not in {'off', *LEVELS}:
+            raise ValueError('Неизвестный уровень агентности')
+        get_db().set_setting('agent_level', value)
+        agent_mode = value
+    model_button, refresh_model_button = build_model_button(on_select=choose_chat_model,
+        get_agent_level=lambda: agent_mode, on_agent_level=change_agent_level)
 
     async def close_voice_modes(e):
+        page._xopilot_connected=False
         nonlocal editing_message, draft_before_edit, failed_request, failed_reason
         request_cancelled.set()
+        memory_capture.cancel()
         persist_draft()
         await asyncio.gather(voice_input.close(e), live.close(e))
         if is_private(active_chat_id):
@@ -330,6 +345,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         private_chats.close_all()
 
     async def reconnect_voice_modes(_):
+        page._xopilot_connected=True
         voice_input.reconnect()
         live.reconnect()
         refresh_composer()
@@ -349,6 +365,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
             attachment_strip.opacity = 1
         attachment_strip.update()
         persist_draft()
+        refresh_composer()
 
     def remove_file(file):
         if file in selected_files:
@@ -358,7 +375,17 @@ def build_app_ui(page: ft.Page) -> ft.Control:
     async def on_add_material(_):
         target_id = active_chat_id
         try:
-            files = await pick_materials(page, file_picker, store=material_for_chat(target_id))
+            if is_android() and not is_private(target_id):
+                persist_draft()
+                try:
+                    from ..services.mobile_documents import pick_chat_documents
+                except ImportError:
+                    from services.mobile_documents import pick_chat_documents
+                recovered = await pick_chat_documents(target_id)
+                files = [file_from_path(path) for path in (recovered or {}).get('files', [])]
+                files = [file for file in files if file]
+            else:
+                files = await pick_materials(page, file_picker, store=material_for_chat(target_id))
         except Exception as exc:
             page.show_dialog(ft.SnackBar(ft.Text(f"Не удалось прикрепить файл: {exc}")))
             return
@@ -450,11 +477,34 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         refresh_composer()
 
     async def on_send(e, retry=False):
+        memory_capture.cancel()
         nonlocal editing_message, is_sending, failed_request, failed_reason
         if retry and failed_request is None:
             return
-        if is_sending or voice_input.busy or live.busy:
+        if is_sending or voice_input.busy:
             return  # Не отправляем незавершённую диктовку и не дублируем запросы.
+        try:
+            from ..services import api_chat
+        except ImportError:
+            from services import api_chat
+        api_frame = (not live.busy and not is_private(active_chat_id)
+                     and api_chat.is_api_selected() and (live.camera_on or live.screen_on))
+        if not retry and (live.busy or ((live.camera_on or live.screen_on) and not api_frame)):
+            live.frame_question.value = prompt.value or ""
+            before = list(live.files)
+            live.files.extend(f for f in selected_files if f not in live.files)
+            if await live.ask_frame():
+                prompt.value = ""
+                selected_files.clear()
+                persist_draft()
+                await refresh_attachments()
+                live._render_files()
+            else:
+                live.files[:] = before
+                live.status_text.value = live.frame_question.error_text or live.status_text.value
+            page.update()
+            return
+        prompt.error_text = None
         text = failed_request[0] if retry and failed_request else prompt.value or ""
         if not retry and not text.strip() and not selected_files:
             return
@@ -467,6 +517,24 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         request_cancelled.clear()
         refresh_composer()
         try:
+            if api_frame and not retry and editing_message is None:
+                try:
+                    raw = await live._capture_vision_frame(update_state=False)
+                    if not raw:
+                        raise RuntimeError("Изображение ещё недоступно. Проверьте камеру или экран.")
+                    source = "Камера" if live.camera_on else "Экран"
+                    path = await asyncio.to_thread(material_for_chat(request_chat_id),
+                        f"{source}-{time.time_ns()}.jpg", data=raw)
+                    snapshot = file_from_path(path)
+                    if snapshot is None:
+                        raise RuntimeError("Не удалось сохранить кадр для вопроса")
+                    sent_files.append(snapshot)
+                    sent_attachments.append((snapshot.name, snapshot.path))
+                    selected_files.append(snapshot)
+                    persist_draft()
+                except Exception as exc:
+                    page.show_dialog(ft.SnackBar(ft.Text(f"Не удалось прикрепить кадр: {exc}")))
+                    return
             chat_list = cast(ft.ListView, chat.content)
             if not chat_list.controls:
                 chat_context.clear()
@@ -524,6 +592,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                     message_id=new_id,
                 )
                 chat_context.append({"role": "user", "content": text, "id": new_id})
+                chat_list.scroll = ft.ScrollMode.AUTO
                 # Реверс-список: низ визуала == controls[0], новое сообщение вставляем в начало.
                 chat_list.controls.insert(0, message)
                 should_reply = True
@@ -550,10 +619,6 @@ def build_app_ui(page: ft.Page) -> ft.Control:
 
             # Только реальная локальная модель. Выбор хранится отдельно для чата и Live.
             try:
-                try:
-                    from ..services import api_chat
-                except ImportError:
-                    from services import api_chat
                 private_request = is_private(request_chat_id)
                 use_api = api_chat.is_api_selected() and not private_request
                 reply_generator = api_chat.generate_reply if use_api else generate_reply
@@ -562,10 +627,26 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                     if not chosen:
                         raise RuntimeError("Локальная модель не найдена. Установите её в «Настройки → Модели».")
                     await asyncio.to_thread(ensure_model_loaded, chosen)
+                    refresh_model_button(private=private_request)
+                    try:
+                        from ..services.llm import execution_info
+                    except ImportError:
+                        from services.llm import execution_info
+                    device = execution_info()
+                    composer_label.value = 'Готовлю ответ' + (' · ' + device['backend'].upper() if device['backend'] else '')
+                    composer_label.tooltip = device['reason'] or None
+                    page.update()
+                    if device['backend'] == 'cpu' and device['reason'] != 'Выбран процессор':
+                        page.show_dialog(ft.SnackBar(ft.Text('ИИ работает на CPU: ' + device['reason'])))
                 instructions, shared_files = ("", []) if private_request else workspaces.chat_resources(request_chat_id)
+                if not private_request:
+                    instructions += user_memory.context(text)
                 if request_cancelled.is_set():
                     raise CancelledError()
-                if agent_mode in LEVELS and not private_request:
+                try:from ..services.agent import needs_tools
+                except ImportError:from services.agent import needs_tools
+                tool_level=agent_mode if agent_mode in LEVELS else ('auto' if needs_tools(text) else None)
+                if tool_level and not private_request:
                     loop = asyncio.get_running_loop()
                     def progress(value):
                         def refresh():
@@ -573,9 +654,48 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                                 composer_label.value = value
                                 page.update()
                         loop.call_soon_threadsafe(refresh)
+                    def approve_action(request):
+                        done=threading.Event();answer=[False]
+                        async def show_approval():
+                            if request_cancelled.is_set() or request_chat_id!=active_chat_id:done.set();return
+                            kind=request['kind']
+                            if kind=='command':
+                                preview=json.dumps(request['argv'],ensure_ascii=False,indent=2)
+                                label='Запустить команду?'
+                                note='Процесс выполняется с вашими правами. Проверьте аргументы и доверяйте коду проекта.'
+                            else:
+                                import difflib
+                                preview=''.join(difflib.unified_diff(request['before'].splitlines(True),request['after'].splitlines(True),
+                                    fromfile=request['path'],tofile=request['path']))
+                                label='Изменить файл?' if request['exists'] else 'Создать файл?'
+                                note=request['path']
+                            def choose(value):
+                                answer[0]=value;done.set();page.pop_dialog()
+                            dialog=ft.AlertDialog(modal=True,bgcolor=color('#eafffa'),title=ft.Text(label),
+                                content=ft.Column(width=640,height=min(450,max(240,(page.height or 800)-220)),scroll=ft.ScrollMode.AUTO,
+                                    controls=[ft.Text('Папка: '+request['cwd'],size=12),ft.Text(note,size=12),
+                                              ft.Text(preview,selectable=True,font_family='monospace',size=12)]),
+                                actions=[ft.TextButton(content='Отклонить',on_click=lambda _:choose(False)),
+                                         ft.FilledButton(content='Подтвердить',on_click=lambda _:choose(True))])
+                            page.show_dialog(dialog)
+                            async def watch_cancel():
+                                while not done.is_set():
+                                    await asyncio.sleep(0.2)
+                                    if request_cancelled.is_set():
+                                        done.set();dialog.open=False;page.update()
+                            page.run_task(watch_cancel)
+                        try:
+                            approval_task=page.run_task(show_approval)
+                            approval_task.add_done_callback(lambda task: done.set()
+                                if task.cancelled() or task.exception() is not None else None)
+                        except Exception:
+                            return False
+                        while not done.wait(0.2):
+                            if request_cancelled.is_set():return False
+                        return answer[0]
                     reply_text = await asyncio.to_thread(run_agent, text, chat_id=request_chat_id,
                         history=[dict(item) for item in chat_context[:-1]], attachments=sent_attachments,
-                        instructions=instructions, level=agent_mode, cancelled=request_cancelled,
+                        instructions=instructions,level=tool_level,cancelled=request_cancelled,approve=approve_action,
                         on_progress=progress, generate=reply_generator, request_id=chat_context[-1].get('id'))
                 else:
                     reply_text = await asyncio.to_thread(
@@ -647,9 +767,13 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                 chat_list.controls.insert(0, build_ai_message(reply_text, on_action=handle_message_action, message_id=ai_id))
                 chat_context.append({"role": "ai", "content": reply_text, "id": ai_id})
                 chat_list.update()
+                memory_capture.submit(text, reply_generator, private=private_request)
         finally:
             is_sending = False
+            refresh_model_button(private=is_private(active_chat_id))
             refresh_composer()
+
+    page._xopilot_model_state_changed = lambda: refresh_model_button(update=True, private=is_private(active_chat_id))
 
     MESSAGE_PAGE_SIZE = 30
     older_messages: list = []  # остаток истории текущего чата, догружается порциями при скролле вверх (см. on_chat_scroll)
@@ -687,7 +811,6 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                           if is_private(chat_id) else workspaces.chat_workspace(chat_id)["name"])
         active_chat_id = chat_id
         workspace_text.value = workspace_name
-        agent_button.disabled = is_private(chat_id)
         model_button.disabled = is_private(chat_id)
         refresh_model_button(private=is_private(chat_id))
 
@@ -738,7 +861,10 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         except Exception:
             return "", []
 
+    draft_save_task=None
     def persist_draft():
+        nonlocal draft_save_task
+        if draft_save_task:draft_save_task.cancel();draft_save_task=None
         text, files = ((prompt.value or "", selected_files) if editing_message is None else draft_before_edit)
         try:
             write_draft(active_chat_id, text, [f.path for f in files if f.path])
@@ -747,7 +873,18 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                 page.show_dialog(ft.SnackBar(ft.Text(f"Не удалось сохранить черновик: {exc}")))
 
     async def draft_changed(_):
-        persist_draft()
+        nonlocal draft_save_task
+        getattr(page, '_xopilot_memory_activity', lambda: None)()
+        if draft_save_task:draft_save_task.cancel()
+        refresh_composer(update=False)
+        prompt_container.update()
+        async def save_later():
+            nonlocal draft_save_task
+            await asyncio.sleep(0.35)
+            draft_save_task=None
+            persist_draft()
+        draft_save_task=page.run_task(save_later)
+    page._xopilot_flush_draft=persist_draft
 
     prompt.on_change = draft_changed
     prompt.value, initial_files = restore_draft(initial_chat_id)
@@ -764,6 +901,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         отрисованных элементов относительно нижнего якоря не меняются, прыжка нет.
         """
         nonlocal older_messages, _loading_older
+        getattr(page, '_xopilot_memory_activity', lambda: None)()
         if _loading_older or not older_messages:
             return
         near_top = (
@@ -795,10 +933,12 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         live_status=live.status,
         send_button=send_button,
         composer_status=composer_status,
-        agent_button=agent_button,
+        compact=compact_layout(page.width),
+        viewport_width=page.width,
     )
 
     async def handle_menu_toggle(e):
+        getattr(page, '_xopilot_memory_activity', lambda: None)()
         await toggle_menu()
 
     def refresh_chat_model_ui(_filename=None):
@@ -819,18 +959,30 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         chat.update()
         refresh_composer()
 
-    def open_settings(_):
+    def open_settings(_, restore_section=None):
         page.show_dialog(
             build_settings_dialog(
                 page,
                 cast(ft.ListView, chat.content),
                 chat_id=active_chat_id,
+                restore_section=restore_section,
                 on_chat_model_changed=refresh_chat_model_ui,
                 on_live_model_changed=live.refresh_model_label,
                 on_clear_history=clear_current_history,
                 on_select_chat=switch_chat,
+                on_delete_chat=delete_chat_by_id,
             )
         )
+
+    def clear_all_history():
+        if is_sending or live.busy or voice_input.busy:raise RuntimeError('Сначала завершите ответ или Live')
+        count=normal_store.clear_all_chats()
+        if not is_private(active_chat_id):switch_chat(get_or_create_active_chat_id())
+        drafts.clear();refresh_menu_chats();page.update()
+        return count
+    page._xopilot_clear_all_history=clear_all_history
+
+    page._xopilot_open_memory = lambda: open_settings(None, 'Память обо мне')
 
     def open_account(_):
         page.show_dialog(
@@ -843,6 +995,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                 on_live_model_changed=live.refresh_model_label,
                 on_clear_history=clear_current_history,
                 on_select_chat=switch_chat,
+                on_delete_chat=delete_chat_by_id,
             )
         )
 
@@ -960,7 +1113,10 @@ def build_app_ui(page: ft.Page) -> ft.Control:
             page.show_dialog(ft.SnackBar(ft.Text("Дождитесь завершения ответа или голосового ввода.")))
             return
         try:
-            new_id = create_new_chat()
+            if not (prompt.value or '').strip() and not selected_files and chat_is_unused(active_chat_id):
+                new_id = active_chat_id
+            else:
+                new_id = create_new_chat()
             workspaces.assign_chat(new_id, workspace_id or workspaces.selected_workspace())
             if workspace_id:
                 workspaces.select_workspace(workspace_id)
@@ -968,6 +1124,9 @@ def build_app_ui(page: ft.Page) -> ft.Control:
             page.show_dialog(ft.SnackBar(ft.Text(f"Не удалось создать чат: {exc}")))
             return
         switch_chat(new_id)
+        refresh_workspace_title()
+        refresh_menu_chats()
+        page.update()
 
     def delete_chat_by_id(chat_id: int):
         """Удаляет чат. Если он был активным — переключается на самый новый из оставшихся,
@@ -998,6 +1157,9 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                 switch_chat(remaining[0][0])
             else:
                 start_new_chat()
+        drafts.pop(chat_id, None)
+        refresh_menu_chats()
+        page.update()
         return True
 
     def rename_chat_from_ui(chat_id, title):
@@ -1046,7 +1208,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         if available:
             target_id = available[0][0]
         else:
-            target_id = create_new_chat()
+            target_id = active_chat_id if not (prompt.value or '').strip() and not selected_files and chat_is_unused(active_chat_id) else create_new_chat()
             workspaces.assign_chat(target_id, identifier)
         switch_chat(target_id)
         workspaces.select_workspace(identifier)
@@ -1088,9 +1250,18 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                 feedback.value = "Выберите место сохранения" if not page.web else "Готовлю скачивание…"
                 page.update()
                 try:
+                    if is_android() and not page.web:
+                        try:
+                            from ..services.mobile_documents import save_document
+                        except ImportError:
+                            from services.mobile_documents import save_document
+                        saved = await save_document('Xopilot-chat.md', data)
+                        feedback.value = 'Файл сохранён' if saved else 'Сохранение отменено'
+                        return
                     path = await file_picker.save_file(dialog_title="Экспорт чата", file_name="Xopilot-chat.md", src_bytes=data)
                     if path and not page.web:
-                        await asyncio.to_thread(Path(path).write_bytes, data)
+                        if not is_android():
+                            await asyncio.to_thread(Path(path).write_bytes, data)
                         feedback.value = f"Сохранено: {path}"
                     elif page.web:
                         feedback.value = "Проверьте загрузки браузера. Текст также можно скопировать."
@@ -1159,6 +1330,28 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         except Exception as exc:
             page.show_dialog(ft.SnackBar(ft.Text(f'Не удалось открыть Canvas: {exc}')))
 
+    def open_materials(_):
+        if is_private(active_chat_id):
+            page.show_dialog(ft.SnackBar(ft.Text('Общая библиотека доступна после закрытия защищённого чата')))
+            return
+        identifier=workspaces.chat_workspace(active_chat_id)['id']
+        if identifier=='all':
+            try:from ..settings.account.storage import open_storage
+            except ImportError:from settings.account.storage import open_storage
+            open_storage(page)
+        else:
+            from .library_browser import build_library_dialog
+            page.show_dialog(build_library_dialog(page,identifier))
+
+    def confirm_delete_current(_):
+        identifier=active_chat_id
+        def confirmed(_):
+            page.pop_dialog();delete_chat_by_id(identifier)
+        page.show_dialog(ft.AlertDialog(modal=True,bgcolor=color('#eafffa'),title=ft.Text('Удалить текущий чат?'),
+            content=ft.Text(title_text.value+' — чат и его сообщения будут удалены.'),
+            actions=[ft.TextButton(content='Отмена',on_click=lambda _:page.pop_dialog()),
+                     ft.FilledButton(content='Удалить',on_click=confirmed)]))
+
     menu = build_menu(
         on_menu_click=handle_menu_toggle,
         on_new_chat_click=start_new_chat,
@@ -1166,6 +1359,8 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         on_chats_click=open_chats,
         on_workspaces_click=open_workspaces,
         on_account_click=open_account,
+        on_private_click=privacy_menu,
+        on_materials_click=open_materials,
     )
     menu_overlay, toggle_menu = build_menu_overlay(
         menu,
@@ -1175,27 +1370,139 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         on_chats_click=open_chats,
         on_workspaces_click=open_workspaces,
         on_account_click=open_account,
+        on_private_click=privacy_menu,
         get_chat_items=lambda: workspaces.filter_chats(globals()['list_chat_items']()) + private_chats.items(),
         on_select_chat=switch_chat,
         get_active_chat_id=lambda: active_chat_id,
+        on_delete_chat=delete_chat_by_id,
+        on_materials_click=open_materials,
     )
 
     refresh_menu_chats = getattr(menu_overlay, '_xopilot_refresh_chats', lambda: None)
 
+    page._xopilot_connected=True
+    page._xopilot_can_sync=lambda: not is_sending and not live.busy and not voice_input.busy and editing_message is None and not is_private(active_chat_id)
+    def refresh_after_sync():
+        profile_refresh=getattr(page,'_xopilot_profile_refresh',None)
+        if profile_refresh:profile_refresh()
+        if not page._xopilot_can_sync():return
+        if not is_private(active_chat_id):
+            identifiers={row[0] for row in get_db().list_chats()}
+            cid=active_chat_id
+            if cid not in identifiers:
+                old_cid=cid
+                normal_store._active_chat_id=None
+                # A remote deletion must not discard a draft being typed here.
+                carry_draft=bool((prompt.value or '').strip() or selected_files)
+                if carry_draft:
+                    cid=create_new_chat()
+                else:
+                    cid=get_or_create_active_chat_id()
+                    prompt.value,files=restore_draft(cid)
+                    selected_files[:]=files
+                drafts.pop(old_cid,None)
+                page.run_task(refresh_attachments)
+            cast(ft.ListView,chat.content).controls[:]=_prepare_chat_view(cid)
+            persist_draft()
+        refresh_composer()
+        refresh_menu_chats()
+        page.update()
+    page._xopilot_sync_refresh=refresh_after_sync
+
     # Реверс-список стоит на последнем сообщении сам по себе (индекс 0 == низ),
     # стартовый scroll_to больше не нужен.
+    try:
+        from ..services.platforms import fit_dialog
+    except ImportError:
+        from services.platforms import fit_dialog
+    mobile_menu_button = brand_button(ft.Icons.MENU, "Открыть меню", handle_menu_toggle, size=44)
+    more_actions = ft.PopupMenuButton(content=brand_button(ft.Icons.MORE_HORIZ, "Действия чата", size=44),
+        items=[ft.PopupMenuItem(content=ft.Text("Новый чат"), on_click=start_new_chat),
+               ft.PopupMenuItem(content=ft.Text("Все чаты"), on_click=open_chats),
+               ft.PopupMenuItem(content=ft.Text("Canvas"), on_click=open_canvas),
+               ft.PopupMenuItem(content=ft.Text('Материалы'),on_click=open_materials),
+               ft.PopupMenuItem(content=ft.Text('Удалить чат'),icon=ft.Icons.DELETE_OUTLINE,on_click=confirm_delete_current),
+               ft.PopupMenuItem(content=ft.Text("Экспортировать чат"), on_click=export_chat)])
+    header_title = ft.Column(expand=True, tight=True, spacing=2, controls=[title_text, workspace_text])
+    desktop_actions = [brand_button(ft.Icons.ADD_COMMENT_OUTLINED, "Новый чат", start_new_chat, size=36),
+                       brand_button(ft.Icons.FORUM_OUTLINED, "Все чаты", open_chats, size=36),
+                       brand_button(ft.Icons.DOWNLOAD_OUTLINED, "Экспортировать чат", export_chat, size=36),
+                       brand_button(ft.Icons.DRAW_OUTLINED, "Canvas", open_canvas, size=36),
+                       brand_button(ft.Icons.DELETE_OUTLINE,'Удалить чат',confirm_delete_current,size=36)]
+    header_row = ft.Row(controls=[header_title, *desktop_actions])
     header = ft.Container(
         padding=ft.Padding.symmetric(horizontal=14, vertical=8),
         border=ft.Border.only(bottom=ft.BorderSide(1, color("#b9eee4"))),
-        content=ft.Row(controls=[
-            ft.Column(expand=True, tight=True, spacing=2, controls=[title_text, workspace_text]),
-            brand_button(ft.Icons.ADD_COMMENT_OUTLINED, "Новый чат", start_new_chat, size=36),
-            brand_button(ft.Icons.FORUM_OUTLINED, "Все чаты", open_chats, size=36),
-            brand_button(ft.Icons.DOWNLOAD_OUTLINED, "Экспортировать чат", export_chat, size=36),
-            brand_button(ft.Icons.DRAW_OUTLINED, "Canvas", open_canvas, size=36),
-            brand_button(ft.Icons.LOCK_OUTLINED, "Защищённые чаты", privacy_menu, size=36),
-        ]),
+        content=header_row,
     )
     refresh_composer(update=False)
-    return apply_palette(build_background_layout(chat, prompt_container, menu, menu_overlay,
-                                   header=header, empty_state=empty_state))
+    compact = compact_layout(page.width)
+    background = build_background_layout(chat, prompt_container, menu, menu_overlay,
+                                        header=header, empty_state=empty_state, compact=compact,
+                                        visual_background=live.chat_background)
+    def resize_layout(_=None):
+        height = available_height(page)
+        short_phone = is_android() and isinstance(height, (int, float)) and height < 440
+        small = compact_layout(page.width) or short_phone
+        header_row.controls = [mobile_menu_button, header_title, more_actions] if small else [header_title, *desktop_actions]
+        header_row.spacing = 6 if small else 10
+        header.padding = ft.Padding.symmetric(horizontal=8 if small else 14, vertical=8)
+        getattr(background, '_xopilot_set_compact', lambda _: None)(small)
+        getattr(prompt_container, '_xopilot_set_compact', lambda *_: None)(small, page.width)
+        typing_in_short_window = is_android() and isinstance(height, (int, float)) and height < 260
+        getattr(prompt_container, '_xopilot_set_short_input', lambda _: None)(typing_in_short_window)
+        header.height = 0 if typing_in_short_window else None
+        header.padding = ft.Padding.all(0) if typing_in_short_window else header.padding
+        header_row.visible = not typing_in_short_window
+        prompt.max_lines = 1 if typing_in_short_window else (4 if small else 6)
+        live.fit_viewport(page.width, height, keyboard=page.__dict__.get('_xopilot_keyboard_height', 0))
+        refresh_composer(update=False)
+        empty_state.content.spacing = 8 if small else 12
+        empty_state.content.controls[0].size = 32 if small else 40
+        empty_state.content.controls[1].size = 19 if small else 22
+        empty_state.content.controls[2].size = 12 if small else 13
+        from .palette import open_dialogs
+        for dialog in open_dialogs(page):
+            if dialog.open:
+                fit_dialog(page, dialog)
+        page.update()
+    page.on_resize = resize_layout
+    page.on_media_change = resize_layout
+    if is_android():
+        try:
+            from ..services.mobile_runtime import bind_viewport
+        except ImportError:
+            from services.mobile_runtime import bind_viewport
+        bind_viewport(page, resize_layout)
+        async def recover_files():
+            destination = navigation.read()
+            try:
+                try:
+                    from ..services.mobile_documents import recover_pending_documents
+                except ImportError:
+                    from services.mobile_documents import recover_pending_documents
+                recovered = await recover_pending_documents()
+                if recovered and recovered.get('profile'):
+                    navigation.save(settings='Профиль и аккаунт')
+                    destination['settings']='Профиль и аккаунт'
+                if recovered and recovered.get('workspace_id'):
+                    page.show_dialog(ft.SnackBar(ft.Text('Файлы сохранены в библиотеке рабочего пространства')))
+                if destination.get('settings'):
+                    open_settings(None, destination['settings'])
+                    if destination.get('storage'):
+                        try:
+                            from ..settings.account.storage import open_storage
+                        except ImportError:
+                            from settings.account.storage import open_storage
+                        open_storage(page, initial_mode=destination['storage'])
+                if recovered and recovered.get('exported'):
+                    page.show_dialog(ft.SnackBar(ft.Text('Экспорт сохранён')))
+                if recovered and recovered.get('chat_id') == active_chat_id:
+                    prompt.value, files = restore_draft(active_chat_id)
+                    selected_files[:] = files
+                    await refresh_attachments()
+            except Exception as exc:
+                page.show_dialog(ft.SnackBar(ft.Text(f'Не удалось восстановить вложения: {exc}')))
+        page.run_task(recover_files)
+    resize_layout()
+    return apply_palette(ft.SafeArea(content=background, expand=True))

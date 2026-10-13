@@ -4,6 +4,7 @@ import http.client
 import json
 import socket
 import threading
+import time
 from concurrent.futures import CancelledError
 from urllib.parse import urlsplit
 from .db import get_db, get_setting
@@ -12,6 +13,55 @@ from .llm import DEFAULT_SYSTEM_PROMPT, response_language_instruction
 from .stats import record_generation
 
 KEY = 'api_config_v1'
+PROVIDERS = {
+    'google': ('Google AI Studio · Gemini', 'https://generativelanguage.googleapis.com/v1beta/openai'),
+    'openrouter': ('OpenRouter', 'https://openrouter.ai/api/v1'),
+    'custom': ('Другой совместимый API', ''),
+}
+_modality_cache = (0.0, {})
+_modality_lock = threading.Lock()
+
+
+def image_support(config):
+    """True/False from the provider catalog; None when capabilities are unknown.
+
+    Only image requests need this lookup. Never send keys or chat content to the
+    public catalog, and never infer capabilities from a model's name.
+    """
+    global _modality_cache
+    if provider_for(config) != 'openrouter':
+        return None
+    with _modality_lock:
+        expires, models = _modality_cache
+        if time.monotonic() >= expires:
+            # Back off failed catalog lookups; unknown models still use their
+            # normal transport, so an unavailable catalog cannot block chat.
+            _modality_cache = (time.monotonic() + 30, {})
+            connection = http.client.HTTPSConnection('openrouter.ai', timeout=5)
+            try:
+                connection.request('GET', '/api/v1/models', headers={'Accept': 'application/json'})
+                response = connection.getresponse()
+                if response.status != 200:
+                    return None
+                raw = response.read(8 * 1024 * 1024 + 1)
+                if len(raw) > 8 * 1024 * 1024:
+                    return None
+                models = {}
+                for item in json.loads(raw)['data']:
+                    modalities = item.get('architecture', {}).get('input_modalities')
+                    if isinstance(modalities, list) and modalities:
+                        models[item['id']] = 'image' in modalities
+                _modality_cache = (time.monotonic() + 300, models)
+            except (OSError, ValueError, KeyError, TypeError, http.client.HTTPException):
+                return None
+            finally:
+                connection.close()
+        return models.get(config['model'])
+
+
+def provider_for(config):
+    host = urlsplit(config.get('url', '')).hostname
+    return 'google' if host == 'generativelanguage.googleapis.com' else 'openrouter' if host == 'openrouter.ai' else 'custom'
 
 
 def configuration():
@@ -65,6 +115,11 @@ def generate_reply(prompt_text, history=None, attachments=None, *, instructions=
     if cancelled is not None and cancelled.is_set():
         raise CancelledError()
     notes, images = build_attachment_message_parts(attachments or [])
+    if images and image_support(config) is False:
+        raise RuntimeError('Выбранная модель не поддерживает изображения. '
+                           'Выберите модель с поддержкой изображений или выключите камеру/экран и уберите изображения из вложений.')
+    if cancelled is not None and cancelled.is_set():
+        raise CancelledError()
     text = '\n\n'.join([prompt_text, *notes])
     content = [{'type': 'text', 'text': text}]
     content.extend({'type': 'image_url', 'image_url': {'url': 'data:' + image_mime(raw) + ';base64,' + base64.b64encode(raw).decode('ascii')}} for raw in images)
@@ -106,6 +161,10 @@ def generate_reply(prompt_text, history=None, attachments=None, *, instructions=
         connection.request('POST', path, body=payload, headers=headers)
         response = connection.getresponse()
         if response.status >= 400:
+            if response.status == 429:
+                raise RuntimeError('Лимит запросов API (HTTP 429). Повторите позже или выберите другую модель.')
+            if response.status >= 500:
+                raise RuntimeError(f'Сервис ИИ временно недоступен (HTTP {response.status}). Повторите запрос позже.')
             raise RuntimeError(f'API вернул HTTP {response.status}. Проверьте URL, ключ и модель.')
         data = json.loads(response.read())
         text = data['choices'][0]['message']['content']

@@ -35,9 +35,9 @@
 import asyncio
 import flet as ft
 try:
-    from .palette import color
+    from .palette import color, outline_color
 except ImportError:
-    from app.palette import color
+    from app.palette import color, outline_color
 import platform
 
 from .buttons.account import build_account_button, resize_account_button
@@ -46,6 +46,10 @@ from .buttons.new_chat import build_new_chat_button, resize_new_chat_button
 from .buttons.settings import build_settings_button, resize_settings_button
 from .buttons.workspaces import build_workspaces_button, resize_workspaces_button
 from .buttons.chats import build_chats_button, resize_chats_button
+try:
+    from ..services.platforms import is_android
+except ImportError:
+    from services.platforms import is_android
 
 RAIL_WIDTH_DEFAULT = 76 if platform.system() != "Windows" else 70
 RAIL_WIDTH_MIN = 56
@@ -68,6 +72,8 @@ def build_menu(
     on_chats_click=None,
     on_settings_click=None,
     on_account_click=None,
+    on_private_click=None,
+    on_materials_click=None,
 ) -> ft.Container:
     menu_btn = build_menu_button(on_click=on_menu_click, size=50, icon_size=26)
     new_chat_btn = build_new_chat_button(
@@ -84,9 +90,13 @@ def build_menu(
         on_click=on_account_click, size=50, icon_size=26
     )
 
+    from .buttons.brand import brand_button
+    private_btn = brand_button(ft.Icons.LOCK_OUTLINED, "Защищённые чаты", on_private_click, size=50)
+    materials_btn=brand_button(ft.Icons.LIBRARY_BOOKS_OUTLINED,'Материалы',on_materials_click,size=50)
+
     for button in (menu_btn, new_chat_btn, workspaces_btn, chats_btn, settings_btn, account_btn):
         button.gradient = BRAND_GRADIENT
-        button.border = ft.Border.all(2, ft.Colors.WHITE)
+        button.border = ft.Border.all(2, outline_color())
 
     def handle_resize(e):
         span = max(RAIL_WIDTH_MAX - RAIL_WIDTH_MIN, 1)
@@ -101,14 +111,14 @@ def build_menu(
     return ft.Container(
         width=RAIL_WIDTH_DEFAULT,
         bgcolor=color("#e6ffffff"),
-        blur=14,
+        blur=None if is_android() else 14,
         border_radius=8,
-        border=ft.Border.all(2, ft.Colors.WHITE),
+        border=ft.Border.all(2, outline_color()),
         padding=ft.Padding.symmetric(horizontal=0, vertical=8),
         opacity=1,
         animate_opacity=200,
         size_change_interval=80,
-        on_size_change=handle_resize,
+        on_size_change=None if is_android() else handle_resize,
         content=ft.Column(
             expand=True,
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
@@ -117,7 +127,7 @@ def build_menu(
                 ft.Column(
                     spacing=6,
                     horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                    controls=[menu_btn, new_chat_btn, workspaces_btn, chats_btn],
+                    controls=[menu_btn,new_chat_btn,workspaces_btn,chats_btn,materials_btn,private_btn],
                 ),
                 ft.Column(
                     spacing=6,
@@ -193,9 +203,12 @@ def build_menu_overlay(
     on_workspaces_click=None,
     on_chats_click=None,
     on_account_click=None,
+    on_private_click=None,
     get_chat_items=None,
     on_select_chat=None,
     get_active_chat_id=None,
+    on_delete_chat=None,
+    on_materials_click=None,
 ):
     is_open = False
 
@@ -218,7 +231,12 @@ def build_menu_overlay(
         ft.Icons.PERSON, "Аккаунт"
     )
 
+    private_row, private_wrapper, private_text = _overlay_item(ft.Icons.LOCK_OUTLINED, "Защищённые чаты")
+    materials_row,materials_wrapper,materials_text=_overlay_item(ft.Icons.LIBRARY_BOOKS_OUTLINED,'Материалы')
+
     wrappers = (
+        materials_wrapper,
+        private_wrapper,
         menu_wrapper,
         new_chat_wrapper,
         workspaces_wrapper,
@@ -226,7 +244,7 @@ def build_menu_overlay(
         settings_wrapper,
         account_wrapper,
     )
-    texts = (menu_text, new_chat_text, workspaces_text, chats_text, settings_text, account_text)
+    texts = (materials_text,private_text,menu_text,new_chat_text,workspaces_text,chats_text,settings_text,account_text)
 
     chat_search = ft.TextField(label="Найти чат", prefix_icon=ft.Icons.SEARCH,
                               text_size=12, dense=True)
@@ -247,6 +265,14 @@ def build_menu_overlay(
             cid, title, subtitle, _ = item
             async def click(_):
                 await select_recent(cid)
+            def remove(_):
+                def confirmed(_):
+                    page.pop_dialog()
+                    if on_delete_chat and on_delete_chat(cid):refresh_recent()
+                page.show_dialog(ft.AlertDialog(modal=True,bgcolor=color('#eafffa'),title=ft.Text('Удалить чат?'),
+                    content=ft.Text('«'+title+'» и его сообщения будут удалены. Остальные чаты сохранятся.'),
+                    actions=[ft.TextButton(content='Отмена',on_click=lambda _:page.pop_dialog()),
+                             ft.FilledButton(content='Удалить',on_click=confirmed)]))
             return ft.Container(padding=ft.Padding.symmetric(horizontal=10, vertical=10),
                 border_radius=14, bgcolor=color('#dff8f3') if cid == active else color('#f3fffc'),
                 border=ft.Border.all(1, color('#a8ddd7')) if cid == active else None,
@@ -258,7 +284,9 @@ def build_menu_overlay(
                         ft.Text(title, size=12, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS,
                                 color=color('#123b43'), weight=ft.FontWeight.W_600 if cid == active else None),
                         ft.Text(subtitle, size=10, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS,
-                                color=color('#47747a'))])]))
+                                color=color('#47747a'))]),
+                    *([ft.IconButton(icon=ft.Icons.DELETE_OUTLINE,tooltip='Удалить чат: '+title,
+                        icon_color=color('#c94b4b'),on_click=remove)] if on_delete_chat else [])]))
         recent_chats.controls = [row(item) for item in chat_snapshot if not query or query in item[1].casefold()]
         if not chat_feedback.value.startswith('Не удалось'):
             chat_feedback.value = 'Чаты не найдены' if chat_snapshot else 'Здесь появятся ваши чаты'
@@ -280,14 +308,14 @@ def build_menu_overlay(
         bottom=0,
         left=0,
         bgcolor=color("#EAFBFA"),
-        blur=14,
+        blur=None if is_android() else 14,
         border_radius=ft.BorderRadius.only(
             top_right=20, bottom_right=20
         ),
         border=ft.Border.all(2, color("#7DEED5")),
         padding=ft.Padding.symmetric(horizontal=10, vertical=12),
         clip_behavior=ft.ClipBehavior.HARD_EDGE,
-        animate=ft.Animation(
+        animate=None if is_android() else ft.Animation(
             duration=PANEL_ANIMATION_MS, curve=ft.AnimationCurve.EASE_OUT_BACK
         ),
         shadow=ft.BoxShadow(
@@ -303,7 +331,7 @@ def build_menu_overlay(
                 ft.Column(
                     spacing=8,
                     horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
-                    controls=[menu_row, new_chat_row, workspaces_row, chats_row],
+                    controls=[menu_row,new_chat_row,workspaces_row,chats_row,materials_row,private_row],
                 ),
                 history_panel,
                 ft.Column(
@@ -398,6 +426,13 @@ def build_menu_overlay(
         else:
             await handle_panel_click(on_chats_click, event)
 
+    async def handle_private_click(event):
+        await handle_panel_click(on_private_click, event)
+    private_row.on_click = handle_private_click
+    async def handle_materials_click(event):
+        await handle_panel_click(on_materials_click,event)
+    materials_row.on_click=handle_materials_click
+
     settings_row.on_click = handle_settings_click
     account_row.on_click = handle_account_click
     workspaces_row.on_click = handle_workspaces_click
@@ -406,7 +441,7 @@ def build_menu_overlay(
     scrim = ft.Container(
         expand=True,
         bgcolor=color("#40000000"),
-        blur=5,
+        blur=None if is_android() else 5,
         on_click=handle_scrim_click,
     )
 

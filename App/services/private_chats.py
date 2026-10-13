@@ -229,7 +229,10 @@ class PrivateChatSession:
         info = self._state(cid)["data"]["files"][asset]
         if len(asset) != 32 or any(c not in '0123456789abcdef' for c in asset) or Path(info['name']).name != info['name'] or '\\' in info['name'] or info['name'] in {'', '.', '..'}:
             raise ValueError('Повреждённые данные вложения')
-        return self._folder(cid) / asset / info["name"]
+        path=self._folder(cid)/asset/info['name']
+        from .material_preview import authorize_private
+        authorize_private(path,self,cid)
+        return path
 
     def _asset_id(self, cid, path):
         for asset in self._state(cid)["data"]["files"]:
@@ -428,3 +431,9 @@ class PrivateCanvasStore:
     def export_document(self, document):
         from .canvases import export_document
         return export_document(document)
+
+    def delete_document(self,identifier):
+        with self.session._mutex:
+            data=self.session._state(self.cid)['data']
+            data['canvases']=[d for d in data['canvases'] if d['id']!=identifier]
+            self.session._save(self.cid)

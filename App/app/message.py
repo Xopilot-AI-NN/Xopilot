@@ -35,6 +35,10 @@ except ImportError:
 
 from . import material as file_utils
 from .buttons.message_actions import build_message_actions
+try:
+    from ..services.platforms import is_android
+except ImportError:
+    from services.platforms import is_android
 
 
 def build_user_message(
@@ -101,7 +105,7 @@ def build_user_message(
         padding=ft.Padding.symmetric(horizontal=12, vertical=9),
         border_radius=20,
         bgcolor=color("#e6ffffff"),
-        blur=2,
+        blur=None if is_android() else 2,
         content=ft.Column(
             spacing=6,
             controls=[
@@ -198,7 +202,7 @@ def build_ai_message(text: str, on_action=None, message_id: int | None = None) -
         padding=ft.Padding.symmetric(horizontal=12, vertical=9),
         border_radius=20,
         bgcolor=color("#e6ffffff"),
-        blur=2,
+        blur=None if is_android() else 2,
         content=bubble_content,
     )
 

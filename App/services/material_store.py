@@ -28,7 +28,13 @@ def store_material(name, *, path=None, data=None):
         destination_dir = root / digest
         destination_dir.mkdir(exist_ok=True)
         destination = destination_dir / name
-        os.replace(staging, destination)
+        if destination.is_file() and not destination.is_symlink():return str(destination)
+        existing=next((p for p in destination_dir.iterdir() if p.is_file() and not p.is_symlink()),None)
+        if existing:
+            try:os.link(existing,destination)
+            except FileExistsError:pass
+            except OSError:os.replace(staging,destination)
+        else:os.replace(staging, destination)
         return str(destination)
     finally:
         if os.path.exists(staging):

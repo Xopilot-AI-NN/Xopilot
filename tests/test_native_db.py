@@ -94,3 +94,27 @@ class NativeDatabaseTests(unittest.TestCase):
             chat_store.switch_active_chat(first)
             chat_store._active_chat_id = None
             self.assertEqual(chat_store.get_or_create_active_chat_id(), first)
+
+    def test_sync_import_cas_receipt_and_new_id_are_atomic(self):
+        import json
+        chat=self.db.create_chat('Before')
+        message=self.db.add_message(chat,'user','Original')
+        snapshot=self.db.sync_chat_snapshot(chat)
+        self.db.update_message(message,'Local edit during download')
+        payload=json.loads(snapshot);payload['messages'][0]['content']='Remote edit'
+        ledger={'records':{'chat:qa':{'local_id':chat}},'applying':'chat:qa'}
+        self.assertIsNone(self.db.apply_sync_chat(chat,snapshot,json.dumps(payload),'sync_qa',json.dumps(ledger)))
+        self.assertEqual(self.db.get_messages(chat)[0].content,'Local edit during download')
+        self.assertIsNone(self.db.get_setting('sync_qa'))
+        ledger['records']['chat:qa']['local_id']=None
+        created=self.db.apply_sync_chat(None,None,json.dumps(payload),'sync_qa',json.dumps(ledger))
+        saved=json.loads(self.db.get_setting('sync_qa'))
+        self.assertEqual(saved['records']['chat:qa']['local_id'],created)
+        self.assertNotIn('applying',saved)
+        self.assertEqual(self.db.get_messages(created)[0].content,'Remote edit')
+
+    def test_sync_settings_cas_never_overwrites_concurrent_project_edit(self):
+        self.db.set_setting('workspace_qa','edited locally')
+        self.assertFalse(self.db.apply_sync_settings([('workspace_qa','original')],[('workspace_qa','remote'),('receipt_qa','done')]))
+        self.assertEqual(self.db.get_setting('workspace_qa'),'edited locally')
+        self.assertIsNone(self.db.get_setting('receipt_qa'))

@@ -8,9 +8,11 @@ from .palette import color, apply_palette
 try:
     from ..services import canvases
     from ..services.material_store import store_material
+    from ..services.platforms import is_android,compact_layout,available_height
 except ImportError:
     from services import canvases
     from services.material_store import store_material
+    from services.platforms import is_android,compact_layout,available_height
 
 
 def build_canvas_dialog(page, chat_id, workspace_id='all', on_attach=None, *, document_store=None, material_store=None, storage_label='Сохранено на устройстве'):
@@ -22,7 +24,8 @@ def build_canvas_dialog(page, chat_id, workspace_id='all', on_attach=None, *, do
     current = dict(documents[-1]) if documents else canvases.create_document(chat_id=chat_id, workspace_id=workspace_id)
     status = ft.Text(storage_label, size=11, color=color('#47747a'))
     title = ft.TextField(label='Название', value=current['title'])
-    editor = ft.TextField(value=current.get('content', ''), multiline=True, min_lines=9, max_lines=20,
+    compact = compact_layout(page.width)
+    editor = ft.TextField(value=current.get('content', ''), multiline=True, min_lines=5 if compact else 9, max_lines=12 if compact else 20,
                          hint_text='Пишите текст или код…', text_style=ft.TextStyle(font_family='monospace'))
     kinds = {'text': 'Текст', 'code': 'Код', 'drawing': 'Рисунок'}
     mode = ft.Dropdown(label='Тип Canvas', value=current['kind'], width=180,
@@ -33,11 +36,14 @@ def build_canvas_dialog(page, chat_id, workspace_id='all', on_attach=None, *, do
     paint_color = '#123b43'
     brush_width = 3
     active_stroke = None
+    drawing_open = False
+    pending_save=None
     drawing = cv.Canvas(width=width-2, height=300, expand=False)
     drawing.__dict__['_xopilot_fixed_colors'] = True
 
     def persist(_=None):
-        nonlocal current
+        nonlocal current,pending_save
+        if pending_save:pending_save.cancel();pending_save=None
         current.update(title=(title.value or '').strip(), content=editor.value or '', kind=mode.value)
         if mode.value == 'drawing':
             current['drawing_size'] = list(dimensions)
@@ -50,21 +56,27 @@ def build_canvas_dialog(page, chat_id, workspace_id='all', on_attach=None, *, do
             status.value = f'Не удалось сохранить: {exc}'
             return False
 
-    def changed(_):
-        persist()
-        page.update()
+    async def changed(_):
+        nonlocal pending_save
+        if pending_save:pending_save.cancel()
+        async def save_later():
+            nonlocal pending_save
+            await asyncio.sleep(0.4);pending_save=None
+            persist();status.update();selection.update()
+        pending_save=page.run_task(save_later)
 
     title.on_change = changed
     editor.on_change = changed
 
     def render_drawing(update=True):
         w, h = dimensions
-        drawing.shapes = [cv.Path(elements=[cv.Path.MoveTo(points[0][0]*w, points[0][1]*h),
+        drawing.shapes = [cv.Circle(points[0][0]*w,points[0][1]*h,stroke['width']/2,
+                                   paint=ft.Paint(color=stroke['color'])) if len(points)==1 else cv.Path(elements=[cv.Path.MoveTo(points[0][0]*w, points[0][1]*h),
                                 *[cv.Path.LineTo(x*w, y*h) for x, y in points[1:]]],
                        paint=ft.Paint(color=stroke['color'], stroke_width=stroke['width'],
                                       style=ft.PaintingStyle.STROKE, stroke_cap=ft.StrokeCap.ROUND))
             for stroke in current.get('strokes', []) if (points := stroke['points'])]
-        if update:
+        if update and drawing_open:
             drawing.update()
 
     def resized(e):
@@ -78,12 +90,16 @@ def build_canvas_dialog(page, chat_id, workspace_id='all', on_attach=None, *, do
 
     def start_stroke(e):
         nonlocal active_stroke
+        if active_stroke is not None:return
         active_stroke = {'color': paint_color, 'width': brush_width, 'points': [point(e)]}
         current.setdefault('strokes', []).append(active_stroke)
+        render_drawing()
 
     def move_stroke(e):
         if active_stroke is not None:
-            active_stroke['points'].append(point(e))
+            next_point=point(e)
+            if next_point==active_stroke['points'][-1]:return
+            active_stroke['points'].append(next_point)
             render_drawing()
 
     def finish_stroke(_):
@@ -115,11 +131,43 @@ def build_canvas_dialog(page, chat_id, workspace_id='all', on_attach=None, *, do
         ft.Slider(value=3, min=1, max=15, width=110, on_change=change_width),
         ft.IconButton(icon=ft.Icons.UNDO, tooltip='Отменить штрих', on_click=undo)])
     brush.__dict__['_xopilot_fixed_colors'] = True
-    draw_area = ft.Column(visible=current['kind'] == 'drawing', controls=[brush,
-        ft.Container(bgcolor=ft.Colors.WHITE, border_radius=16, clip_behavior=ft.ClipBehavior.HARD_EDGE,
-            border=ft.Border.all(1, color('#a8ddd7')),
-            content=ft.GestureDetector(content=drawing, drag_interval=16,
-                on_pan_start=start_stroke, on_pan_update=move_stroke, on_pan_end=finish_stroke))])
+    async def open_drawing(_):
+        nonlocal drawing_open
+        if is_android() and not page.web:
+            try:
+                try:from ..services.mobile_runtime import call_async
+                except ImportError:from services.mobile_runtime import call_async
+                await call_async('hideKeyboard');await asyncio.sleep(0.15)
+            except Exception:pass
+        drawing_open=True
+        viewport=available_height(page) or 840
+        drawing.width=max(180,min(800,(page.width or 1000)-80))
+        drawing.height=max(100,min(450,viewport-300))
+        drawing.expand=False
+        dimensions[:]=[max(1,width-32),drawing.height]
+        render_drawing(False)
+        def close_drawing(_):
+            nonlocal drawing_open
+            finish_stroke(None)
+            drawing_open=False
+            page.pop_dialog()
+        def dismiss_drawing(_):
+            nonlocal drawing_open
+            finish_stroke(None);drawing_open=False
+        # The drawing surface has no scrolling ancestor. Otherwise a vertical
+        # ListView wins Flutter's gesture arena and consumes drawing gestures.
+        page.show_dialog(ft.AlertDialog(modal=True,bgcolor=color('#eafffa'),title=ft.Text('Рисование'),
+            content=ft.Column(width=max(220,min(800,(page.width or 1000)-64)),
+                height=max(180,min(600,viewport-180)),spacing=10,
+                controls=[brush,ft.Container(height=drawing.height,bgcolor=ft.Colors.WHITE,
+                    clip_behavior=ft.ClipBehavior.HARD_EDGE,border_radius=12,
+                    content=ft.GestureDetector(content=drawing,drag_interval=32,
+                        on_tap_down=start_stroke,on_tap_up=finish_stroke,on_pan_start=start_stroke,
+                        on_pan_update=move_stroke,on_pan_end=finish_stroke,on_pan_cancel=finish_stroke))]),
+            actions=[ft.TextButton(content='Готово',on_click=close_drawing)],on_dismiss=dismiss_drawing))
+    draw_area = ft.Column(visible=current['kind']=='drawing',controls=[
+        ft.FilledButton(content='Рисовать',icon=ft.Icons.BRUSH,on_click=open_drawing),
+        ft.Text('Полотно открывается отдельно: рисуйте пальцем или мышью, штрихи сохраняются автоматически.',size=12,color=color('#47747a'))])
 
     def fill_selection():
         selection.options = [ft.DropdownOption(key=item['id'], text=item['title'])
@@ -159,15 +207,44 @@ def build_canvas_dialog(page, chat_id, workspace_id='all', on_attach=None, *, do
         fill_selection()
         change_mode(None)
 
+    def delete_document(_):
+        def remove(_):
+            nonlocal current,pending_save
+            try:
+                if pending_save:pending_save.cancel();pending_save=None
+                canvases.delete_document(current['id'])
+                available=canvases.list_documents(chat_id,workspace_id)
+                if not available:
+                    page.pop_dialog()  # Confirmation.
+                    page.pop_dialog()  # Editor; deleting the last document must leave it deleted.
+                    page.update()
+                    return
+                current=dict(available[-1])
+                title.value,editor.value,mode.value=current['title'],current.get('content',''),current['kind']
+                fill_selection();render_drawing(False);change_mode(None);page.pop_dialog()
+            except Exception as exc:status.value=str(exc)
+            page.update()
+        page.show_dialog(ft.AlertDialog(modal=True,title=ft.Text('Удалить Canvas?'),content=ft.Text(current['title']),
+            actions=[ft.TextButton(content='Отмена',on_click=lambda _:page.pop_dialog()),ft.FilledButton(content='Удалить',on_click=remove)]))
+
     async def export(_):
         if not persist():
             page.update()
             return
         try:
             name, data = await asyncio.to_thread(canvases.export_document, current)
+            if is_android() and not page.web:
+                try:
+                    from ..services.mobile_documents import save_document
+                except ImportError:
+                    from services.mobile_documents import save_document
+                status.value = 'Файл сохранён' if await save_document(name, data) else 'Сохранение отменено'
+                page.update()
+                return
             path = await picker.save_file(file_name=name, src_bytes=data)
             if path and not page.web:
-                await asyncio.to_thread(Path(path).write_bytes, data)
+                if not is_android():
+                    await asyncio.to_thread(Path(path).write_bytes, data)
                 status.value = 'Файл сохранён'
             else:
                 status.value = 'Проверьте загрузки браузера' if page.web else 'Сохранение отменено'
@@ -218,10 +295,11 @@ def build_canvas_dialog(page, chat_id, workspace_id='all', on_attach=None, *, do
                               ft.IconButton(icon=ft.Icons.CLOSE, on_click=close, tooltip='Сохранить и закрыть')]),
         content=ft.Column(width=width, height=height, scroll=ft.ScrollMode.AUTO,
             horizontal_alignment=ft.CrossAxisAlignment.STRETCH, spacing=14,
-            controls=[ft.Row(controls=[selection, ft.IconButton(icon=ft.Icons.ADD, tooltip='Новый Canvas', on_click=new_document)]),
+            controls=[ft.Row(controls=[selection, ft.IconButton(icon=ft.Icons.ADD, tooltip='Новый Canvas', on_click=new_document),
+                       ft.IconButton(icon=ft.Icons.DELETE_OUTLINE,tooltip='Удалить Canvas',on_click=delete_document)]),
                       title, mode, editor, draw_area, status]),
-        actions=[ft.TextButton(content='Сохранить', icon=ft.Icons.SAVE_OUTLINED, on_click=changed),
+        actions=[*([ft.TextButton(content='Сохранить', icon=ft.Icons.SAVE_OUTLINED, on_click=changed)] if not compact else []),
                  ft.TextButton(content='Экспорт', icon=ft.Icons.DOWNLOAD, on_click=export),
                  *([ft.TextButton(content='Локальная копия', icon=ft.Icons.SAVE_ALT, on_click=local_export)]
-                   if not page.web or os.environ.get('XOPILOT_LOCAL_WEB') == '1' else []),
+                   if not is_android() and (not page.web or os.environ.get('XOPILOT_LOCAL_WEB') == '1') else []),
                  *([ft.FilledButton(content='В чат', icon=ft.Icons.ATTACH_FILE, on_click=attach)] if on_attach else [])])

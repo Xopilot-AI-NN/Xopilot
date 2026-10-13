@@ -5,9 +5,11 @@
 """
 
 import threading
+import tempfile
+from pathlib import Path
 import unittest
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import flet as ft
 from App.app import main as main_ui
@@ -201,6 +203,16 @@ class RealReplyUITests(unittest.IsolatedAsyncioTestCase):
 class PersistenceUITests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.page = Mock(services=[], web=False)
+        self.folder = tempfile.TemporaryDirectory()
+        self.addCleanup(self.folder.cleanup)
+        self.material = Mock(side_effect=lambda name, *, data: self._store_frame(name, data))
+        material_patch = patch('App.services.material_store.store_material', self.material)
+        material_patch.start()
+        self.addCleanup(material_patch.stop)
+        live_type = main_ui.LiveConversation
+        def build_live(*args, **kwargs):
+            self.live = live_type(*args, **kwargs)
+            return self.live
         self.prompt = ft.TextField()
         self.prompt.update = Mock()
         self.messages = ft.ListView(controls=[])
@@ -227,12 +239,69 @@ class PersistenceUITests(unittest.IsolatedAsyncioTestCase):
             save_ai_message=self.save_ai, get_selected_chat_model=Mock(return_value="test.litertlm"),
             ensure_model_loaded=Mock(), generate_reply=self.generate,
             store_delete_message=self.delete, update_message=self.update,
+            LiveConversation=build_live,
         )
         patcher = patch.multiple(main_ui, **replacements)
         patcher.start()
         self.addCleanup(patcher.stop)
+        # build_app_ui imports settings locally. Keep these persistence scenarios
+        # independent of the user's current agent level and theme.
+        settings = patch('App.services.db.get_setting', side_effect=lambda key, default=None: default)
+        settings.start()
+        self.addCleanup(settings.stop)
         main_ui.build_app_ui(self.page)
         self.send = self.prompt_container.call_args.args[1]
+
+    def _store_frame(self, name, data):
+        path = Path(self.folder.name) / name
+        path.write_bytes(data)
+        return str(path)
+
+    async def test_api_camera_question_sends_and_saves_frame_without_loading_live_model(self):
+        from App.services import api_chat
+        self.live.camera_on = True
+        self.live._capture_vision_frame = AsyncMock(return_value=b'\xff\xd8test-frame')
+        self.live.ask_frame = AsyncMock()
+        self.prompt.value = 'Что перед камерой?'
+        with patch.object(api_chat, 'is_api_selected', return_value=True), \
+             patch.object(api_chat, 'generate_reply', return_value='API answer') as generate:
+            await self.send(None)
+        self.live.ask_frame.assert_not_awaited()
+        main_ui.ensure_model_loaded.assert_not_called()
+        attachment = self.save.call_args.kwargs['attachments'][0]
+        self.assertTrue(attachment[0].startswith('Камера-'))
+        self.assertEqual(Path(attachment[1]).read_bytes(), b'\xff\xd8test-frame')
+        self.assertEqual(generate.call_args.kwargs['attachments'], [attachment])
+        self.save_ai.assert_called_once_with(1, 'API answer')
+        self.assertEqual(self.prompt.value, '')
+
+    async def test_api_screen_capture_failure_preserves_question_without_sending_blindly(self):
+        from App.services import api_chat
+        self.live.screen_on = True
+        self.live._capture_vision_frame = AsyncMock(side_effect=RuntimeError('Screen permission ended'))
+        self.prompt.value = 'Что на экране?'
+        with patch.object(api_chat, 'is_api_selected', return_value=True), \
+             patch.object(api_chat, 'generate_reply') as generate:
+            await self.send(None)
+        generate.assert_not_called()
+        self.save.assert_not_called()
+        self.material.assert_not_called()
+        self.assertEqual(self.prompt.value, 'Что на экране?')
+        self.assertIn('Screen permission ended', self.page.show_dialog.call_args.args[0].content.value)
+
+    async def test_api_retry_reuses_saved_screen_frame_instead_of_recapturing(self):
+        from App.services import api_chat
+        self.live.screen_on = True
+        self.live._capture_vision_frame = AsyncMock(return_value=b'\xff\xd8original-frame')
+        self.prompt.value = 'Что на экране?'
+        with patch.object(api_chat, 'is_api_selected', return_value=True), \
+             patch.object(api_chat, 'generate_reply', side_effect=[RuntimeError('HTTP 401'), 'API answer']) as generate:
+            await self.send(None)
+            await self.send(None, retry=True)
+        self.live._capture_vision_frame.assert_awaited_once_with(update_state=False)
+        self.save.assert_called_once()
+        self.assertEqual(generate.call_args_list[0].kwargs['attachments'], generate.call_args_list[1].kwargs['attachments'])
+        self.save_ai.assert_called_once_with(1, 'API answer')
 
     async def test_failed_save_preserves_draft_and_does_not_generate(self):
         self.save.side_effect = RuntimeError("disk full")

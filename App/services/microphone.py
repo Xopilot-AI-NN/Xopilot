@@ -26,6 +26,13 @@ MAX_RECORDING_SECONDS = 30
 
 
 class MicrophoneRecorder:
+    def __new__(cls, max_seconds=MAX_RECORDING_SECONDS):
+        from .platforms import is_android
+        if cls is MicrophoneRecorder and is_android():
+            from .mobile_audio import AndroidRecorder
+            return AndroidRecorder(max_seconds)
+        return super().__new__(cls)
+
     def __init__(self, max_seconds=MAX_RECORDING_SECONDS):
         self.max_seconds = max_seconds
         self._lock = threading.Lock()

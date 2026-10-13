@@ -10,7 +10,7 @@ except ImportError:
     from services.workspaces import chat_workspace
 
 
-def build_history_list(page, on_select=None):
+def build_history_list(page, on_select=None, on_delete=None):
     search = ft.TextField(hint_text='Поиск по названию или сообщениям', prefix_icon=ft.Icons.SEARCH)
     rows = ft.Column(spacing=8)
     feedback = ft.Text('', size=12, color=color('#47747a'))
@@ -45,6 +45,22 @@ def build_history_list(page, on_select=None):
             actions=[ft.TextButton(content='Закрыть', on_click=lambda _: page.pop_dialog()),
                      *([ft.FilledButton(content='Открыть чат', on_click=open_chat)] if on_select else [])]))
 
+    def confirm_delete(identifier, title):
+        def remove(_):
+            page.pop_dialog()
+            try:
+                if on_delete is None or on_delete(identifier) is not True:
+                    return
+                items[:] = [item for item in items if item[0] != identifier]
+                render()
+            except Exception as exc:
+                feedback.value = 'Не удалось удалить чат: ' + str(exc)
+            page.update()
+        page.show_dialog(ft.AlertDialog(modal=True, bgcolor=color('#eafffa'),
+            title=ft.Text('Удалить чат?'), content=ft.Text('«'+title+'» и его сообщения будут удалены. Остальные чаты сохранятся.'),
+            actions=[ft.TextButton(content='Отмена', on_click=lambda _:page.pop_dialog()),
+                     ft.FilledButton(content='Удалить', on_click=remove)]))
+
     def render(e=None):
         query = (search.value or '').casefold().strip()
         rows.controls = [ft.Container(bgcolor=color('#f3fffc'), border_radius=16, padding=12,
@@ -55,6 +71,8 @@ def build_history_list(page, on_select=None):
                     ft.Text(f'{workspace} · {subtitle}', size=11, color=color('#47747a')),
                     ft.Text(messages[-1].content if messages else 'Пустой чат', size=12,
                             max_lines=2, overflow=ft.TextOverflow.ELLIPSIS, color=color('#47747a'))]),
+                *([ft.IconButton(icon=ft.Icons.DELETE_OUTLINE, tooltip='Удалить чат: '+title,
+                    icon_color=color('#c94b4b'), on_click=lambda _, cid=cid, title=title:confirm_delete(cid,title))] if on_delete else []),
                 ft.Icon(ft.Icons.CHEVRON_RIGHT, color=color('#087f8c'))]))
             for cid, title, subtitle, workspace, messages in items
             if not query or query in title.casefold() or any(query in m.content.casefold() for m in messages)]
@@ -64,8 +82,14 @@ def build_history_list(page, on_select=None):
             page.update()
     search.on_change = render
     render()
-    return ft.Column(spacing=12, controls=[search, feedback, rows])
+    result=ft.Column(spacing=12, controls=[search, feedback, rows])
+    def reload():
+        items[:]=[(cid,title,subtitle,chat_workspace(cid)['name'],load_chat_messages(cid))
+                  for cid,title,subtitle,_ in list_chat_items()]
+        render()
+    result._xopilot_reload=reload
+    return result
 
 
 def build_history_summary():
-    return ft.Text('Очистка удалит сообщения только текущего открытого чата.', size=11, color=color('#47747a'))
+    return ft.Text('Очистка удалит все обычные чаты и их сообщения.', size=11, color=color('#47747a'))

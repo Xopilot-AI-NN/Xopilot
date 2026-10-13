@@ -1,25 +1,30 @@
 [project]
 name = "Xopilot"
-version = "2.0.0"
+version = "2.0.7"
 description = "Xopilot by DenBroLiik"
 requires-python = ">=3.10"
 dependencies = [
     "flet==1.0.3",
-    "screeninfo==0.8.1",
-    "litert-lm-api>=0.17.0",
-    "sounddevice==0.5.6",
-    "webrtcvad-wheels==2.0.14",
-    "piper-tts==1.8.0",
-    "pillow==12.3.0",
-    "opencv-python-headless==5.0.0.93",
+    "screeninfo==0.8.1; platform_system != 'Android'",
+    "litert-lm-api>=0.17.0; platform_system != 'Android'",
+    "sounddevice==0.5.6; platform_system != 'Android'",
+    "webrtcvad-wheels==2.0.14; platform_system != 'Android'",
+    "piper-tts==1.8.0; platform_system != 'Android'",
+    "pillow==12.3.0; platform_system != 'Android'",
+    "opencv-python-headless==5.0.0.93; platform_system != 'Android'",
     "pypdf==6.19.0",
     "python-docx==1.2.0",
-    "mss==10.2.0",
-    "scipy>=1.15,<2",
-    "cryptography>=50.0.0",
+    "mss==10.2.0; platform_system != 'Android'",
+    "scipy>=1.15,<2; platform_system != 'Android'",
+    "cryptography>=50.0.0; platform_system != 'Android'",
     "filelock==3.32.3",
+    "pillow==12.2.0; platform_system == 'Android'",
+    "cryptography==48.0.0; platform_system == 'Android'",
+    "flet-xopilot-mobile==0.1.0; platform_system == 'Android'",
+    "certifi>=2025.1.31; platform_system == 'Android'",
 ]
-# Keep dependencies aligned with App/requirements.txt.
+# App/requirements.txt is the desktop development install.
+# Flet cross-packaging evaluates platform_system for the target platform.
 
 [tool.flet]
 org = "ru.xopilot"
@@ -27,7 +32,7 @@ product = "Xopilot"
 company = "Xopilot"
 copyright = "Copyright (c) 2026 Xopilot"
 build_number = 1
-build_version = "2.0.0"
+build_version = "2.0.7"
 
 [tool.flet.app]
 path = "App"
@@ -37,3 +42,33 @@ exclude = ["__pycache__", "*.pyc", ".flet", "build", "data", "native"]
 [tool.flet.splash]
 color = "#0d1117"
 dark_color = "#0d1117"
+
+[tool.flet.android]
+min_sdk_version = 26
+split_per_abi = true
+adaptive_icon_background = "#b3f2ff"
+
+[tool.flet.android.dev_packages]
+flet-xopilot-mobile = "extensions/flet_xopilot_mobile"
+
+[tool.flet.android.feature]
+"android.hardware.touchscreen" = false
+"android.hardware.camera" = false
+"android.hardware.camera.autofocus" = false
+"android.hardware.microphone" = false
+
+[tool.flet.android.gradle_properties]
+"org.gradle.jvmargs" = "-Xmx2G -XX:MaxMetaspaceSize=768m -XX:ReservedCodeCacheSize=128m"
+"org.gradle.workers.max" = "1"
+"org.gradle.parallel" = "false"
+"org.gradle.daemon" = "false"
+"kotlin.compiler.execution.strategy" = "in-process"
+"android.builtInKotlin" = false
+"android.newDsl" = false
+
+[tool.flet.android.app]
+exclude = ["__pycache__", "*.pyc", ".flet", "build", "data", "native", "advanced_xopilot*.so", "advanced_xopilot*.pyd", "assets/models/sentiment.onnx"]
+
+[tool.flet.android.permission]
+"android.permission.RECORD_AUDIO" = true
+"android.permission.CAMERA" = true

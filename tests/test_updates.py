@@ -40,8 +40,12 @@ class HistoryTests(unittest.TestCase):
         chat = ft.ListView(controls=[ft.Text("Важное сообщение")])
         chat.update = Mock()
         status = Mock()
-        with patch.object(history, "clear_chat_messages", side_effect=RuntimeError("disk error")):
-            page = history.build_history_page(chat, status, 1)
-            page.controls[2].content.on_click(None)
+        page=Mock(width=800,height=800)
+        page._xopilot_clear_all_history=None
+        with patch.object(history,'clear_all_chats',side_effect=RuntimeError('disk error')),patch.object(history,'build_history_list',return_value=ft.Column()):
+            view=history.build_history_page(chat,status,1,page=page)
+            view.controls[1].on_click(None)
+            confirm=page.show_dialog.call_args.args[0]
+            confirm.actions[1].on_click(None)
         self.assertEqual(len(chat.controls), 1)
         self.assertIn("disk error", status.call_args.args[0])
