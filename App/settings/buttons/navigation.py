@@ -6,8 +6,12 @@
 import flet as ft
 try:
     from ...app.palette import color
+    from ...app.buttons.brand import style_brand_button
+    from ...app.button_colors import action_role
 except ImportError:
     from app.palette import color
+    from app.buttons.brand import style_brand_button
+    from app.button_colors import action_role
 
 
 def build_navigation_button(icon, label: str, subtitle: str, on_click) -> ft.Container:
@@ -15,20 +19,22 @@ def build_navigation_button(icon, label: str, subtitle: str, on_click) -> ft.Con
         height=74,
         padding=12,
         border_radius=12,
+        bgcolor=color('#f3fffc'),
+        border=ft.Border.all(1, color('#b6e5df')),
         ink=True,
         on_click=on_click,
         content=ft.Row(
             spacing=16,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
             controls=[
-                ft.Container(
+                style_brand_button(ft.Container(
                     width=44,
                     height=44,
                     border_radius=22,
                     bgcolor=color("#dff8f3"),
                     alignment=ft.Alignment.CENTER,
                     content=ft.Icon(icon, size=24, color=color("#087f8c")),
-                ),
+                ), action_role(icon, label)),
                 ft.Column(
                     expand=True,
                     spacing=3,

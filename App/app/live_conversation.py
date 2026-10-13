@@ -23,7 +23,7 @@ except ImportError:
 from .buttons.live import build_live_button
 from .buttons.live_camera import build_live_camera_button
 from .buttons.live_display import build_live_display_button
-from .buttons.brand import brand_button, brand_gradient
+from .buttons.brand import brand_button, style_brand_button
 from .file_selection import pick_materials
 from .material import build_file_attachments
 try:
@@ -77,10 +77,10 @@ class LiveConversation:
         self.state_title = ft.Text("Готов к разговору", size=22, weight=ft.FontWeight.W_600,
                                    color=color("#123b43"), text_align=ft.TextAlign.CENTER)
         self.engine_text = ft.Text(size=11, color=color("#47747a"), text_align=ft.TextAlign.CENTER)
-        self.orb = ft.Container(width=72, height=72, border_radius=36, gradient=brand_gradient(),
+        self.orb = ft.Container(width=72, height=72, border_radius=36,
             border=ft.Border.all(2, ft.Colors.WHITE), alignment=ft.Alignment.CENTER,
             content=ft.Icon(ft.Icons.GRAPHIC_EQ, color=ft.Colors.WHITE, size=34))
-        self.orb._xopilot_fixed_colors = True
+        style_brand_button(self.orb, 'ai')
         self.interrupt_button = ft.TextButton(
             content="Перебить", style=ft.ButtonStyle(color=color("#087f8c")), on_click=self.interrupt,
         )
@@ -211,8 +211,7 @@ class LiveConversation:
             ft.Icons.CALL_END if self.busy else ft.Icons.GRAPHIC_EQ,
             color=ft.Colors.WHITE, size=20,
         )
-        self.button.bgcolor = color("#d9364f") if self.busy else color("#ff6666ff")
-        self.button.gradient = None if self.busy else brand_gradient()
+        style_brand_button(self.button, 'danger' if self.busy else 'ai')
         self.button.tooltip = (
             "Открыть текущий разговор Live"
             if self.busy

@@ -8,8 +8,12 @@
 import flet as ft
 try:
     from ..app.palette import color
+    from ..app.buttons.brand import style_brand_button
+    from ..app.button_colors import action_role
 except ImportError:
     from app.palette import color
+    from app.buttons.brand import style_brand_button
+    from app.button_colors import action_role
 
 
 def section_title(text: str) -> ft.Container:
@@ -21,14 +25,14 @@ def section_title(text: str) -> ft.Container:
 
 def setting_row(icon, title: str, subtitle: str, trailing=None, on_click=None) -> ft.Container:
     controls = [
-        ft.Container(
+        style_brand_button(ft.Container(
             width=36,
             height=36,
             border_radius=18,
             bgcolor=color("#dff8f3"),
             alignment=ft.Alignment.CENTER,
             content=ft.Icon(icon, size=19, color=color("#087f8c")),
-        ),
+        ), action_role(icon, title)),
         ft.Column(
             expand=True,
             spacing=2,

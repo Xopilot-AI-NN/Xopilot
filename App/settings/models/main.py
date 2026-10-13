@@ -18,8 +18,10 @@ except ImportError:
 from ..common import section_title
 try:
     from ...app.model_download import ModelDownloadPanel
+    from ...app.buttons.brand import style_brand_button
 except ImportError:
     from app.model_download import ModelDownloadPanel
+    from app.buttons.brand import style_brand_button
 try:
     from ...services.model_installer import GEMMA_4_E2B, DOWNLOADABLE_MODELS, install_model, MODELS_DIR
     from ...services.voice_catalog import VOICES
@@ -60,14 +62,14 @@ def _install_card(icon, title: str, subtitle: str, details: str, installed: bool
         content=ft.Column(
             spacing=10,
             controls=[ft.Row(spacing=12, controls=[
-                ft.Container(
+                style_brand_button(ft.Container(
                     width=42,
                     height=42,
                     border_radius=21,
                     bgcolor=color("#c9f1e9"),
                     alignment=ft.Alignment.CENTER,
                     content=ft.Icon(icon, size=22, color=_ACCENT),
-                ),
+                ), 'ai'),
                 ft.Column(
                     expand=True,
                     spacing=3,

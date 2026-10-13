@@ -18,7 +18,7 @@ from .buttons.new_chat import build_new_chat_button, resize_new_chat_button
 from .buttons.settings import build_settings_button, resize_settings_button
 from .buttons.workspaces import build_workspaces_button, resize_workspaces_button
 from .buttons.chats import build_chats_button, resize_chats_button
-from .buttons.brand import brand_gradient
+from .buttons.brand import style_brand_button
 from .button_colors import action_role
 try:
     from ..services.platforms import is_android
@@ -69,8 +69,8 @@ def build_menu(
     materials_btn=brand_button(ft.Icons.LIBRARY_BOOKS_OUTLINED,'Материалы',on_materials_click,size=50)
 
     for button in (menu_btn, new_chat_btn, workspaces_btn, chats_btn, settings_btn, account_btn):
-        button.gradient = brand_gradient(action_role(button.content.icon, button.tooltip))
-        button.border = ft.Border.all(2, outline_color())
+        style_brand_button(button, action_role(button.content.icon, button.tooltip))
+        button.on_hover = None
 
     def handle_resize(e):
         span = max(RAIL_WIDTH_MAX - RAIL_WIDTH_MIN, 1)
@@ -143,21 +143,20 @@ def _overlay_item(
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
             spacing=12,
             controls=[
-                ft.Container(
+                style_brand_button(ft.Container(
                     width=36,
                     height=36,
                     border_radius=18,
-                    gradient=brand_gradient(action_role(icon, label)),
                     alignment=ft.Alignment.CENTER,
-                    content=ft.Icon(icon, color=ft.Colors.WHITE, size=19),
-                ),
+                    content=ft.Icon(icon, size=19),
+                ), action_role(icon, label)),
                 label_wrapper,
             ],
         ),
     )
 
     def handle_hover(e: ft.Event[ft.Container]):
-        e.control.bgcolor = color("#1aff6666") if e.data else ft.Colors.TRANSPARENT
+        e.control.bgcolor = color("#ddf8f2") if e.data else ft.Colors.TRANSPARENT
         e.control.update()
 
     row.on_hover = handle_hover

@@ -131,7 +131,7 @@ class Init():
                 except Exception:
                     pass
 
-        page.title = "Xopilot 2.0.7"
+        page.title = "Xopilot 2.0.8"
         from services.runtime import IdleMemoryCleanup
         idle_memory = IdleMemoryCleanup()
         page._xopilot_memory_activity = idle_memory.activity
@@ -149,7 +149,7 @@ class Init():
                         import logging
                         logging.getLogger(__name__).warning("Не удалось освободить модель: %s", type(exc).__name__)
 
-        page.theme = ft.Theme(color_scheme_seed="#087f8c", font_family="Google Sans")
+        page.theme = ft.Theme(use_material3=True, color_scheme_seed="#5378a5", font_family="Google Sans")
         page.theme_mode = ft.ThemeMode.LIGHT
         desktop_window = not page.web and not is_mobile(page)
         if desktop_window:
