@@ -21,7 +21,7 @@ class RuntimeTests(unittest.TestCase):
                 os.environ["TMPDIR"] = "/watched/App/.flet/storage/temp"
                 runtime.configure_runtime()
                 temp = Path(tempfile.mkdtemp())
-                self.assertEqual(temp.parent, Path(directory) / "tmp")
+                self.assertEqual(temp.parent, (Path(directory) / "tmp").resolve())
                 self.assertEqual(Path.cwd(), Path(directory) / "runtime")
                 self.assertEqual(os.environ["FLET_APP_STORAGE_CACHE"], str(Path(directory) / "cache"))
             finally:

@@ -28,7 +28,7 @@ class LocalWorkflowTests(unittest.TestCase):
         patcher = patch.object(material_store, 'app_data_dir', return_value=self.root)
         patcher.start()
         self.addCleanup(patcher.stop)
-        self.addCleanup(lambda: setattr(self, 'db', None))
+        self.addCleanup(lambda: self.db.close() if self.db is not None else None)
 
     def test_shared_files_and_instructions_survive_restart_and_original_move(self):
         original = self.root / 'brief.txt'
@@ -41,9 +41,13 @@ class LocalWorkflowTests(unittest.TestCase):
         workspaces.assign_chat(chat, item['id'])
         drafts.write_draft(chat, 'Черновик', [managed])
         original.unlink()
-        self.db = None
+        self.db.close()
         self.db = advanced_xopilot.PyDatabase(str(self.db_path))
-        self.assertEqual(workspaces.chat_resources(chat), ('Отвечай по документам', [('brief.txt', managed)]))
+        context, files = workspaces.chat_resources(chat)
+        self.assertIn('Отвечай по документам', context)
+        self.assertIn('Проект', context)
+        self.assertIn('brief.txt', context)
+        self.assertEqual(files, [('brief.txt', managed)])
         self.assertEqual(Path(managed).read_text(encoding='utf-8'), 'Код проекта — ЛИЛИЯ')
         self.assertEqual(drafts.read_draft(chat), {'text': 'Черновик', 'files': [managed]})
         workspaces.assign_chat(chat, 'all')

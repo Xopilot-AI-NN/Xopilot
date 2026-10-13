@@ -129,6 +129,9 @@ class LegacyCleanupTests(unittest.TestCase):
 
 class RealReplyUITests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
+        from App.services import api_chat
+        api_selection = patch.object(api_chat, 'is_api_selected', return_value=False)
+        api_selection.start(); self.addCleanup(api_selection.stop)
         patcher = patch.multiple(main_ui, install_theme=Mock(),
                                  read_draft=Mock(return_value={}), write_draft=Mock())
         patcher.start()
@@ -202,6 +205,9 @@ class RealReplyUITests(unittest.IsolatedAsyncioTestCase):
 
 class PersistenceUITests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
+        from App.services import api_chat
+        api_selection = patch.object(api_chat, 'is_api_selected', return_value=False)
+        api_selection.start(); self.addCleanup(api_selection.stop)
         self.page = Mock(services=[], web=False)
         self.folder = tempfile.TemporaryDirectory()
         self.addCleanup(self.folder.cleanup)

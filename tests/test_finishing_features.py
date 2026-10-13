@@ -38,7 +38,7 @@ class ProjectTests(unittest.TestCase):
         with patch.object(project_tools,'is_android',return_value=False):
             result=project_tools.run_command(self.workspace,[sys.executable,'src/main.py'],self.cancelled,lambda r:approved.append(r) or True)
         self.assertEqual(result['exit_code'],0);self.assertEqual(result['output'].strip(),'42')
-        self.assertEqual(approved[-1]['cwd'],str(self.root))
+        self.assertEqual(Path(approved[-1]['cwd']).resolve(),self.root.resolve())
 
     def test_no_write_or_execution_without_approval_or_outside_folder(self):
         with self.assertRaisesRegex(ValueError,'не подтвердил'):

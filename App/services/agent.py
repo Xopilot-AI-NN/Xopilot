@@ -141,6 +141,8 @@ class LocalTools:
 def run_agent(prompt, *, chat_id, history, attachments, instructions, level, cancelled, on_progress=None, generate=None, request_id=None,approve=None):
     generate = generate or generate_reply
     tools = LocalTools(chat_id,cancelled,request_id,approve)
+    workspace = workspaces.chat_workspace(chat_id)
+    access = project_tools.settings(tools.workspace_id)
     automatic = level == 'auto'
     limit = 3 if automatic else LEVELS.get(level, LEVELS['medium'])[1]
     protocol = ('Ты работаешь как локальный агент Xopilot. Для выполнения запроса можешь последовательно '
@@ -151,10 +153,17 @@ def run_agent(prompt, *, chat_id, history, attachments, instructions, level, can
         'Для работы с подключённой папкой используй инструменты project_file и run_project_command. '
         'Если папка не подключена, объясни как открыть пространство → Работа с проектом. '
         'Пиши файлы и запускай команды только через инструменты: они запросят разрешение пользователя. '
+        'Отличай общие материалы проекта (копии в библиотеке), Canvas (документы приложения) '
+        'и подключённую папку (файлы системы пользователя). Не выдавай один источник за другой. '
+        'Результат команды с ненулевым exit_code — ошибка, а не успешное выполнение. '
+        'Не повторяй старые ответы из истории: отвечай на текущий запрос. '
         'На каждом шаге верни ТОЛЬКО один JSON-объект: '
         '{"tool":"имя","arguments":{...}} или {"final":"ответ пользователю"}. '
         'Доступные инструменты и аргументы: ' + json.dumps(TOOLS, ensure_ascii=False) +
-        '\nИнструкции пространства:\n' + instructions)
+        '\nТекущий проект: ' + json.dumps(workspace['name'], ensure_ascii=False) +
+        '\nПапка на этом устройстве: ' + ('подключена' if access.get('enabled') and access.get('root') else 'не подключена') +
+        '\nИсходный запрос пользователя (сохраняется на всех шагах): ' + json.dumps(prompt, ensure_ascii=False) +
+        '\nКонтекст и инструкции:\n' + instructions)
     transcript = [dict(item) for item in history]
     current = prompt
     files = attachments
@@ -168,7 +177,10 @@ def run_agent(prompt, *, chat_id, history, attachments, instructions, level, can
             raise CancelledError()
         if on_progress:
             on_progress(f'Агент{" · Авто" if automatic else ""} · шаг {step+1} · {len(journal)} действий выполнено')
-        raw = generate(current, history=transcript, attachments=files,
+        # Providers rebuild the conversation each step. The original files
+        # must remain available after JSON repair or a tool result as well.
+        step_files = list(dict.fromkeys([*(attachments or []), *(files or [])]))
+        raw = generate(current, history=transcript, attachments=step_files,
                        instructions=protocol + (f'\nОсталось действий: {limit-step}. '
                            + ('Теперь верни final, инструменты больше недоступны.' if step == limit else '')),
                        cancelled=cancelled)
@@ -177,6 +189,7 @@ def run_agent(prompt, *, chat_id, history, attachments, instructions, level, can
             raise CancelledError()
         if 'final' in parsed:
             if needs_tools(prompt) and not journal and step<limit:
+                transcript.extend([{'role': 'user', 'content': current}, {'role': 'ai', 'content': raw}])
                 current='Ты ещё не выполнил запрошенные действия. Вызови нужный инструмент, затем верни итог с фактическим результатом.'
                 files=[]
                 continue

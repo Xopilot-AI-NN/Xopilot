@@ -42,7 +42,7 @@ def import_folder(folder):
             source = Path(base) / name
             if name.startswith('.') or source.is_symlink() or source.suffix.lower() not in SUPPORTED:
                 continue
-            relative = str(source.relative_to(root))
+            relative = source.relative_to(root).as_posix()
             try:
                 path = store_material(name, path=str(source))
                 materials.append({'name': relative, 'path': path, 'source': str(root), 'enabled': True})

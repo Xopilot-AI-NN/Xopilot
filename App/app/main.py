@@ -694,7 +694,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                             if request_cancelled.is_set():return False
                         return answer[0]
                     reply_text = await asyncio.to_thread(run_agent, text, chat_id=request_chat_id,
-                        history=[dict(item) for item in chat_context[:-1]], attachments=sent_attachments,
+                        history=[dict(item) for item in chat_context[:-1]], attachments=[*shared_files, *sent_attachments],
                         instructions=instructions,level=tool_level,cancelled=request_cancelled,approve=approve_action,
                         on_progress=progress, generate=reply_generator, request_id=chat_context[-1].get('id'))
                 else:
@@ -1112,14 +1112,20 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         if is_sending or live.busy or voice_input.busy:
             page.show_dialog(ft.SnackBar(ft.Text("Дождитесь завершения ответа или голосового ввода.")))
             return
+        if workspace_id is None:
+            current = workspaces.chat_workspace(active_chat_id) if not is_private(active_chat_id) else {'id': 'all'}
+            if current['id'] != workspaces.DEFAULT:
+                from .new_chat import choose_chat_scope
+                choose_chat_scope(page, current, lambda identifier: start_new_chat(workspace_id=identifier))
+                return
+            workspace_id = workspaces.DEFAULT
         try:
             if not (prompt.value or '').strip() and not selected_files and chat_is_unused(active_chat_id):
                 new_id = active_chat_id
             else:
                 new_id = create_new_chat()
-            workspaces.assign_chat(new_id, workspace_id or workspaces.selected_workspace())
-            if workspace_id:
-                workspaces.select_workspace(workspace_id)
+            workspaces.assign_chat(new_id, workspace_id)
+            workspaces.select_workspace(workspace_id)
         except Exception as exc:
             page.show_dialog(ft.SnackBar(ft.Text(f"Не удалось создать чат: {exc}")))
             return
@@ -1156,7 +1162,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
             if remaining:
                 switch_chat(remaining[0][0])
             else:
-                start_new_chat()
+                start_new_chat(workspace_id=workspaces.selected_workspace())
         drafts.pop(chat_id, None)
         refresh_menu_chats()
         page.update()
@@ -1371,7 +1377,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         on_workspaces_click=open_workspaces,
         on_account_click=open_account,
         on_private_click=privacy_menu,
-        get_chat_items=lambda: workspaces.filter_chats(globals()['list_chat_items']()) + private_chats.items(),
+        get_chat_items=lambda: workspaces.sidebar_chats(globals()['list_chat_items']()) + private_chats.items(),
         on_select_chat=switch_chat,
         get_active_chat_id=lambda: active_chat_id,
         on_delete_chat=delete_chat_by_id,

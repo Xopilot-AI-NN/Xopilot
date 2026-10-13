@@ -155,7 +155,15 @@ def generate_reply(prompt_text, history=None, attachments=None, *, instructions=
         if config['key']:
             headers['Authorization'] = 'Bearer ' + config['key']
         connection.connect()
-        active_socket = connection.sock
+        # Keep an independently owned handle: HTTPConnection closes its socket
+        # when a response uses Connection: close, before its body has arrived.
+        # SSLSocket deliberately has no dup(); duplicate only its underlying
+        # transport for shutdown, and detach the temporary owner immediately.
+        transport = socket.socket(fileno=connection.sock.fileno())
+        try:
+            active_socket = transport.dup()
+        finally:
+            transport.detach()
         if cancelled is not None and cancelled.is_set():
             raise CancelledError()
         connection.request('POST', path, body=payload, headers=headers)
@@ -186,3 +194,5 @@ def generate_reply(prompt_text, history=None, attachments=None, *, instructions=
         finished.set()
         connection.close()
         watcher.join(timeout=.2)
+        if active_socket is not None:
+            active_socket.close()

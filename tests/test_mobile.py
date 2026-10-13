@@ -217,8 +217,7 @@ class MobilePageTests(unittest.IsolatedAsyncioTestCase):
         from App.app import main as main_ui
         from App.services import chat_store
         page=Mock(width=393,height=851,web=True,services=[],_dialogs=Mock(controls=[]))
-        with TemporaryDirectory() as folder:
-            native=db.advanced_xopilot.PyDatabase(str(Path(folder)/'phone.db'),key='d4'*32)
+        with TemporaryDirectory() as folder, db.advanced_xopilot.PyDatabase(str(Path(folder)/'phone.db'),key='d4'*32) as native:
             with patch.object(db,'_db',native),patch.object(chat_store,'_active_chat_id',None), \
                     patch.object(main_ui,'install_theme'),patch.object(main_ui,'get_selected_chat_model',return_value=None):
                 ui=main_ui.build_app_ui(page)
@@ -247,8 +246,7 @@ class MobilePageTests(unittest.IsolatedAsyncioTestCase):
         from App.app import main as main_ui
         from App.services import chat_store
         page = Mock(width=393, height=851, web=True, services=[], _dialogs=Mock(controls=[]))
-        with TemporaryDirectory() as folder:
-            native = db.advanced_xopilot.PyDatabase(str(Path(folder)/'phone.db'), key='d4'*32)
+        with TemporaryDirectory() as folder, db.advanced_xopilot.PyDatabase(str(Path(folder)/'phone.db'),key='d4'*32) as native:
             with patch.object(db, '_db', native), patch.object(chat_store, '_active_chat_id', None), \
                     patch.object(main_ui, 'install_theme'), patch.object(main_ui, 'get_selected_chat_model', return_value=None):
                 ui = main_ui.build_app_ui(page)
@@ -334,12 +332,12 @@ class MobileKeyDatabaseTests(unittest.TestCase):
             key='a9'*32
             native=db.advanced_xopilot.PyDatabase(str(database),key=key)
             chat=native.create_chat('На телефоне'); native.add_message(chat,'user','Private phone message')
-            del native
+            native.close(); del native
             self.assertNotIn(b'Private phone message',database.read_bytes())
             with self.assertRaises(RuntimeError): db.advanced_xopilot.PyDatabase(str(database),key='b8'*32)
             native=db.advanced_xopilot.PyDatabase(str(database),key=key)
             self.assertEqual(native.get_messages(chat)[0].content,'Private phone message')
-            del native
+            native.close(); del native
             with self.assertRaises(RuntimeError): db.advanced_xopilot.PyDatabase(str(database),key='invalid')
 
     def test_android_does_not_open_database_before_keystore_ready(self):

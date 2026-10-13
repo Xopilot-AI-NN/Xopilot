@@ -1,35 +1,7 @@
-"""
-Файл: /App/app/menu.py
-Разработчик: DenBroLiik, Claude
-Версия: 2.0.0
-Описание: __Меню__
-        Узкая панель слева от чата:
-            сверху  — меню, новый чат, рабочие пространства, чаты
-            снизу    — настройки
+"""Navigation rail and a fixed-width sliding drawer.
 
-        build_menu_overlay — та же раскладка (группа сверху +
-        настройки снизу, SPACE_BETWEEN), что и в компактном рейле,
-        только шире и с подписями. При открытии: компактный рейл
-        плавно гаснет (opacity), а поверх него на его же месте
-        растёт (animate по width) панель того же стиля — визуально
-        полное меню "вырастает" из маленького. При закрытии —
-        симметрично в обратную сторону.
-
-        Подписи пунктов сидят в обёртке с собственной анимируемой
-        width (0 -> LABEL_WIDTH). Важно: длительность этой анимации
-        (PANEL_ANIMATION_MS) СОВПАДАЕТ с длительностью анимации
-        ширины самой панели — если бы они были разными, подпись
-        "обгоняла" бы рост панели и Flutter кидал бы overflow-warning
-        (та самая красная рамка на кнопке "Новый чат"). При одной
-        длительности и кривой доступное место в панели всегда растёт
-        быстрее, чем ширина подписи — переполнения не будет.
-
-        Кнопки рейла — динамические: при изменении ширины рейла
-        (size_change_interval/on_size_change) считается ratio (0..1)
-        между RAIL_WIDTH_MIN и RAIL_WIDTH_MAX — это единственное, что
-        принадлежит самому рейлу-контейнеру. Пересчёт размера
-        кнопки/иконки по этому ratio делает уже сама кнопка
-        (resize_*_button в buttons/*.py).
+Only the drawer/rail update while opening. Translation is animated by Flutter,
+without resizing every label or relaying animation frames through Python.
 """
 
 import asyncio
@@ -46,6 +18,8 @@ from .buttons.new_chat import build_new_chat_button, resize_new_chat_button
 from .buttons.settings import build_settings_button, resize_settings_button
 from .buttons.workspaces import build_workspaces_button, resize_workspaces_button
 from .buttons.chats import build_chats_button, resize_chats_button
+from .buttons.brand import brand_gradient
+from .button_colors import action_role
 try:
     from ..services.platforms import is_android
 except ImportError:
@@ -95,7 +69,7 @@ def build_menu(
     materials_btn=brand_button(ft.Icons.LIBRARY_BOOKS_OUTLINED,'Материалы',on_materials_click,size=50)
 
     for button in (menu_btn, new_chat_btn, workspaces_btn, chats_btn, settings_btn, account_btn):
-        button.gradient = BRAND_GRADIENT
+        button.gradient = brand_gradient(action_role(button.content.icon, button.tooltip))
         button.border = ft.Border.all(2, outline_color())
 
     def handle_resize(e):
@@ -111,7 +85,7 @@ def build_menu(
     return ft.Container(
         width=RAIL_WIDTH_DEFAULT,
         bgcolor=color("#e6ffffff"),
-        blur=None if is_android() else 14,
+        blur=None,
         border_radius=8,
         border=ft.Border.all(2, outline_color()),
         padding=ft.Padding.symmetric(horizontal=0, vertical=8),
@@ -148,16 +122,12 @@ def _overlay_item(
         color=color("#000000"),
         size=14,
         no_wrap=True,
-        opacity=0,
-        animate_opacity=PANEL_ANIMATION_MS,
+        opacity=1,
     )
 
     label_wrapper = ft.Container(
-        width=0,
+        width=LABEL_WIDTH,
         clip_behavior=ft.ClipBehavior.HARD_EDGE,
-        animate=ft.Animation(
-            duration=PANEL_ANIMATION_MS, curve=ft.AnimationCurve.EASE_OUT
-        ),
         content=label_text,
     )
 
@@ -177,7 +147,7 @@ def _overlay_item(
                     width=36,
                     height=36,
                     border_radius=18,
-                    gradient=BRAND_GRADIENT,
+                    gradient=brand_gradient(action_role(icon, label)),
                     alignment=ft.Alignment.CENTER,
                     content=ft.Icon(icon, color=ft.Colors.WHITE, size=19),
                 ),
@@ -251,6 +221,8 @@ def build_menu_overlay(
     recent_chats = ft.ListView(expand=True, spacing=6, build_controls_on_demand=True)
     chat_feedback = ft.Text('', size=12, color=color('#47747a'))
     chat_snapshot = []
+    rendered_snapshot = None
+    transition_lock = asyncio.Lock()
 
     async def select_recent(chat_id):
         if is_open:
@@ -259,8 +231,13 @@ def build_menu_overlay(
             on_select_chat(chat_id)
 
     def render_recent(e=None):
+        nonlocal rendered_snapshot
         query = (chat_search.value or '').strip().casefold()
         active = get_active_chat_id() if get_active_chat_id else None
+        signature = (tuple(chat_snapshot), query, active, chat_feedback.value if chat_feedback.value.startswith('Не удалось') else '')
+        if rendered_snapshot == signature:
+            return
+        rendered_snapshot = signature
         def row(item):
             cid, title, subtitle, _ = item
             async def click(_):
@@ -294,33 +271,32 @@ def build_menu_overlay(
         from .palette import apply_palette
         apply_palette(recent_chats)
         if e:
-            page.update()
+            page.update(history_panel)
 
     chat_search.on_change = render_recent
-    history_panel = ft.Column(expand=True, spacing=10, visible=False,
+    history_panel = ft.Column(expand=True, spacing=10, visible=True,
         horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
         controls=[ft.Text('Ваши чаты', size=12, weight=ft.FontWeight.W_600, color=color('#087f8c')),
                   chat_search, chat_feedback, recent_chats])
 
     panel = ft.Container(
-        width=RAIL_WIDTH_DEFAULT,
+        width=PANEL_WIDTH,
         top=0,
         bottom=0,
         left=0,
         bgcolor=color("#EAFBFA"),
-        blur=None if is_android() else 14,
+        blur=None,
         border_radius=ft.BorderRadius.only(
             top_right=20, bottom_right=20
         ),
         border=ft.Border.all(2, color("#7DEED5")),
         padding=ft.Padding.symmetric(horizontal=10, vertical=12),
         clip_behavior=ft.ClipBehavior.HARD_EDGE,
-        animate=None if is_android() else ft.Animation(
-            duration=PANEL_ANIMATION_MS, curve=ft.AnimationCurve.EASE_OUT_BACK
-        ),
+        offset=ft.Offset(-1, 0),
+        animate_offset=ft.Animation(duration=PANEL_ANIMATION_MS, curve=ft.AnimationCurve.EASE_OUT_CUBIC),
         shadow=ft.BoxShadow(
-            blur_radius=24,
-            spread_radius=2,
+            blur_radius=8,
+            spread_radius=0,
             color=color("#4400A896"),
         ),
         content=ft.Column(
@@ -343,47 +319,48 @@ def build_menu_overlay(
         ),
     )
 
+    def set_recent(items, error=''):
+        chat_snapshot[:] = items
+        chat_feedback.value = error
+        render_recent()
+
     def refresh_recent():
         if not is_open:
             return
         try:
-            chat_snapshot[:] = get_chat_items() if get_chat_items else []
-            chat_feedback.value = ''
+            set_recent(get_chat_items() if get_chat_items else [])
         except Exception as exc:
-            chat_snapshot.clear()
-            chat_feedback.value = f'Не удалось прочитать чаты: {exc}'
-        render_recent()
-        page.update()
+            set_recent([], f'Не удалось прочитать чаты: {exc}')
+        page.update(history_panel)
 
     async def toggle():
         nonlocal is_open
-        is_open = not is_open
-
-        if is_open:
-            refresh_recent()
-            overlay_stack.visible = True
-            rail.opacity = 0
-            page.update()
-            await asyncio.sleep(0.02)
-            panel.width = min(PANEL_WIDTH, max(220, (page.width or PANEL_WIDTH + 32) - 32))
-            for wrapper in wrappers:
-                wrapper.width = min(LABEL_WIDTH, panel.width - 90)
-            for text in texts:
-                text.opacity = 1          # <- теперь тип точно ft.Text
-            history_panel.visible = True
-            page.update()
-        else:
-            history_panel.visible = False
-            panel.width = RAIL_WIDTH_DEFAULT
-            for wrapper in wrappers:
-                wrapper.width = 0
-            for text in texts:
-                text.opacity = 0          # <- и здесь тоже
-            page.update()
-            await asyncio.sleep(PANEL_ANIMATION_MS / 1000)
-            overlay_stack.visible = False
-            rail.opacity = 1
-            page.update()
+        async with transition_lock:
+            is_open = not is_open
+            if is_open:
+                # Read encrypted summaries off the UI loop before animating.
+                try:
+                    items = await asyncio.to_thread(get_chat_items) if get_chat_items else []
+                    set_recent(items)
+                except Exception as exc:
+                    set_recent([], f'Не удалось прочитать чаты: {exc}')
+                panel.width = min(PANEL_WIDTH, max(220, (page.width or PANEL_WIDTH + 32) - 32))
+                for wrapper in wrappers:
+                    wrapper.width = min(LABEL_WIDTH, panel.width - 90)
+                overlay_stack.visible = True
+                rail.opacity = 0
+                panel.offset = ft.Offset(-1, 0)
+                page.update(overlay_stack, rail)
+                await asyncio.sleep(0.016)
+                panel.offset = ft.Offset(0, 0)
+                page.update(panel)
+            else:
+                panel.offset = ft.Offset(-1, 0)
+                page.update(panel)
+                await asyncio.sleep(PANEL_ANIMATION_MS / 1000)
+                overlay_stack.visible = False
+                rail.opacity = 1
+                page.update(overlay_stack, rail)
 
     async def handle_scrim_click(_):
         await toggle()
@@ -441,7 +418,7 @@ def build_menu_overlay(
     scrim = ft.Container(
         expand=True,
         bgcolor=color("#40000000"),
-        blur=None if is_android() else 5,
+        blur=None,
         on_click=handle_scrim_click,
     )
 

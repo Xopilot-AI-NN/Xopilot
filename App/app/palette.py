@@ -110,6 +110,18 @@ def apply_palette(root):
             for value in obj:
                 visit(value)
         elif is_dataclass(obj):
+            if isinstance(obj, (ft.FilledButton, ft.Button, ft.OutlinedButton, ft.TextButton)):
+                from .button_colors import action_role, COLOURS
+                label = obj.content if isinstance(obj.content, str) else getattr(obj.content, 'value', '')
+                tone = COLOURS[action_role(obj.icon, label)][0]
+                style = obj.style or ft.ButtonStyle()
+                changes = {'shape': ft.RoundedRectangleBorder(radius=14)}
+                if isinstance(obj, (ft.FilledButton, ft.Button)):
+                    changes.update(bgcolor={ft.ControlState.DEFAULT: tone, ft.ControlState.DISABLED: color('#dff8f3')},
+                                   color={ft.ControlState.DEFAULT: ft.Colors.WHITE, ft.ControlState.DISABLED: color('#47747a')})
+                else:
+                    changes['color'] = tone if not THEMES[_mode][1] else color('#087f8c')
+                obj.style = replace(style, **changes)
             if isinstance(obj, ft.TextField) and not obj.__dict__.get('_xopilot_borderless'):
                 modern_input(obj)
             elif isinstance(obj, ft.Markdown):

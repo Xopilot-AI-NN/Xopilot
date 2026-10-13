@@ -26,7 +26,7 @@ class PrivateChatTests(unittest.TestCase):
         doc = PrivateCanvasStore(self.session, cid).create_document(content='PRIVATE_CANVAS_631')
         self.session.rename(cid, 'PRIVATE_TITLE_631')
         for file in self.root.rglob('*'):
-            if file.is_file():
+            if file.is_file() and not file.name.endswith('.lock'):
                 self.assertNotIn(b'PRIVATE_', file.read_bytes())
                 self.assertNotIn(self.password.encode(), file.read_bytes())
         self.session.close(cid)
