@@ -66,9 +66,14 @@ class ContextTests(unittest.TestCase):
             rgb = [int(hex_colour[i:i+2],16)/255 for i in (1,3,5)]
             linear = [v/12.92 if v<=.04045 else ((v+.055)/1.055)**2.4 for v in rgb]
             return sum(v*w for v,w in zip(linear,(.2126,.7152,.0722)))
-        for button in (create,browse,ai,remove):
-            for tone in button.gradient.colors:
-                self.assertGreaterEqual(1.05/(luminance(tone)+.05), 4.5)
+        for theme in ('light', 'dark', 'midnight', 'ocean', 'forest', 'lavender', 'sunset'):
+            palette.set_theme(Mock(controls=[create,browse,ai,remove], overlay=[]), theme)
+            for button in (create,browse,ai,remove):
+                for tone in button.gradient.colors:
+                    pair = sorted((luminance(button.content.color), luminance(tone)))
+                    self.assertGreaterEqual((pair[1]+.05)/(pair[0]+.05), 4.5)
+                self.assertEqual(button.border.top.width, 1)
+        palette.set_theme(Mock(controls=[create,browse,ai,remove], overlay=[]), 'light')
         filled = palette.apply_palette(ft.FilledButton(content='Удалить'))
         self.assertEqual(filled.style.bgcolor[ft.ControlState.DEFAULT], remove.gradient.colors[0])
 

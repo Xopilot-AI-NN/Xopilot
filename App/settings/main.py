@@ -10,9 +10,11 @@
 import flet as ft
 try:
     from ..app.palette import color, apply_palette
+    from ..app.buttons.brand import style_brand_button
     from ..services.platforms import compact_layout
 except ImportError:
     from app.palette import color, apply_palette
+    from app.buttons.brand import style_brand_button
     from services.platforms import compact_layout
 
 from .abaut.main import build_about_page
@@ -29,13 +31,6 @@ try:
     from ..services import navigation, platforms
 except ImportError:
     from services import navigation, platforms
-
-
-BRAND_GRADIENT = ft.LinearGradient(
-    begin=ft.Alignment.TOP_LEFT,
-    end=ft.Alignment.BOTTOM_RIGHT,
-    colors=[color("#00c753"), color("#0083e8")],
-)
 
 
 def build_settings_dialog(
@@ -161,7 +156,7 @@ def build_settings_dialog(
         page.update()
 
     home_page = ft.Column(
-        spacing=2,
+        spacing=8,
         controls=[
             section_title("Параметры приложения"),
             *[
@@ -205,10 +200,9 @@ def build_settings_dialog(
         controls=[
             ft.Container(
                 padding=ft.Padding.symmetric(horizontal=18, vertical=13),
-                gradient=BRAND_GRADIENT,
                 border_radius=ft.BorderRadius.only(top_left=16, top_right=16),
                 content=ft.Column(
-                    spacing=8,
+                    spacing=6,
                     controls=[
                         ft.Row(
                             spacing=8,
@@ -218,14 +212,15 @@ def build_settings_dialog(
                                     expand=True,
                                     spacing=1,
                                     controls=[
-                                        ft.Text("Xopilot", size=22, color=ft.Colors.WHITE, weight=ft.FontWeight.BOLD),
+                                        ft.Text("Xopilot", size=14, weight=ft.FontWeight.W_500),
                                         page_title,
                                     ],
                                 ),
+                                ft.IconButton(icon=ft.Icons.CLOSE,
+                                    tooltip="Закрыть настройки", on_click=close),
                             ],
                         ),
-                        ft.Row(controls=[status, ft.IconButton(icon=ft.Icons.CLOSE, icon_color=ft.Colors.WHITE,
-                                  tooltip="Закрыть настройки", on_click=close)]),
+                        ft.Row(controls=[status]),
                     ],
                 ),
             ),
@@ -236,9 +231,7 @@ def build_settings_dialog(
             ),
         ],
     )
-    # The brand header has fixed white text and a fixed gradient in every theme.
-    # Keep its mounted layout out of recursive value-style replacement.
-    content.controls[0].__dict__['_xopilot_fixed_colors'] = True
+    style_brand_button(content.controls[0], 'create')
 
     dialog = ft.AlertDialog(
         modal=False,

@@ -11,8 +11,12 @@ import asyncio
 import flet as ft
 try:
     from ...app.palette import color
+    from ...app.buttons.brand import style_brand_button
+    from ...app.button_colors import action_role
 except ImportError:
     from app.palette import color
+    from app.buttons.brand import style_brand_button
+    from app.button_colors import action_role
 
 from ..common import section_title, setting_row
 from .buttons.language import build_language_select
@@ -143,14 +147,14 @@ def _preference_card(icon, title: str, description: str, control, feedback: ft.T
                 ft.Row(
                     spacing=10,
                     controls=[
-                        ft.Container(
+                        style_brand_button(ft.Container(
                             width=36,
                             height=36,
                             border_radius=18,
                             bgcolor=color("#c9f1e9"),
                             alignment=ft.Alignment.CENTER,
                             content=ft.Icon(icon, size=19, color=color("#087f8c")),
-                        ),
+                        ), action_role(icon, title)),
                         ft.Column(
                             expand=True,
                             spacing=2,

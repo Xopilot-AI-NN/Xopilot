@@ -8,10 +8,12 @@ try:
     from ...services import cloud_account
     from ...app.palette import color, modern_input
     from ...app.buttons.actions import action_button
+    from ...app.buttons.brand import style_brand_button
 except ImportError:
     from services import cloud_account
     from app.palette import color, modern_input
     from app.buttons.actions import action_button
+    from app.buttons.brand import style_brand_button
 
 
 def build_cloud_card(page):
@@ -44,9 +46,8 @@ def build_cloud_card(page):
         def tile(icon,title,subtitle,callback,disabled=False):
             return ft.Container(padding=12,border_radius=16,bgcolor=color('#dff8f3'),
                 border=ft.Border.all(1,color('#b9eee4')),ink=not disabled,on_click=callback if not disabled else None,
-                content=ft.Row(spacing=12,controls=[ft.Container(width=40,height=40,border_radius=20,
-                    border=ft.Border.all(2,color('#ffffff')),gradient=ft.LinearGradient(colors=['#00d6a3','#08a9d9','#7657ff']),
-                    alignment=ft.Alignment.CENTER,content=ft.Icon(icon,color=ft.Colors.WHITE,size=21)),
+                content=ft.Row(spacing=12,controls=[style_brand_button(ft.Container(width=40,height=40,border_radius=20,
+                    alignment=ft.Alignment.CENTER,content=ft.Icon(icon,size=21)), 'navigate'),
                     ft.Column(expand=True,spacing=3,controls=[ft.Text(title,weight=ft.FontWeight.BOLD,color=color('#123b43')),
                         ft.Text(subtitle,size=11,color=color('#47747a'))]),ft.Icon(ft.Icons.CHEVRON_RIGHT,color=color('#087f8c'))]))
         controls += [tile(ft.Icons.SYNC,'Синхронизация','Данные, профиль и лимит трафика' if account else 'Войдите, чтобы включить синхронизацию',lambda _:open_sync(page),not bool(account)),

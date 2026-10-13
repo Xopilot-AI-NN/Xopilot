@@ -20,8 +20,18 @@ DARK = {
 }
 _mode = 'light'
 
+def is_dark_theme():
+    return THEMES[_mode][1]
+
+
 def outline_color():
     return color('#fefefe')
+
+
+def menu_tones():
+    """Raised neutral surfaces let the pastel selection stand out."""
+    return (('#253344', '#e5edf8', '#506477') if is_dark_theme() else
+            ('#f7faff', '#203950', '#c5d6e8'))
 
 THEMES = {
     'light': ('Аква · светлая', False, {}),
@@ -99,6 +109,11 @@ def apply_palette(root):
         return result
 
     def visit(obj):
+        role = getattr(obj, '__dict__', {}).get('_xopilot_button_role')
+        if role:
+            from .buttons.brand import style_brand_button
+            style_brand_button(obj, role)
+            return
         if getattr(obj, '__dict__', {}).get('_xopilot_fixed_colors'):
             if getattr(obj, 'border', None):
                 obj.border = style_value(obj.border)
@@ -111,16 +126,19 @@ def apply_palette(root):
                 visit(value)
         elif is_dataclass(obj):
             if isinstance(obj, (ft.FilledButton, ft.Button, ft.OutlinedButton, ft.TextButton)):
-                from .button_colors import action_role, COLOURS
+                from .button_colors import action_role, button_tones
                 label = obj.content if isinstance(obj.content, str) else getattr(obj.content, 'value', '')
-                tone = COLOURS[action_role(obj.icon, label)][0]
+                tones, ink, outline = button_tones(action_role(obj.icon, label), is_dark_theme())
                 style = obj.style or ft.ButtonStyle()
-                changes = {'shape': ft.RoundedRectangleBorder(radius=14)}
+                changes = {'shape': ft.RoundedRectangleBorder(radius=20), 'elevation': 0,
+                           'overlay_color': ft.Colors.with_opacity(.10, ink)}
                 if isinstance(obj, (ft.FilledButton, ft.Button)):
-                    changes.update(bgcolor={ft.ControlState.DEFAULT: tone, ft.ControlState.DISABLED: color('#dff8f3')},
-                                   color={ft.ControlState.DEFAULT: ft.Colors.WHITE, ft.ControlState.DISABLED: color('#47747a')})
+                    changes.update(bgcolor={ft.ControlState.DEFAULT: tones[0], ft.ControlState.HOVERED: tones[1], ft.ControlState.DISABLED: color('#dff8f3')},
+                                   color={ft.ControlState.DEFAULT: ink, ft.ControlState.DISABLED: color('#47747a')})
                 else:
-                    changes['color'] = tone if not THEMES[_mode][1] else color('#087f8c')
+                    changes['color'] = ink
+                    if isinstance(obj, ft.OutlinedButton):
+                        changes['side'] = ft.BorderSide(1, outline)
                 obj.style = replace(style, **changes)
             if isinstance(obj, ft.TextField) and not obj.__dict__.get('_xopilot_borderless'):
                 modern_input(obj)
@@ -129,22 +147,47 @@ def apply_palette(root):
                 # background with dark-theme foreground makes code unreadable.
                 obj.code_theme = ft.MarkdownCodeTheme.ATOM_ONE_DARK if THEMES[_mode][1] else ft.MarkdownCodeTheme.GITHUB
             elif isinstance(obj, ft.Dropdown):
+                from .button_colors import button_tones
+                surface, text, edge = menu_tones()
+                tones, ink, focus = button_tones('ai', is_dark_theme())
                 obj.border = {state: ft.OutlineInputBorder(border_radius=16,
                     side=ft.BorderSide(width=2 if state == ft.ControlState.FOCUSED else 1,
-                        color=color('#087f8c' if state == ft.ControlState.FOCUSED else '#a8ddd7')))
+                        color=focus if state == ft.ControlState.FOCUSED else edge))
                     for state in (ft.ControlState.DEFAULT, ft.ControlState.FOCUSED, ft.ControlState.DISABLED)}
-                obj.bgcolor = color('#f3fffc')
-                obj.color = color('#123b43')
+                obj.bgcolor = obj.fill_color = surface
+                obj.filled = True
+                obj.color = text
+                obj.text_style = ft.TextStyle(color=text, size=obj.text_size or 13)
+                obj.label_style = ft.TextStyle(color=text)
+                obj.trailing_icon = ft.Icons.KEYBOARD_ARROW_DOWN_ROUNDED
+                obj.selected_trailing_icon = ft.Icons.KEYBOARD_ARROW_UP_ROUNDED
                 obj.content_padding = ft.Padding.symmetric(horizontal=16, vertical=14)
-                obj.menu_style = ft.MenuStyle(bgcolor=color('#f3fffc'), padding=8,
-                    side=ft.BorderSide(1, color('#a8ddd7')),
-                    shape=ft.RoundedRectangleBorder(radius=16), elevation=8)
+                obj.menu_style = ft.MenuStyle(bgcolor=surface, padding=8,
+                    side=ft.BorderSide(1, edge), shadow_color='#30000000',
+                    shape=ft.RoundedRectangleBorder(radius=20), elevation=6)
                 for option in obj.options:
-                    option.style = ft.ButtonStyle(color=color('#123b43'),
-                        bgcolor={ft.ControlState.HOVERED: color('#ddf8f2'),
-                                 ft.ControlState.FOCUSED: color('#ddf8f2')},
+                    option.style = ft.ButtonStyle(color={ft.ControlState.DEFAULT: text,
+                        ft.ControlState.HOVERED: ink, ft.ControlState.FOCUSED: ink,
+                        ft.ControlState.SELECTED: ink, ft.ControlState.DISABLED: color('#47747a')},
+                        bgcolor={ft.ControlState.HOVERED: tones[1],
+                                 ft.ControlState.FOCUSED: tones[1], ft.ControlState.SELECTED: tones[0]},
                         shape=ft.RoundedRectangleBorder(radius=12),
                         padding=ft.Padding.symmetric(horizontal=14, vertical=10))
+            elif isinstance(obj, ft.PopupMenuButton):
+                surface, text, edge = menu_tones()
+                obj.bgcolor = surface
+                obj.shape = ft.RoundedRectangleBorder(radius=20, side=ft.BorderSide(1, edge))
+                obj.menu_padding = ft.Padding.all(6)
+                obj.elevation = 6
+                obj.shadow_color = '#30000000'
+                obj.popup_animation_style = ft.AnimationStyle(duration=160, reverse_duration=120)
+                for item in obj.items:
+                    if isinstance(item, ft.PopupMenuItem):
+                        item.padding = ft.Padding.symmetric(horizontal=14, vertical=10)
+                        item.label_text_style = ft.TextStyle(color=text, size=14)
+                        if isinstance(item.content, ft.Text):
+                            from .button_colors import action_role
+                            item.content.color = (color('#c94b4b') if action_role(item.icon, item.content.value) == 'danger' else text)
             originals = obj.__dict__.setdefault('_xopilot_palette', {})
             for field in fields(obj):
                 if field.name.startswith('_') or field.name in {'data', 'page'}:

@@ -1,8 +1,8 @@
 """Explicit model catalog for the composer, including installation and API setup."""
 import inspect
 import flet as ft
-from .brand import brand_gradient
-from ..palette import color, outline_color
+from .brand import style_brand_button
+from ..palette import color
 from ..api_settings import open_api_settings
 from ..model_download import ModelDownloadPanel
 try:
@@ -24,11 +24,11 @@ def build_model_button(on_select=None, *, get_agent_level=None, on_agent_level=N
     label = ft.Text('Модель', size=12, color=ft.Colors.WHITE, max_lines=1,
                     overflow=ft.TextOverflow.ELLIPSIS, expand=True)
     trigger = ft.Container(width=154, height=48 if is_android() else 40, border_radius=24 if is_android() else 20, ink=True,
-        gradient=brand_gradient('ai'), border=ft.Border.all(2, outline_color()), padding=8,
+        padding=8,
         tooltip='Выбор модели', content=ft.Row(spacing=5, controls=[
             ft.Icon(ft.Icons.SMART_TOY_OUTLINED, color=ft.Colors.WHITE, size=18), label,
             ft.Icon(ft.Icons.EXPAND_MORE, color=ft.Colors.WHITE, size=16)]))
-    trigger._xopilot_fixed_colors = True
+    style_brand_button(trigger, 'ai')
     compact = False
     narrow = False
     last_private = False

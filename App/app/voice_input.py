@@ -64,9 +64,8 @@ class VoiceInput:
             color=ft.Colors.WHITE,
             size=20,
         )
-        self.button.bgcolor = color("#d9364f") if recording else None
-        from .buttons.brand import brand_gradient
-        self.button.gradient = None if recording else brand_gradient()
+        from .buttons.brand import style_brand_button
+        style_brand_button(self.button, 'danger' if recording else 'ai')
         self.button.tooltip = "Остановить и распознать речь" if recording else "Диктовка"
         self.button.disabled = self.busy and not recording
         self.status_text.value = message

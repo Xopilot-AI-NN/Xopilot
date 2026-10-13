@@ -275,6 +275,6 @@ class ApiTransportTests(unittest.TestCase):
 
     def test_dropdown_uses_input_surface_and_rounded_menu(self):
         obj = palette.apply_palette(ft.Dropdown(options=[ft.DropdownOption(key='a', text='A')]))
-        self.assertEqual(obj.menu_style.shape.radius, 16)
+        self.assertEqual(obj.menu_style.shape.radius, 20)
         self.assertEqual(obj.menu_style.bgcolor, obj.bgcolor)
         self.assertEqual(obj.options[0].style.shape.radius, 12)
