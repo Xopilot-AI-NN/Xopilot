@@ -75,7 +75,7 @@ jobs:
         run: python scripts/build_native.py
 
       - name: Check native storage key transitions
-        run: cargo test --manifest-path Services/Cargo.toml --lib
+        run: cargo test --manifest-path Services/Cargo.toml --lib --release --locked
 
       - name: Run tests
         run: python -m unittest discover -s tests -q

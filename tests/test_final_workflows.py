@@ -14,8 +14,7 @@ from App.app.live_conversation import LiveConversation
 
 class EmptyChatTests(unittest.TestCase):
     def test_real_database_drafts_messages_canvas_and_deleted_chat(self):
-        with tempfile.TemporaryDirectory() as folder:
-            db=advanced_xopilot.PyDatabase(str(Path(folder)/'test.db'))
+        with tempfile.TemporaryDirectory() as folder, advanced_xopilot.PyDatabase(str(Path(folder)/'test.db')) as db:
             with patch.object(chat_store,'get_db',return_value=db):
                 cid=db.create_chat('Новый чат')
                 self.assertTrue(chat_store.chat_is_unused(cid))
@@ -131,8 +130,7 @@ class HistoryTests(unittest.TestCase):
 
 
     def test_history_delete_persists_only_selected_chat_and_keeps_other_messages(self):
-        with tempfile.TemporaryDirectory() as folder:
-            db=advanced_xopilot.PyDatabase(str(Path(folder)/'test.db'))
+        with tempfile.TemporaryDirectory() as folder, advanced_xopilot.PyDatabase(str(Path(folder)/'test.db')) as db:
             first=db.create_chat('First');second=db.create_chat('Second')
             db.add_message(first,'user','Remove this')
             db.add_message(second,'user','Keep this')

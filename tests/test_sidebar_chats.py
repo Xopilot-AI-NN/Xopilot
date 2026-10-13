@@ -55,3 +55,21 @@ class SidebarTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('Не удалось', history.controls[2].value)
         self.assertTrue(history.controls[2].visible)
         self.assertLessEqual(overlay.controls[1].width, 348)
+
+    async def test_drawer_updates_only_its_controls_and_reuses_unchanged_rows(self):
+        page = Mock(width=393)
+        overlay, toggle = build_menu_overlay(ft.Container(), page,
+            get_chat_items=lambda: [(1, 'Чат', 'Сообщений: 2', False)])
+        await toggle()
+        panel = overlay.controls[1]
+        rows = panel.content.controls[1].controls[-1]
+        original_row = rows.controls[0]
+        self.assertIsNone(panel.animate)
+        self.assertIsNotNone(panel.animate_offset)
+        self.assertIsNone(panel.blur)
+        self.assertTrue(all(call.args for call in page.update.call_args_list))
+        await toggle()
+        await toggle()
+        self.assertIs(rows.controls[0], original_row)
+        self.assertEqual(panel.offset.x, 0)
+        self.assertEqual(panel.width, 280)

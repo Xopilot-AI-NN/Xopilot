@@ -21,6 +21,8 @@ class NativeDatabaseTests(unittest.TestCase):
         self.addCleanup(self.close)
 
     def close(self):
+        if self.db is not None:
+            self.db.close()
         self.db = None
 
     def test_reopen_keeps_settings_messages_and_attachments(self):
@@ -118,3 +120,16 @@ class NativeDatabaseTests(unittest.TestCase):
         self.assertFalse(self.db.apply_sync_settings([('workspace_qa','original')],[('workspace_qa','remote'),('receipt_qa','done')]))
         self.assertEqual(self.db.get_setting('workspace_qa'),'edited locally')
         self.assertIsNone(self.db.get_setting('receipt_qa'))
+
+    def test_explicit_close_releases_file_despite_retained_callbacks(self):
+        alias = self.db
+        self.db.close()
+        self.db.close()
+        with self.assertRaisesRegex(RuntimeError, 'закрыта'):
+            alias.get_setting('missing')
+        moved = self.path.with_suffix('.moved')
+        self.path.rename(moved)
+        with advanced_xopilot.PyDatabase(str(moved)) as reopened:
+            self.assertEqual(reopened.list_chats(), [])
+        with self.assertRaisesRegex(RuntimeError, 'закрыта'):
+            reopened.list_chats()

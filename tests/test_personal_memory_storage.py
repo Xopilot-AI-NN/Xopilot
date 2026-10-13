@@ -26,7 +26,7 @@ class PersonalMemoryTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name);self.path = self.root/'test.db'
         self.db = advanced_xopilot.PyDatabase(str(self.path))
-        self.addCleanup(lambda: setattr(self, 'db', None))
+        self.addCleanup(lambda: self.db.close() if self.db is not None else None)
         for module in (profile, memory, preview, storage):
             patcher = patch.object(module, 'get_db', side_effect=lambda: self.db)
             patcher.start();self.addCleanup(patcher.stop)
@@ -37,7 +37,7 @@ class PersonalMemoryTests(unittest.TestCase):
     def test_saved_edited_deleted_notes_survive_reopen_without_plaintext_database(self):
         identifier = memory.save('Я предпочитаю короткие ответы о Python QA_MEMORY_715')
         profile.update(name='Денис')
-        self.db = None;self.db = advanced_xopilot.PyDatabase(str(self.path))
+        self.db.close();self.db = advanced_xopilot.PyDatabase(str(self.path))
         self.assertIn('QA_MEMORY_715', memory.context('Python'))
         self.assertEqual(profile.read()['name'], 'Денис')
         memory.save('Я изучаю Rust QA_MEMORY_716', identifier)
@@ -62,7 +62,7 @@ class PersonalMemoryTests(unittest.TestCase):
         self.assertEqual(memory.capture('Меня зовут Денис.',generator),['Имя пользователя: Денис'])
         self.assertEqual(memory.capture('Как меня зовут?',generator),[])
         self.assertEqual(memory.capture('My name is Alex.',generator),['Имя пользователя: Alex'])
-        self.db=None;self.db=advanced_xopilot.PyDatabase(str(self.path))
+        self.db.close();self.db=advanced_xopilot.PyDatabase(str(self.path))
         self.assertEqual([item['text'] for item in memory.read()['items']],['Имя пользователя: Alex'])
         self.assertNotIn(b'Alex',self.path.read_bytes())
         generator.assert_not_called()
