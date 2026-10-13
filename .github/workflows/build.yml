@@ -71,6 +71,21 @@ jobs:
           & "$perlDir\perl.exe" -v
           Get-Command cl, nmake
 
+      - name: Check transport and platform paths before compiling
+        shell: bash
+        run: |
+          python - <<'PY'
+          import sys, unittest
+          sys.path.insert(0, "tests")
+          names = [
+              "test_acceleration_runtime.RuntimeTests.test_cli_temp_and_working_directory_move_out_of_watched_sources",
+              "test_catalog_api_titles.ApiTransportTests.test_cancel_interrupts_waiting_http_body",
+              "test_catalog_api_titles.ApiTransportTests.test_cancel_interrupts_waiting_tls_body",
+          ]
+          result = unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.loadTestsFromNames(names))
+          sys.exit(0 if result.wasSuccessful() else 1)
+          PY
+
       - name: Build native database
         run: python scripts/build_native.py
 

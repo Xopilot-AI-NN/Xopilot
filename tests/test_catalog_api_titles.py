@@ -218,6 +218,61 @@ class ApiTransportTests(unittest.TestCase):
             with self.assertRaises(CancelledError):
                 api_chat.generate_reply('Вопрос', cancelled=cancelled)
 
+    def test_cancel_interrupts_waiting_tls_body(self):
+        import datetime
+        import ipaddress
+        import ssl
+        import tempfile
+        from pathlib import Path
+        from cryptography import x509
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import ec
+        ready, release, cancelled = threading.Event(), threading.Event(), threading.Event()
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                self.rfile.read(int(self.headers['Content-Length']))
+                self.send_response(200); self.send_header('Content-Length', '100'); self.end_headers()
+                ready.set(); release.wait(5)
+            def log_message(self, *_): pass
+        with tempfile.TemporaryDirectory() as folder:
+            private = ec.generate_private_key(ec.SECP256R1())
+            name = x509.Name([x509.NameAttribute(x509.NameOID.COMMON_NAME, 'localhost')])
+            now = datetime.datetime.now(datetime.UTC)
+            certificate = (x509.CertificateBuilder().subject_name(name).issuer_name(name)
+                .public_key(private.public_key()).serial_number(x509.random_serial_number())
+                .not_valid_before(now-datetime.timedelta(minutes=1)).not_valid_after(now+datetime.timedelta(days=1))
+                .add_extension(x509.SubjectAlternativeName([x509.IPAddress(ipaddress.ip_address('127.0.0.1'))]), False)
+                .sign(private, hashes.SHA256()))
+            cert_path, key_path = Path(folder)/'cert.pem', Path(folder)/'key.pem'
+            cert_path.write_bytes(certificate.public_bytes(serialization.Encoding.PEM))
+            key_path.write_bytes(private.private_bytes(serialization.Encoding.PEM,
+                serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
+            server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+            server_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            server_context.load_cert_chain(cert_path, key_path)
+            server.socket = server_context.wrap_socket(server.socket, server_side=True)
+            serving = threading.Thread(target=server.serve_forever, daemon=True); serving.start()
+            context = ssl.create_default_context(cafile=str(cert_path))
+            original = api_chat.http.client.HTTPSConnection.__init__
+            def initialize(instance, *args, **kwargs):
+                original(instance, *args, **kwargs, context=context)
+            outcomes = []
+            def request():
+                try: api_chat.generate_reply('TLS test', cancelled=cancelled)
+                except BaseException as exc: outcomes.append(exc)
+            config = {'url': f'https://127.0.0.1:{server.server_port}/v1', 'model': 'test'}
+            try:
+                with patch.object(api_chat, 'configuration', return_value=config), \
+                        patch.object(api_chat.http.client.HTTPSConnection, '__init__', new=initialize):
+                    worker = threading.Thread(target=request, daemon=True); worker.start()
+                    self.assertTrue(ready.wait(2), repr(outcomes))
+                    cancelled.set(); worker.join(2)
+                    self.assertFalse(worker.is_alive(), 'Cancellation must interrupt TLS body reads')
+                    self.assertIsInstance(outcomes[0], CancelledError)
+            finally:
+                release.set(); server.shutdown(); server.server_close(); serving.join()
+                if 'worker' in locals(): worker.join(2)
+
     def test_dropdown_uses_input_surface_and_rounded_menu(self):
         obj = palette.apply_palette(ft.Dropdown(options=[ft.DropdownOption(key='a', text='A')]))
         self.assertEqual(obj.menu_style.shape.radius, 16)
