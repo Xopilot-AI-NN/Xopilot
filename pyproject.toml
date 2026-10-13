@@ -8,7 +8,7 @@ dependencies = [
     "screeninfo==0.8.1; platform_system != 'Android'",
     "litert-lm-api>=0.17.0; platform_system != 'Android'",
     "sounddevice==0.5.6; platform_system != 'Android'",
-    "webrtcvad-wheels==2.0.14; platform_system != 'Android'",
+    "webrtcvad-wheels==2.0.14.post1; platform_system != 'Android'",
     "piper-tts==1.8.0; platform_system != 'Android'",
     "pillow==12.3.0; platform_system != 'Android'",
     "opencv-python-headless==5.0.0.93; platform_system != 'Android'",
