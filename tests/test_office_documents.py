@@ -43,3 +43,5 @@ class OfficeDocumentsTests(unittest.TestCase):
             self.assertIn('Rust',chat_search.read(1)['messages'][0]['content'])
             with self.assertRaises(ValueError):chat_search.read(-1)
             self.assertEqual(chat_search.search('Rust',after_chat_id=1)['chats'],[])
+            self.assertEqual([c['chat_id'] for c in chat_search.recent(exclude_chat_id=2)['chats']],[1])
+            self.assertEqual([c['chat_id'] for c in chat_search.recent()['chats']],[2,1])

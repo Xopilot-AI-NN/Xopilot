@@ -154,7 +154,10 @@ def image_mime(raw):
     return 'image/png'
 
 
-def generate_reply(prompt_text, history=None, attachments=None, *, instructions='', cancelled=None):
+_json_unsupported=set()
+
+
+def generate_reply(prompt_text, history=None, attachments=None, *, instructions='', cancelled=None, structured=False):
     config = validate_configuration(configuration())
     if cancelled is not None and cancelled.is_set():
         raise CancelledError()
@@ -170,7 +173,10 @@ def generate_reply(prompt_text, history=None, attachments=None, *, instructions=
     messages = [{'role': 'system', 'content': DEFAULT_SYSTEM_PROMPT + response_language_instruction() + '\n' + instructions}]
     messages.extend({'role': 'assistant' if item['role'] in {'ai', 'assistant'} else 'user', 'content': item['content']} for item in (history or []))
     messages.append({'role': 'user', 'content': content if images else text})
-    payload = json.dumps({'model': config['model'], 'messages': messages, 'stream': False}, ensure_ascii=False).encode('utf-8')
+    body={'model': config['model'], 'messages': messages, 'stream': False}
+    format_key=(config['url'],config['model'])
+    if structured and format_key not in _json_unsupported:body['response_format']={'type':'json_object'}
+    payload = json.dumps(body, ensure_ascii=False).encode('utf-8')
     parsed = urlsplit(config['url'])
     connection_class = http.client.HTTPSConnection if parsed.scheme == 'https' else http.client.HTTPConnection
     connection = connection_class(parsed.hostname, parsed.port, timeout=10)
@@ -217,6 +223,12 @@ def generate_reply(prompt_text, history=None, attachments=None, *, instructions=
         connection.request('POST', path, body=payload, headers=headers)
         response = connection.getresponse()
         if response.status >= 400:
+            if response.status==400 and 'response_format' in body:
+                reason=response.read(65536).decode('utf-8',errors='replace').casefold()
+                if any(word in reason for word in ('response_format','json_object','structured')) and any(
+                        word in reason for word in ('unsupported','not supported','unknown','unrecognized')):
+                    _json_unsupported.add(format_key)
+                    return generate_reply(prompt_text,history,attachments,instructions=instructions,cancelled=cancelled)
             if response.status == 429:
                 raise RuntimeError('Лимит запросов API (HTTP 429). Повторите позже или выберите другую модель.')
             if response.status >= 500:

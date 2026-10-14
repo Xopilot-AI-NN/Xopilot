@@ -77,3 +77,29 @@ class ControllerTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError,'401'):
             TaskControl().generate(generate,'prompt',network=True,probe=lambda:True)
         self.assertEqual(generate.call_count,1)
+
+    def test_new_instruction_interrupts_old_response_and_preserves_attachments(self):
+        task=TaskControl();started=threading.Event();calls=[];result=[]
+        def generate(prompt,cancelled,**kwargs):
+            calls.append((prompt,kwargs['attachments']))
+            if len(calls)==1:
+                started.set()
+                while not cancelled.is_set():time.sleep(.01)
+                raise CancelledError()
+            return 'updated answer'
+        thread=threading.Thread(target=lambda:result.append(task.generate(generate,'initial',attachments=[('one','/one')])))
+        thread.start();self.assertTrue(started.wait(2))
+        task.pause();task.add_instruction('use 42',[('two','/two')])
+        thread.join(2);self.assertFalse(thread.is_alive())
+        self.assertEqual(result,['updated answer']);self.assertEqual(len(calls),2)
+        self.assertIn('use 42',calls[1][0])
+        self.assertEqual(calls[1][1],[('one','/one'),('two','/two')])
+
+    def test_update_arriving_during_response_return_is_not_lost(self):
+        task=TaskControl();calls=[]
+        def generate(prompt,**kwargs):
+            calls.append(prompt)
+            if len(calls)==1:task.add_instruction('correction');return 'stale'
+            return 'fresh'
+        self.assertEqual(task.generate(generate,'initial'),'fresh')
+        self.assertEqual(len(calls),2);self.assertIn('correction',calls[-1])

@@ -134,7 +134,7 @@ def write_file(identifier,name,content,cancelled,approve):
     return {'path':name,'saved':True,'bytes':len(content.encode())}
 
 
-def start_command(identifier, argv, cancelled, approve, owner):
+def start_command(identifier, argv, cancelled, approve, owner, on_started=None):
     if is_android():raise ValueError('Запуск системных команд доступен в приложении Linux/Windows')
     base=root(identifier)
     if not isinstance(argv,list) or not argv or not all(isinstance(a,str) and a and '\0' not in a for a in argv):
@@ -145,12 +145,14 @@ def start_command(identifier, argv, cancelled, approve, owner):
     if cancelled.is_set():raise CancelledError()
     if root(identifier)!=base:raise ValueError('Папка проекта изменилась после подготовки команды')
     from . import task_processes
-    return task_processes.start(owner, identifier, argv, base)
+    result=task_processes.start(owner, identifier, argv, base)
+    if on_started:on_started(result)
+    return result
 
 
-def run_command(identifier,argv,cancelled,approve,owner=None):
+def run_command(identifier,argv,cancelled,approve,owner=None,on_started=None):
     from . import task_processes
     import uuid
     owner=owner or uuid.uuid4().hex
-    started=start_command(identifier,argv,cancelled,approve,owner)
+    started=start_command(identifier,argv,cancelled,approve,owner,on_started)
     return task_processes.wait(started['id'],owner,identifier,cancelled)
