@@ -128,6 +128,7 @@ jobs:
       - name: Build Flet
         shell: bash
         run: |
+          python scripts/prepare_linux_desktop.py
           flet build ${{ matrix.platform }} --python-version 3.14 --yes --build-version "$VERSION" --build-number "$((3000 + GITHUB_RUN_NUMBER))"
 
       - name: Create ZIP - Linux

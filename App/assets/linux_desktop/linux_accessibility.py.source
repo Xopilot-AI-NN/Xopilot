@@ -1,0 +1,82 @@
+"""
+Файл: /App/services/linux_accessibility.py
+Разработчик: DenBroLiik
+Версия: 2.0.8
+Описание: Действия с основными окнами через AT-SPI без системной мыши,
+          эмуляции клавиатуры, смены фокуса и чтения паролей.
+"""
+import uuid
+import time
+from gi.repository import Gio,GLib
+
+PREFIX='org.a11y.atspi.'
+
+
+class Accessibility:
+    def __init__(self,session_bus):
+        address=session_bus.call_sync('org.a11y.Bus','/org/a11y/bus','org.a11y.Bus','GetAddress',None,None,0,3000,None).unpack()[0]
+        self.bus=Gio.DBusConnection.new_for_address_sync(address,
+            Gio.DBusConnectionFlags.AUTHENTICATION_CLIENT|Gio.DBusConnectionFlags.MESSAGE_BUS_CONNECTION,None,None)
+        self.targets={}
+
+    def call(self,reference,interface,method,signature=None,arguments=()):
+        return self.bus.call_sync(reference[0],reference[1],PREFIX+interface,method,
+            GLib.Variant(signature,arguments) if signature else None,None,0,1500,None).unpack()
+
+    def prop(self,reference,name):
+        return self.bus.call_sync(reference[0],reference[1],'org.freedesktop.DBus.Properties','Get',
+            GLib.Variant('(ss)',(PREFIX+'Accessible',name)),None,0,1500,None).unpack()[0]
+
+    def inspect(self):
+        self.targets={};rows=[]
+        roots=self.call(('org.a11y.atspi.Registry','/org/a11y/atspi/accessible/root'),'Accessible','GetChildren')[0]
+        pending=[(tuple(r),'',0) for r in roots];visited=set();deadline=time.monotonic()+20
+        while pending and len(visited)<600 and time.monotonic()<deadline:
+            reference,parent,depth=pending.pop(0)
+            if reference in visited or depth>12 or reference[1].endswith('/null'):continue
+            visited.add(reference)
+            try:
+                name=self.prop(reference,'Name') or ''
+                role=self.call(reference,'Accessible','GetRoleName')[0]
+                interfaces=self.call(reference,'Accessible','GetInterfaces')[0]
+                identifier=uuid.uuid4().hex
+                actions=self.call(reference,'Action','GetActions')[0] if PREFIX+'Action' in interfaces else []
+                rect=None
+                if PREFIX+'Component' in interfaces:
+                    rect=list(self.call(reference,'Component','GetExtents','(u)',(0,))[0])
+                protected=self.call(reference,'Accessible','GetRole')[0]==40 or 'password' in role.casefold() or 'парол' in role.casefold()
+                value='[скрыто]' if protected else None
+                if not protected and PREFIX+'Text' in interfaces:
+                    value=self.call(reference,'Text','GetText','(ii)',(0,2000))[0]
+                entry={'id':identifier,'parent_id':parent,'name':name[:300],'role':role,'rect':rect,
+                       'actions':[a[0] for a in actions], 'editable':PREFIX+'EditableText' in interfaces and not protected}
+                if value is not None:entry['text']=value
+                rows.append(entry)
+                self.targets[identifier]={'reference':reference,'entry':entry,'actions':actions,'protected':protected}
+                children=self.call(reference,'Accessible','GetChildren')[0]
+                pending.extend(((r[0] or reference[0],r[1]),identifier,depth+1) for r in children)
+            except Exception:continue  # A disappearing or inaccessible node never authorizes raw input.
+        return rows
+
+    def perform(self,arguments):
+        target=self.targets.get(arguments.get('target'))
+        if not target:raise ValueError('Выберите target из последнего computer_view; старые ID недействительны')
+        entry=target['entry'];action=arguments.get('action')
+        if action=='set_text':
+            if not entry['editable'] or target['protected']:raise ValueError('Это поле не поддерживает независимое редактирование')
+            result=self.call(target['reference'],'EditableText','SetTextContents','(s)',(arguments['text'],))[0]
+        elif action=='click':
+            names=entry['actions'];requested=arguments.get('name')
+            if requested is None:
+                if len(names)!=1:raise ValueError('Укажи name из списка actions выбранного элемента')
+                index=0
+            else:
+                if requested not in names:raise ValueError('Нет такого доступного действия')
+                index=names.index(requested)
+            result=self.call(target['reference'],'Action','DoAction','(i)',(index,))[0]
+        else:raise ValueError('Независимый ввод поддерживает click и set_text по ID элемента')
+        if not result:raise RuntimeError('Приложение отклонило действие доступности')
+        return {'performed':True,'action':action,'target_name':entry['name'],'rect':entry['rect']}
+
+    def close(self):
+        self.targets={};self.bus.close_sync(None)

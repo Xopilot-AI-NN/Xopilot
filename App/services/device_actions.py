@@ -13,12 +13,18 @@ MEDIA = {'next', 'previous', 'pause', 'play', 'play_pause', 'stop'}
 
 
 def apps():
-    if not is_android(): raise ValueError('Этот инструмент запуска приложений предназначен для Android')
+    if not is_android():
+        from . import desktop_control
+        return desktop_control.apps()
     return mobile_runtime.call('listApps')
 
 
 def perform(action, arguments, cancelled, approve):
-    if not is_android(): raise ValueError('Управление приложениями и медиаплеером здесь доступно на Android')
+    if not is_android():
+        if action=='launch_app':
+            from . import desktop_control
+            return desktop_control.launch(str(arguments.get('package','')),cancelled,approve)
+        raise ValueError('Управление медиаплеером здесь доступно на Android')
     if action == 'launch_app':
         package = str(arguments.get('package', ''))
         entry = next((item for item in apps() if item['package'] == package), None)
