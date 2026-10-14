@@ -131,8 +131,10 @@ class RetryUITests(unittest.IsolatedAsyncioTestCase):
         try:
             self.assertTrue(await asyncio.to_thread(started.wait,2))
             self.assertEqual(button.tooltip,'Приостановить задачу')
+            self.assertEqual(button.content.icon,ft.Icons.PAUSE_ROUNDED)
             await button.on_click(None)
             self.assertEqual(button.tooltip,'Продолжить задачу')
+            self.assertEqual(button.content.icon,ft.Icons.PLAY_ARROW_ROUNDED)
             self.prompt.value='Уточнение: ответь 42'
             await button.on_click(None)
             await asyncio.wait_for(worker,3)
@@ -166,7 +168,8 @@ class RetryUITests(unittest.IsolatedAsyncioTestCase):
             await button.on_click(None)
             self.assertEqual(len(calls),1)
             self.assertEqual(button.tooltip,'Приостановить задачу')
-            self.assertEqual(button.content.name,ft.Icons.PAUSE_ROUNDED)
+            self.assertEqual(button.content.icon,ft.Icons.PAUSE_ROUNDED)
+            self.assertEqual(button.content.icon,ft.Icons.PAUSE_ROUNDED)
             self.prompt.value='Ещё не отправленный черновик'
             release.set();await asyncio.wait_for(worker,3)
             scheduled=[c for c in self.page.run_task.call_args_list if c.args and c.args[0]==self.send and len(c.args)==4]

@@ -251,7 +251,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         live.button.visible = not send_button.visible
         send_button.disabled = False
         send_button.opacity = 1
-        send_button.content.name=(ft.Icons.SEND_ROUNDED if has_input else
+        send_button.content.icon=(ft.Icons.SEND_ROUNDED if has_input else
             ft.Icons.PLAY_ARROW_ROUNDED if (is_sending and task_control.paused) or (not is_sending and pending_count) else
             ft.Icons.PAUSE_ROUNDED if is_sending else ft.Icons.SEND_ROUNDED)
         send_button.tooltip=('Отправить уточнение и продолжить' if is_sending and has_input and task_control.paused else

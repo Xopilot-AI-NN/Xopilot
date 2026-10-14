@@ -21,7 +21,7 @@ def build_confirmation_button(page,get_chat_id,can_change=lambda:True):
         private=identifier is not None and identifier<0
         mode=project_tools.chat_approval_mode(identifier)
         label.value='Автоматически' if mode=='automatic' else 'Вручную'
-        icon.name=ft.Icons.AUTO_MODE if mode=='automatic' else ft.Icons.FACT_CHECK_OUTLINED
+        icon.icon=ft.Icons.AUTO_MODE if mode=='automatic' else ft.Icons.FACT_CHECK_OUTLINED
         trigger.tooltip='Подтверждение действий · '+label.value
         trigger.visible=not private
         trigger.width=40 if compact else (150 if mode=='automatic' else 116)
