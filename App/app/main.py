@@ -168,9 +168,12 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                          max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)
     workspace_text = ft.Text("Все чаты", size=11, color=color("#47747a"), max_lines=1,
                              overflow=ft.TextOverflow.ELLIPSIS)
-    composer_label = ft.Text("", size=11, color=color("#47747a"), expand=True,
+    composer_label = ft.Text("", size=11, color=color("#47747a"),
                              max_lines=3, overflow=ft.TextOverflow.ELLIPSIS)
-    composer_status = ft.Container(visible=False, content=ft.Row(wrap=True,controls=[composer_label]))
+    composer_actions = ft.Row(wrap=True, spacing=4)
+    composer_status = ft.Container(visible=False, content=ft.Column(
+        tight=True, spacing=4, horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+        controls=[composer_label, composer_actions]))
     send_button = build_send_button(submit_prompt)
     empty_state = ft.Container(
         expand=True, alignment=ft.Alignment.CENTER, visible=True,
@@ -196,7 +199,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         refresh_composer()
 
     cancel_edit_button = ft.TextButton(content="Отмена", on_click=cancel_edit, visible=False)
-    composer_status.content.controls.append(cancel_edit_button)
+    composer_actions.controls.append(cancel_edit_button)
 
     def stop_reply(_):
         task_control.cancel()
@@ -216,7 +219,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         from .task_browser import open_tasks
         open_tasks(page,task_control,active=lambda:is_sending)
     tasks_button=ft.TextButton(content='Команды',on_click=show_tasks)
-    composer_status.content.controls.extend([pause_button,tasks_button,stop_button,retry_button])
+    composer_actions.controls.extend([pause_button,tasks_button,stop_button,retry_button])
 
     def refresh_composer(update=True):
         send_button.visible = bool(prompt.value or selected_files or editing_message is not None or is_sending)

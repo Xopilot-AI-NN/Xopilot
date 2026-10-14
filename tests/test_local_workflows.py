@@ -117,7 +117,7 @@ class RetryUITests(unittest.IsolatedAsyncioTestCase):
         self.prompt.value = 'Вопрос'
         await self.send(None)
         composer = self.prompt_container.call_args.kwargs['composer_status']
-        retry = composer.content.controls[-1]
+        retry = composer.content.controls[1].controls[-1]
         self.assertTrue(composer.visible)
         self.assertTrue(retry.visible)
         await retry.on_click(None)
@@ -134,11 +134,11 @@ class RetryUITests(unittest.IsolatedAsyncioTestCase):
         self.prompt.focus = AsyncMock()
         await action('edit', 'Старый вопрос', [], 11)
         composer = self.prompt_container.call_args.kwargs['composer_status']
-        self.assertFalse(composer.content.controls[-1].visible)
+        self.assertFalse(composer.content.controls[1].controls[-1].visible)
         self.prompt.value = 'Исправленный вопрос'
         await self.send(None)
         composer = self.prompt_container.call_args.kwargs['composer_status']
-        await composer.content.controls[-1].on_click(None)
+        await composer.content.controls[1].controls[-1].on_click(None)
         self.assertEqual(self.generate.call_args.args[0], 'Исправленный вопрос')
         self.assertEqual(self.save.call_count, 1)
 
@@ -148,7 +148,7 @@ class RetryUITests(unittest.IsolatedAsyncioTestCase):
         await self.send(None)
         self.prompt.value = 'Следующий черновик'
         composer = self.prompt_container.call_args.kwargs['composer_status']
-        retry = composer.content.controls[-1]
+        retry = composer.content.controls[1].controls[-1]
         self.assertTrue(retry.visible)
         await retry.on_click(None)
         self.assertEqual(self.save.call_count, 1)

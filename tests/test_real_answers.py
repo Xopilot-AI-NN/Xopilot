@@ -200,7 +200,7 @@ class RealReplyUITests(unittest.IsolatedAsyncioTestCase):
         status = container.call_args.kwargs['composer_status']
         self.assertTrue(status.visible)
         self.assertIn('Настройки → Модели', status.content.controls[0].value)
-        self.assertTrue(status.content.controls[-1].visible)
+        self.assertTrue(status.content.controls[1].controls[-1].visible)
 
 
 class PersistenceUITests(unittest.IsolatedAsyncioTestCase):
