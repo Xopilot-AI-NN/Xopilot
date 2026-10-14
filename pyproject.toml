@@ -12,7 +12,7 @@ dependencies = [
     "piper-tts==1.8.0; platform_system != 'Android'",
     "pillow==12.3.0; platform_system != 'Android'",
     "opencv-python-headless==5.0.0.93; platform_system != 'Android'",
-    "pypdf==6.19.0",
+    "pypdf==6.20.0",
     "python-docx==1.2.0",
     "reportlab>=4.4,<5",
     "openpyxl>=3.1,<4",
