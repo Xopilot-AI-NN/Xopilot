@@ -159,7 +159,7 @@ jobs:
 
   android:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -196,6 +196,12 @@ jobs:
             ~/.gradle/caches
             ~/.gradle/wrapper
           key: android-${{ runner.os }}-ndk29-${{ hashFiles('Services/Cargo.lock', 'Services/Cargo.toml', 'scripts/build_android.py') }}
+      - uses: actions/cache@v5
+        with:
+          path: build/android-wheels
+          key: android-patched-wheels-${{ runner.os }}-${{ hashFiles('scripts/build_android_wheels.py') }}
+      - name: Build patched Pillow and cryptography Android wheels
+        run: python scripts/build_android_wheels.py --ndk "$ANDROID_HOME/ndk/29.0.14206865"
       - name: Configure optional persistent APK signing
         env:
           APK_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}

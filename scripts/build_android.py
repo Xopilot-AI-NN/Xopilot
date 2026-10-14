@@ -1,4 +1,8 @@
-"""Build the POCO/ChromeOS Android APKs with the correct native libraries.
+"""
+Файл: /scripts/build_android.py
+Разработчик: DenBroLiik
+Версия: 2.0.8
+Описание: Сборка Android/ChromeOS APK с проверенными нативными библиотеками.
 
 Run with the same Python environment that provides Flet 1.0.3. The generated
 shell is based on Flet's pinned official template; NDK and compile SDK are set consistently across Android plugins.
@@ -136,6 +140,7 @@ def main():
     parser.add_argument('--jdk', type=Path, help='JDK 21 directory used only for Android builds')
     parser.add_argument('--arch', nargs='+', choices=('arm64-v8a', 'x86_64'), default=['arm64-v8a', 'x86_64'])
     parser.add_argument('--skip-native', action='store_true', help='Reuse already built Android DB libraries')
+    parser.add_argument('--wheel-house', type=Path, help='Use prebuilt patched Android wheels (validated before packaging)')
     parser.add_argument('--build-number', type=int, help='Positive Android versionCode, e.g. CI run number')
     parser.add_argument('--build-version', help='Application version, e.g. 2.0.7')
     args = parser.parse_args()
@@ -144,6 +149,13 @@ def main():
     if args.build_version is not None and not re.fullmatch(r'\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?', args.build_version):
         parser.error('--build-version must be a semantic version, e.g. 2.0.7')
     environment = android_environment(args.jdk)
+    from build_android_wheels import build as build_wheels, validate_wheelhouse
+    wheelhouse = (args.wheel_house or ROOT/'build/android-wheels').resolve()
+    if args.wheel_house:
+        validate_wheelhouse(wheelhouse, args.arch)
+    else:
+        build_wheels(wheelhouse, args.ndk, args.arch)
+    environment['PIP_FIND_LINKS'] = wheelhouse.as_uri()
     if not args.skip_native:
         subprocess.run([sys.executable, str(ROOT/'scripts/build_android_native.py'), '--ndk', str(args.ndk), '--arch', *args.arch], check=True)
     libs = ROOT/'extensions/flet_xopilot_mobile/src/flutter/flet_xopilot_mobile/android/src/main/jniLibs'

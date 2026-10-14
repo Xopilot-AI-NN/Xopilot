@@ -1,4 +1,9 @@
-"""Check APK contents and native ABI without claiming device validation."""
+"""
+Файл: /scripts/verify_android_apk.py
+Разработчик: DenBroLiik
+Версия: 2.0.8
+Описание: Состав APK, исправленные зависимости и ABI; проверка пакета не заменяет проверку устройства.
+"""
 import argparse
 import hashlib
 import io
@@ -7,6 +12,36 @@ import subprocess
 from pathlib import Path
 import struct
 import zipfile
+from email.parser import BytesParser
+
+PATCHED_DEPENDENCIES = {'pillow': '12.3.0', 'cryptography': '50.0.2'}
+OPENSSL_VERSION = '3.5.7'
+
+
+def verify_dependencies(data):
+    """Inspect the installed metadata, not just requirements or wheel names."""
+    versions = {}
+    with zipfile.ZipFile(io.BytesIO(data)) as packages:
+        for name in packages.namelist():
+            if name.endswith('.dist-info/METADATA'):
+                meta = BytesParser().parsebytes(packages.read(name))
+                key = (meta['Name'] or '').lower()
+                if key in PATCHED_DEPENDENCIES:
+                    if key in versions:
+                        raise RuntimeError(f'Duplicate Android dependency metadata: {key}')
+                    versions[key] = meta['Version']
+    for name, expected in PATCHED_DEPENDENCIES.items():
+        if versions.get(name) != expected:
+            raise RuntimeError(f'Unsafe/unexpected Android dependency: {name}={versions.get(name)}, expected {expected}')
+    return versions
+
+
+def verify_openssl(data):
+    # OpenSSL is supplied by the Flet Python runtime, not installed as a Python
+    # distribution. Inspect the actual shared library shipped in the APK.
+    versions = set(re.findall(rb'OpenSSL ([0-9]+\.[0-9]+\.[0-9]+) ', data))
+    if versions != {OPENSSL_VERSION.encode('ascii')}:
+        raise RuntimeError(f'Unexpected Android OpenSSL library version: {versions}')
 
 MACHINES = {'arm64-v8a': 183, 'x86_64': 62}
 
@@ -67,10 +102,12 @@ def verify(path, aapt=None, launcher_foreground=None):
         if apk.testzip() is not None:
             raise RuntimeError('Corrupt APK archive')
         verify_litert_jni(apk)
+        dependencies = verify_dependencies(apk.read('assets/sitepackages.zip'))
         abis = {name.split('/')[1] for name in apk.namelist() if name.startswith('lib/')}
         if len(abis) != 1 or not abis <= MACHINES.keys():
             raise RuntimeError(f'Expected one supported ABI, found {abis}')
         abi = next(iter(abis))
+        verify_openssl(apk.read(f'lib/{abi}/libcrypto_python.so'))
         required = ('libadvanced_xopilot.so', 'libpython3.14.so', 'liblitertlm_jni.so', 'libflutter.so')
         for library in required:
             if f'lib/{abi}/{library}' not in apk.namelist():
@@ -96,7 +133,7 @@ def verify(path, aapt=None, launcher_foreground=None):
             if forbidden:
                 raise RuntimeError(f'Unexpected native library, model or user data in Python app: {forbidden}')
             for module in ('App.pyc', 'services/mobile_runtime.pyc', 'services/mobile_litert.pyc', 'services/mobile_audio.pyc',
-                           'services/external_browser.pyc', 'services/billing.pyc'):
+                           'services/external_browser.pyc', 'services/billing.pyc', 'services/image_safety.pyc'):
                 if module not in app.namelist():
                     raise RuntimeError(f'Missing mobile module: {module}')
         with path.open('rb') as source:
@@ -133,7 +170,7 @@ def verify(path, aapt=None, launcher_foreground=None):
             if not re.search(r'android:resizeableActivity[^\n]*=\(type 0x12\)0xffffffff\s*$', tree, re.MULTILINE):
                 raise RuntimeError('Android app must support resizing')
         checks = 'contents/JNI/ELF 16 KiB' + ('/manifest' if aapt else '')
-        print(f'{path.name}: {abi}, {path.stat().st_size / 1024**2:.1f} MiB, {checks} OK, SHA256 {digest}')
+        print(f'{path.name}: {abi}, {path.stat().st_size / 1024**2:.1f} MiB, {checks} OK, dependencies {dependencies}, SHA256 {digest}')
 
 
 if __name__ == '__main__':
