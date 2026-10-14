@@ -45,6 +45,7 @@ public final class XopilotMobilePlugin implements FlutterPlugin, MethodChannel.M
     private DocumentPicker documents;
     private LiveOverlay overlay;
     private CameraFrames cameraFrames;
+    private final CanvasWeb canvasWeb = new CanvasWeb();
     private final Application.ActivityLifecycleCallbacks lifecycle = new Application.ActivityLifecycleCallbacks() {
         public void onActivityResumed(Activity activity) {
             if (activityBinding != null && activity == activityBinding.getActivity()) overlay.lifecycle(true);
@@ -75,6 +76,11 @@ public final class XopilotMobilePlugin implements FlutterPlugin, MethodChannel.M
         // Overlay controls must bypass inference: ending/muting remains immediate.
         try {
             switch (call.method) {
+                case "canvasWeb":
+                    if(activityBinding==null)result.error("canvas_unavailable","Откройте Xopilot",null);
+                    else canvasWeb.inspect(activityBinding.getActivity(),(Map<String,Object>)call.arguments,result);
+                    return;
+                case "canvasWebClose": canvasWeb.close();result.success(null);return;
                 case "releaseMemory":
                     if (engine != null || active != null || overlay.enabled() || ScreenCaptureService.current != null || activityBinding == null) {
                         result.success(false);return;
@@ -225,11 +231,13 @@ public final class XopilotMobilePlugin implements FlutterPlugin, MethodChannel.M
         overlay.attach(binding.getActivity());
     }
     @Override public void onDetachedFromActivityForConfigChanges() {
+        canvasWeb.close();
         if (activityBinding != null) activityBinding.removeActivityResultListener(this);
         activityBinding = null;
     }
     @Override public void onReattachedToActivityForConfigChanges(ActivityPluginBinding binding) { onAttachedToActivity(binding); }
     @Override public void onDetachedFromActivity() {
+        canvasWeb.close();
         onDetachedFromActivityForConfigChanges(); finishScreen("Приложение закрыто");
         ScreenCaptureService.stop(context);
     }

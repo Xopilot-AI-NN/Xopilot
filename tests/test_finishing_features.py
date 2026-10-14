@@ -80,7 +80,8 @@ class ProjectTests(unittest.TestCase):
         page=Mock(width=393,height=851,web=False)
         with patch.object(canvas_editor,'is_android',return_value=False):
             dialog=canvas_editor.build_canvas_dialog(page,4,document_store=canvases)
-        dialog.content.controls[2].value='drawing';dialog.content.controls[2].on_select(None)
+        mode=dialog.content.controls[2].controls[0]
+        mode.value='drawing';mode.on_select(None)
         drawing_area=dialog.content.controls[4]
         with patch.object(canvas_editor,'is_android',return_value=False):
             asyncio.run(drawing_area.controls[0].on_click(None))
