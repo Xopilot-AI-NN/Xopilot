@@ -1,3 +1,9 @@
+"""
+Файл: /App/app/canvas_editor.py
+Разработчик: DenBroLiik
+Версия: 2.0.8
+Описание: Редактор текста, кода, рисунков и интерактивных сайтов с экспортом Office.
+"""
 """A real persisted editor with freehand drawing and attachment/export actions."""
 import asyncio
 import os
@@ -27,11 +33,15 @@ def build_canvas_dialog(page, chat_id, workspace_id='all', on_attach=None, *, do
     compact = compact_layout(page.width)
     editor = ft.TextField(value=current.get('content', ''), multiline=True, min_lines=5 if compact else 9, max_lines=12 if compact else 20,
                          hint_text='Пишите текст или код…', text_style=ft.TextStyle(font_family='monospace'))
-    kinds = {'text': 'Текст', 'code': 'Код', 'drawing': 'Рисунок'}
+    kinds = {'text': 'Текст', 'code': 'Код', 'drawing': 'Рисунок', 'web': 'Сайт · HTML/CSS/JS'}
+    if chat_id < 0: kinds.pop('web')
     mode = ft.Dropdown(label='Тип Canvas', value=current['kind'], width=180,
                        options=[ft.DropdownOption(key=k, text=v) for k, v in kinds.items()])
     selection = ft.Dropdown(label='Документ', expand=True)
     picker = ft.FilePicker()
+    export_format = ft.Dropdown(label='Формат экспорта', value='original', width=180,
+        options=[ft.DropdownOption(key='original', text='Исходный файл'),
+                 *[ft.DropdownOption(key=k, text=k.upper()) for k in ('docx','pdf','xlsx','csv','txt')]])
     dimensions = [width - 28, 300]
     paint_color = '#123b43'
     brush_width = 3
@@ -169,6 +179,48 @@ def build_canvas_dialog(page, chat_id, workspace_id='all', on_attach=None, *, do
         ft.FilledButton(content='Рисовать',icon=ft.Icons.BRUSH,on_click=open_drawing),
         ft.Text('Полотно открывается отдельно: рисуйте пальцем или мышью, штрихи сохраняются автоматически.',size=12,color=color('#47747a'))])
 
+    async def preview(_):
+        if not persist(): page.update(); return
+        if chat_id < 0:
+            status.value='Просмотр сайта недоступен в защищённом чате';page.update();return
+        try: from ..services import canvas_web
+        except ImportError: from services import canvas_web
+        identifier = current['id']
+        try:
+            frame = await asyncio.to_thread(canvas_web.inspect,chat_id,workspace_id,identifier)
+            if is_android() and not page.web: return  # Native interactive WebView is already visible.
+        except Exception as exc:
+            status.value='Не удалось открыть сайт: '+str(exc);page.update();return
+        image_width=min(960,max(200,(page.width or 1000)-90))
+        image_height=image_width*600/960
+        image=ft.Image(src=Path(frame['screenshot']).read_bytes(),width=image_width,height=image_height,fit=ft.BoxFit.FILL)
+        feedback=ft.Text('Сайт работает в изолированном браузере без доступа к сети и файлам ПК.',size=12,color=color('#47747a'))
+        typed=ft.TextField(label='Ввести текст в выбранное поле сайта',expand=True,on_submit=lambda e:page.run_task(act,{'action':'type','text':e.control.value or ''}))
+        async def act(action):
+            try:
+                frame=await asyncio.to_thread(canvas_web.inspect,chat_id,workspace_id,identifier,action)
+                image.src=Path(frame['screenshot']).read_bytes();feedback.value=frame['title'] or 'Сайт Canvas'
+            except Exception as exc:feedback.value=str(exc)
+            page.update()
+        def clicked(e):
+            page.run_task(act,{'action':'point','x':e.local_position.x*960/image_width,'y':e.local_position.y*600/image_height})
+        async def end(_):
+            await asyncio.to_thread(canvas_web.close,chat_id,identifier);page.pop_dialog()
+        async def dismissed(_): await asyncio.to_thread(canvas_web.close,chat_id,identifier)
+        page.show_dialog(ft.AlertDialog(title=ft.Text('Просмотр · '+current['title']),bgcolor=color('#eafffa'),
+            content=ft.Column(width=image_width,height=min((page.height or 800)-180,image_height+140),scroll=ft.ScrollMode.AUTO,
+                controls=[ft.GestureDetector(content=image,on_tap_down=clicked),
+                    ft.Row(controls=[typed,ft.IconButton(icon=ft.Icons.KEYBOARD_RETURN,tooltip='Ввести текст',on_click=lambda _:page.run_task(act,{'action':'type','text':typed.value or ''}))]),
+                    ft.Row(controls=[ft.TextButton(content='Вверх',on_click=lambda _:page.run_task(act,{'action':'scroll','dy':-400})),
+                        ft.TextButton(content='Вниз',on_click=lambda _:page.run_task(act,{'action':'scroll','dy':400})),
+                        ft.TextButton(content='Перезапустить',on_click=lambda _:page.run_task(act,{'action':'reload'}))]),feedback]),
+            actions=[ft.TextButton(content='Закрыть',on_click=end)],on_dismiss=dismissed))
+
+    web_area=ft.Column(visible=current['kind']=='web',controls=[
+        ft.FilledButton(content='Открыть сайт',icon=ft.Icons.WEB,on_click=preview),
+        ft.Text('Пишите HTML со встроенными CSS/JavaScript. ИИ может проверить DOM и нажимать элементы сайта. '
+                'Внешние запросы, CDN и доступ к системе отключены.',size=12,color=color('#47747a'))])
+
     def fill_selection():
         selection.options = [ft.DropdownOption(key=item['id'], text=item['title'])
                              for item in canvases.list_documents(chat_id, workspace_id)]
@@ -177,6 +229,8 @@ def build_canvas_dialog(page, chat_id, workspace_id='all', on_attach=None, *, do
     def change_mode(_):
         editor.visible = mode.value != 'drawing'
         draw_area.visible = mode.value == 'drawing'
+        web_area.visible = mode.value == 'web'
+        export_format.visible = mode.value != 'drawing'
         persist()
         page.update()
     mode.on_select = change_mode
@@ -227,12 +281,30 @@ def build_canvas_dialog(page, chat_id, workspace_id='all', on_attach=None, *, do
         page.show_dialog(ft.AlertDialog(modal=True,title=ft.Text('Удалить Canvas?'),content=ft.Text(current['title']),
             actions=[ft.TextButton(content='Отмена',on_click=lambda _:page.pop_dialog()),ft.FilledButton(content='Удалить',on_click=remove)]))
 
+    async def install_web(_):
+        status.value='Скачиваю компонент просмотра сайтов…';page.update()
+        try:
+            try:from ..services.canvas_web import install_browser
+            except ImportError:from services.canvas_web import install_browser
+            await asyncio.to_thread(install_browser)
+            status.value='Просмотр сайтов установлен. Откройте предпросмотр.'
+        except Exception as exc:status.value='Не удалось установить просмотр: '+str(exc)
+        page.update()
+
+    def rendered_document():
+        if export_format.value == 'original' or current['kind']=='drawing':
+            return canvases.export_document(current)
+        try: from ..services.office_documents import render
+        except ImportError: from services.office_documents import render
+        name=Path(current['title']).stem+'.'+export_format.value
+        return render(name,current.get('content',''))
+
     async def export(_):
         if not persist():
             page.update()
             return
         try:
-            name, data = await asyncio.to_thread(canvases.export_document, current)
+            name, data = await asyncio.to_thread(rendered_document)
             if is_android() and not page.web:
                 try:
                     from ..services.mobile_documents import save_document
@@ -257,7 +329,7 @@ def build_canvas_dialog(page, chat_id, workspace_id='all', on_attach=None, *, do
             page.update()
             return
         try:
-            name, data = await asyncio.to_thread(canvases.export_document, current)
+            name, data = await asyncio.to_thread(rendered_document)
             path = await asyncio.to_thread(store_material, name, data=data)
             on_attach(path)
             status.value = 'Canvas добавлен во вложения черновика'
@@ -274,7 +346,7 @@ def build_canvas_dialog(page, chat_id, workspace_id='all', on_attach=None, *, do
                 from ..services.exports import save_local_export
             except ImportError:
                 from services.exports import save_local_export
-            name, data = await asyncio.to_thread(canvases.export_document, current)
+            name, data = await asyncio.to_thread(rendered_document)
             path = await asyncio.to_thread(save_local_export, name, data)
             status.value = f'Локальная копия: {path}'
         except Exception as exc:
@@ -297,9 +369,10 @@ def build_canvas_dialog(page, chat_id, workspace_id='all', on_attach=None, *, do
             horizontal_alignment=ft.CrossAxisAlignment.STRETCH, spacing=14,
             controls=[ft.Row(controls=[selection, ft.IconButton(icon=ft.Icons.ADD, tooltip='Новый Canvas', on_click=new_document),
                        ft.IconButton(icon=ft.Icons.DELETE_OUTLINE,tooltip='Удалить Canvas',on_click=delete_document)]),
-                      title, mode, editor, draw_area, status]),
+                      title, ft.Row(wrap=True,controls=[mode,export_format]), editor, draw_area, web_area, status]),
         actions=[*([ft.TextButton(content='Сохранить', icon=ft.Icons.SAVE_OUTLINED, on_click=changed)] if not compact else []),
                  ft.TextButton(content='Экспорт', icon=ft.Icons.DOWNLOAD, on_click=export),
+                 *([] if is_android() else [ft.TextButton(content='Установить просмотр сайтов',icon=ft.Icons.WEB,on_click=install_web)]),
                  *([ft.TextButton(content='Локальная копия', icon=ft.Icons.SAVE_ALT, on_click=local_export)]
                    if not is_android() and (not page.web or os.environ.get('XOPILOT_LOCAL_WEB') == '1') else []),
                  *([ft.FilledButton(content='В чат', icon=ft.Icons.ATTACH_FILE, on_click=attach)] if on_attach else [])])

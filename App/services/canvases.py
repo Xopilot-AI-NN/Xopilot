@@ -1,3 +1,9 @@
+"""
+Файл: /App/services/canvases.py
+Разработчик: DenBroLiik
+Версия: 2.0.8
+Описание: Документы Canvas в зашифрованном локальном хранилище.
+"""
 """Persistent text, code and drawing documents in the encrypted settings store."""
 import copy
 import io
@@ -9,7 +15,7 @@ from .db import get_db
 
 KEY = 'canvases_v1'
 _lock = threading.RLock()
-KINDS = {'text', 'code', 'drawing'}
+KINDS = {'text', 'code', 'drawing', 'web'}
 
 
 def _read():
@@ -75,7 +81,7 @@ def export_document(document):
     title = document['title'].replace('/', '_').replace('\\', '_')
     if document['kind'] != 'drawing':
         from pathlib import Path
-        return title + ('' if Path(title).suffix else '.py' if document['kind']=='code' else '.md'),document.get('content','').encode('utf-8')
+        return title + ('' if Path(title).suffix else '.html' if document['kind']=='web' else '.py' if document['kind']=='code' else '.md'),document.get('content','').encode('utf-8')
     from PIL import Image, ImageDraw
     import math
     logical_width, logical_height = document.get('drawing_size', [1200, 700])
