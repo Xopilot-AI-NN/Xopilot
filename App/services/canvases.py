@@ -37,6 +37,20 @@ def get_document(identifier):
         return copy.deepcopy(doc)
 
 
+def resolve_document(chat_id, workspace_id, identifier):
+    """Найти ID или уникальное название только среди документов этого контекста."""
+    available = list_documents(chat_id, workspace_id)
+    requested = str(identifier).strip().casefold()
+    matches = [doc for doc in available if doc['id'].casefold() == requested]
+    if not matches:
+        matches = [doc for doc in available if doc['title'].casefold() == requested]
+    if len(matches) != 1:
+        choices = [{'id': doc['id'], 'title': doc['title']} for doc in available]
+        raise ValueError('Нужен уникальный Canvas. Выбери id из списка этого чата/проекта: ' +
+                         json.dumps(choices, ensure_ascii=False))
+    return matches[0]
+
+
 def delete_document(identifier):
     with _lock:
         docs=_read();remaining=[d for d in docs if d['id']!=identifier]
