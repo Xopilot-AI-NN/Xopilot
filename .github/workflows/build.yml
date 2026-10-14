@@ -188,7 +188,7 @@ jobs:
         with:
           cmdline-tools-version: '15859902'
           packages: 'platform-tools platforms;android-37.0 build-tools;37.0.0 ndk;29.0.14206865'
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -197,7 +197,7 @@ jobs:
             ~/.gradle/caches
             ~/.gradle/wrapper
           key: android-${{ runner.os }}-ndk29-${{ hashFiles('Services/Cargo.lock', 'Services/Cargo.toml', 'scripts/build_android.py') }}
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         with:
           path: build/android-wheels
           key: android-patched-wheels-${{ runner.os }}-${{ hashFiles('scripts/build_android_wheels.py') }}
