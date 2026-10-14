@@ -116,3 +116,20 @@ class NewChatNavigationTests(unittest.TestCase):
                 new_chat.on_click(None)
                 self.assertEqual(chat_store.get_or_create_active_chat_id(),ordinary)
                 self.assertEqual(len(native.list_chats()),2)
+
+
+    def test_deleting_active_chat_opens_new_empty_chat_instead_of_previous_history(self):
+        page=Mock(width=393,height=851,web=True,services=[],_dialogs=Mock(controls=[]))
+        with tempfile.TemporaryDirectory() as folder, db.advanced_xopilot.PyDatabase(str(Path(folder)/'qa.db'),key='ab'*32) as native:
+            with patch.object(db,'_db',native),patch.object(chat_store,'_active_chat_id',None), \
+                 patch.object(main_ui,'install_theme'),patch.object(main_ui,'get_selected_chat_model',return_value=None), \
+                 patch.object(ft.TextField,'update'),patch.object(ft.ListView,'update'):
+                previous=chat_store.create_new_chat();native.add_message(previous,'user','Old chat')
+                current=chat_store.create_new_chat();native.add_message(current,'user','Delete this test chat')
+                ui=main_ui.build_app_ui(page)
+                header=ui.content.content.controls[0].controls[-1].content.controls[0]
+                delete=next(item for item in header.content.controls[-1].items if getattr(item.content,'value',None)=='Удалить чат')
+                delete.on_click(None);page.show_dialog.call_args.args[0].actions[-1].on_click(None)
+                active=chat_store.get_or_create_active_chat_id()
+                self.assertNotIn(active,(current,previous));self.assertEqual(native.get_messages(active),[])
+                self.assertTrue(any(row[0]==previous for row in native.list_chats()))
