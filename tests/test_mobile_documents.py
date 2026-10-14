@@ -42,6 +42,8 @@ class DocumentRecoveryTests(unittest.IsolatedAsyncioTestCase):
         with TemporaryDirectory() as directory:
             staged = []
             async def bridge(method, args=None):
+                if method == 'pendingDocuments':
+                    return None
                 if method == 'stageExport':
                     self.assertEqual(Path(args['path']).read_bytes(), b'export bytes')
                     staged.append(args['path'])
@@ -113,3 +115,30 @@ class DocumentRecoveryTests(unittest.IsolatedAsyncioTestCase):
              patch.object(documents.asyncio, 'sleep', AsyncMock()):
             self.assertEqual(await documents.recover_pending_documents(), {'chat_id': 7})
             finish.assert_awaited_once_with(operation)
+
+    async def test_new_picker_recovers_previous_ready_files_and_returns_merged_draft(self):
+        draft = {'text': 'Keep typed text', 'files': ['/managed/existing']}
+        old = {'token': 'old', 'tag': 'chat:7', 'state': 'ready',
+               'files': [{'name': 'old.txt', 'path': '/native/old'}]}
+        new = {'token': 'new', 'tag': 'chat:7', 'state': 'ready',
+               'files': [{'name': 'new.txt', 'path': '/native/new'}]}
+        async def bridge(method, args=None):
+            if method == 'pendingDocuments': return old
+            if method == 'pickDocuments':
+                self.assertIn('/managed/old', draft['files'])
+                return new
+            self.assertEqual(method, 'ackDocuments')
+        def write(chat, text, files): draft.update(text=text, files=files)
+        with patch.object(documents, 'call_async', side_effect=bridge), \
+             patch.object(documents, 'get_db', return_value=Mock(list_chats=Mock(return_value=[(7, 'Chat', 0)]))), \
+             patch.object(documents, 'read_draft', side_effect=lambda _: dict(draft)), \
+             patch.object(documents, 'write_draft', side_effect=write), \
+             patch.object(documents, 'store_material', side_effect=lambda name, **_: '/managed/' + name.split('.')[0]):
+            result = await documents.pick_chat_documents(7)
+        self.assertEqual(result['files'], ['/managed/existing', '/managed/old', '/managed/new'])
+        self.assertEqual(draft['text'], 'Keep typed text')
+
+    async def test_python_does_not_discard_waiting_native_operation(self):
+        with patch.object(documents, 'call_async', AsyncMock(return_value={'state': 'waiting', 'token': 'old'})) as bridge:
+            await documents._recover_before_new_operation()
+        bridge.assert_awaited_once_with('pendingDocuments')
