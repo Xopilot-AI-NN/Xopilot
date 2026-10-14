@@ -14,8 +14,8 @@ import io
 import os
 
 from .lazy_imports import OptionalModule
+from .image_safety import open_raster
 
-Image = OptionalModule("PIL.Image")
 cv2 = OptionalModule("cv2")
 pypdf = OptionalModule("pypdf")
 docx = OptionalModule("docx")
@@ -35,20 +35,15 @@ VIDEO_FRAME_COUNT = 3
 
 def _downscale_image_bytes(raw: bytes) -> bytes:
     """Уменьшает и перекодирует в JPEG — без этого большие фото медленно идут через FFI-мостик
-    и упираются в бюджет визуальных токенов модели (max_vision_token_budget). При отсутствии Pillow
-    возвращает исходные байты как есть — модель всё равно попробует принять исходный формат.
+    и упираются в бюджет визуальных токенов модели (max_vision_token_budget).
+    Повреждённые изображения отклоняются; исходные байты не передаются модели.
     """
-    if not Image:
-        return raw
-    try:
-        with Image.open(io.BytesIO(raw)) as img:
-            img = img.convert("RGB")
-            img.thumbnail((MAX_IMAGE_SIDE, MAX_IMAGE_SIDE))
-            out = io.BytesIO()
-            img.save(out, format="JPEG", quality=87)
-            return out.getvalue()
-    except Exception:
-        return raw
+    with open_raster(io.BytesIO(raw)) as img:
+        img = img.convert("RGB")
+        img.thumbnail((MAX_IMAGE_SIDE, MAX_IMAGE_SIDE))
+        out = io.BytesIO()
+        img.save(out, format="JPEG", quality=87)
+        return out.getvalue()
 
 
 def _read_text_file(path: str) -> str:

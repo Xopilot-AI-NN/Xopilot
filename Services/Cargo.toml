@@ -27,7 +27,7 @@ serde_json = "1"
 # tract-onnx — чистый Rust ONNX-рантайм без внешней C++ библиотеки (как rusqlite bundled) —
 # проще собирать/кросс-компилировать под Linux/Windows, чем ort (обёртка над ONNX Runtime).
 # Используется только тестовым классификатором тональности (пункт 5 плана).
-tract-onnx = { version = "0.21", optional = true }
+tract-onnx = { version = "0.22.3", optional = true }
 
 [features]
 default = ["sentiment"]

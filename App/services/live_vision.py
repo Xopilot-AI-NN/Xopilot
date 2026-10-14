@@ -18,6 +18,7 @@ import tempfile
 import time
 
 from .lazy_imports import OptionalModule
+from .image_safety import open_raster
 
 cv2 = OptionalModule("cv2")
 mss = OptionalModule("mss")
@@ -104,7 +105,7 @@ def _grab_cli(_monitor_index: int):
             try:
                 subprocess.run(build(path), check=True, timeout=15,
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                with Image.open(path) as shot:
+                with open_raster(path, formats=('PNG',), max_pixels=None) as shot:
                     return shot.convert("RGB")
             except Exception as exc:
                 errors.append(f"{name}: {exc}")
