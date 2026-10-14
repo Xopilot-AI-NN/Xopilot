@@ -43,6 +43,29 @@ class TaskTests(unittest.TestCase):
             cancelled=self.cancelled,generate=lambda *a,**k:next(responses))
         self.assertEqual(result.count('Файлы проекта · выполнено'),20)
 
+    def test_missing_website_link_can_ask_for_input_without_fake_actions(self):
+        generate=Mock(return_value=json.dumps({'final':'Пришлите ссылку на сайт','needs_input':True}))
+        events=[]
+        result=agent.run_agent('Открой мой сайт',chat_id=1,history=[],attachments=[],instructions='',level='auto',
+            cancelled=self.cancelled,generate=generate,on_action=events.append)
+        self.assertEqual(result,'Пришлите ссылку на сайт');generate.assert_called_once();self.assertEqual(events,[])
+        self.assertTrue(agent.needs_tools('Возьми ссылку из позапрошлого чата'))
+
+    def test_repeated_unperformed_action_claim_stops_without_fake_success(self):
+        generate=Mock(return_value=json.dumps({'final':'Файл создан'}))
+        with self.assertRaisesRegex(RuntimeError,'без выполнения'):
+            agent.run_agent('Создай файл report.pdf',chat_id=1,history=[],attachments=[],instructions='',level='auto',
+                cancelled=self.cancelled,generate=generate)
+        self.assertEqual(generate.call_count,3)
+
+    def test_model_commentary_is_emitted_once_between_actions_without_duplicate_journal(self):
+        responses=iter([json.dumps({'message':'Проверю список файлов','tool':'list_project_files','arguments':{}}),json.dumps({'final':'Проверил'})])
+        comments=[];events=[]
+        result=agent.run_agent('Посмотри проект',chat_id=1,history=[],attachments=[],instructions='',level='auto',
+            cancelled=self.cancelled,generate=lambda *a,**k:next(responses),on_message=comments.append,on_action=events.append)
+        self.assertEqual(comments,['Проверю список файлов']);self.assertEqual(result,'Проверил')
+        self.assertEqual([e['phase'] for e in events],['start','result'])
+
     def test_parallel_real_commands_and_background_server_are_tracked(self):
         project_tools.set_chat_approval_mode(1,'automatic')
         commands=[{'tool':'run_project_command','arguments':{'argv':[sys.executable,'-c',f'import time; time.sleep(1); print({i})']}} for i in range(3)]
@@ -79,6 +102,40 @@ class TaskTests(unittest.TestCase):
         review.assert_called_once();self.assertIn('не подтвердил',result)
         self.assertEqual(len(task_processes.snapshots()),before)
         with self.assertRaises(ValueError):project_tools.set_approval_mode('all','automatic')
+
+    def test_command_events_show_pid_before_completion_and_real_output(self):
+        responses=iter([json.dumps({'tool':'run_project_command','arguments':{'argv':[
+            sys.executable,'-u','-c','import time; print("trace42"); time.sleep(.2)']}}),json.dumps({'final':'done'})])
+        events=[]
+        agent.run_agent('Run command',chat_id=1,history=[],attachments=[],instructions='',level='auto',
+            cancelled=self.cancelled,approve=lambda _:True,on_action=events.append,
+            generate=lambda *a,**k:next(responses))
+        self.assertEqual([e['phase'] for e in events],['start','process','result'])
+        self.assertEqual(len({e['id'] for e in events}),1)
+        self.assertTrue(events[1]['result']['running'])
+        self.assertGreater(events[1]['result']['pid'],0)
+        self.assertIn('trace42',events[-1]['result']['output'])
+        self.assertEqual(events[-1]['result']['exit_code'],0)
+
+    def test_steering_agent_does_not_repeat_completed_command(self):
+        task=TaskControl();started=threading.Event();calls=[];result=[]
+        def generate(prompt,cancelled,**kwargs):
+            calls.append(prompt)
+            if len(calls)==1:return json.dumps({'tool':'run_project_command','arguments':{'argv':[sys.executable,'-c','print(42)']}})
+            if len(calls)==2:
+                started.set()
+                while not cancelled.is_set():time.sleep(.01)
+                raise CancelledError()
+            self.assertIn('уточнение',prompt)
+            return json.dumps({'final':'done with correction'})
+        thread=threading.Thread(target=lambda:result.append(agent.run_agent('Run project',chat_id=1,history=[],
+            attachments=[],instructions='',level='auto',cancelled=self.cancelled,task=task,
+            approve=lambda _:True,generate=generate)))
+        before=len(task_processes.snapshots('chat:1',self.workspace))
+        thread.start();self.assertTrue(started.wait(3));task.add_instruction('уточнение')
+        thread.join(3);self.assertFalse(thread.is_alive())
+        self.assertIn('done with correction',result[0])
+        self.assertEqual(len(task_processes.snapshots('chat:1',self.workspace))-before,1)
 
 
 class WebTests(unittest.TestCase):

@@ -37,11 +37,14 @@ def probe_api():
 
 
 class _GenerationSignal:
-    def __init__(self, task): self.task = task; self.paused_cancel = False
+    def __init__(self, task, revision=None):
+        self.task = task; self.paused_cancel = False
+        self.revision = task.revision if revision is None else revision
     def is_set(self):
         paused=self.task.paused
-        self.paused_cancel=self.paused_cancel or paused
-        return self.task.cancelled.is_set() or paused
+        changed=self.revision != self.task.revision
+        self.paused_cancel=self.paused_cancel or paused or changed
+        return self.task.cancelled.is_set() or paused or changed
 
 
 class TaskControl:
@@ -51,9 +54,36 @@ class TaskControl:
         self._manual = False
         self._offline = False
         self._condition = threading.Condition()
+        self._revision = 0
+        self._updates = []
+        self._instructions = []
         self.on_state = on_state
         self.probe = None
         self.signal = _GenerationSignal(self)
+
+    @property
+    def revision(self):
+        with self._condition: return self._revision
+
+    def add_instruction(self, text, attachments=(), message_id=None):
+        with self._condition:
+            update={'text': text, 'attachments': list(attachments), 'message_id':message_id}
+            self._updates.append(update);self._instructions.append(update)
+            self._revision += 1
+            self._manual = False
+            self._condition.notify_all()
+        self._notify()
+
+    def _take_updates(self):
+        with self._condition:
+            updates,self._updates=self._updates,[]
+            return updates,self._revision
+
+    def instruction_snapshot(self):
+        with self._condition:return list(self._instructions)
+
+    def take_pending_instructions(self):
+        return self._take_updates()[0]
 
     @property
     def paused(self):
@@ -100,7 +130,7 @@ class TaskControl:
                     if probe(): self.connection(True)
                 except (OSError, ValueError, RuntimeError): pass
 
-    def generate(self, function, prompt, *, network=False, probe=None, **kwargs):
+    def generate(self, function, prompt, *, network=False, probe=None, on_updates=None, **kwargs):
         """Пауза отменяет текущую генерацию. После возобновления повторяется
         только незавершённый шаг модели; выполненные инструменты не повторяются.
         Провайдер может тарифицировать отменённый запрос.
@@ -109,13 +139,22 @@ class TaskControl:
         self.probe = probe
         while True:
             self.checkpoint(probe)
-            signal=_GenerationSignal(self)
+            updates,revision=self._take_updates()
+            if updates:
+                if on_updates:
+                    prompt,kwargs=on_updates(updates,kwargs)
+                else:
+                    prompt += '\n\nУточнения пользователя к текущей задаче:\n' + '\n'.join(u['text'] for u in updates)
+                    kwargs['attachments']=list(dict.fromkeys([*(kwargs.get('attachments') or []),
+                        *(file for update in updates for file in update['attachments'])]))
+            signal=_GenerationSignal(self,revision)
             try:
                 result = function(prompt, cancelled=signal, **kwargs)
                 self.checkpoint(probe)
+                if signal.revision != self.revision: continue
                 return result
             except CancelledError:
-                if self.cancelled.is_set() or (not signal.paused_cancel and not self.paused): raise
+                if self.cancelled.is_set() or (not signal.paused_cancel and not self.paused and signal.revision==self.revision): raise
                 # User pause interrupted inference, not the whole task.
             except Exception as exc:
                 if self.cancelled.is_set(): raise CancelledError() from exc

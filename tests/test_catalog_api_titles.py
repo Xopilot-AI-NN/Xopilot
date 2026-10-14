@@ -173,6 +173,38 @@ class ApiTransportTests(unittest.TestCase):
         finally:
             server.shutdown(); server.server_close(); thread.join()
 
+    def test_agent_json_mode_and_explicit_unsupported_fallback(self):
+        received=[];unsupported=[True]
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                body=json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+                received.append(body)
+                if unsupported[0] and 'response_format' in body:
+                    self.send_response(400);self.end_headers()
+                    self.wfile.write(b'{"error":"response_format json_object unsupported"}')
+                else:
+                    self.send_response(200);self.end_headers()
+                    self.wfile.write(json.dumps({'choices':[{'message':{'content':'{"final":"done"}'}}]}).encode())
+            def log_message(self,*args):pass
+        server=ThreadingHTTPServer(('127.0.0.1',0),Handler)
+        thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+        config={'url':f'http://127.0.0.1:{server.server_port}/v1','model':'qa-json','key':'test-only'}
+        key=(config['url'],config['model'])
+        try:
+            with patch.object(api_chat,'configuration',return_value=config),patch.object(api_chat,'record_generation'):
+                self.assertEqual(api_chat.generate_reply('Return JSON',structured=True),'{'+'"final":"done"'+'}')
+                self.assertEqual(len(received),2)
+                self.assertEqual(received[0]['response_format'],{'type':'json_object'})
+                self.assertNotIn('response_format',received[1])
+                api_chat.generate_reply('Return JSON',structured=True)
+                self.assertEqual(len(received),3);self.assertNotIn('response_format',received[-1])
+                api_chat._json_unsupported.discard(key);unsupported[0]=False
+                api_chat.generate_reply('Return JSON',structured=True)
+                self.assertEqual(received[-1]['response_format'],{'type':'json_object'})
+        finally:
+            api_chat._json_unsupported.discard(key)
+            server.shutdown();server.server_close();thread.join()
+
     def test_cancel_interrupts_waiting_http_body(self):
         headers_sent = threading.Event()
         release = threading.Event()

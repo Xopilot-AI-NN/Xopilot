@@ -10,6 +10,20 @@ from .db import get_db
 from . import workspaces
 
 
+def recent(*, exclude_chat_id=None, offset=0, limit=20):
+    """Недавние обычные чаты по последнему сообщению, без текущего диалога."""
+    rows=[]
+    for identifier,title,created in get_db().list_chats():
+        if identifier<=0 or identifier==exclude_chat_id:continue
+        messages=get_db().get_messages(identifier)
+        rows.append((max((m.id for m in messages),default=0),created,identifier,title))
+    rows.sort(reverse=True)
+    offset=max(0,int(offset));limit=max(1,min(50,int(limit)))
+    return {'chats':[{'chat_id':identifier,'title':title,'created_at':created}
+                     for _,created,identifier,title in rows[offset:offset+limit]],
+            'next_offset':offset+limit if len(rows)>offset+limit else None}
+
+
 def search(query, *, after_chat_id=0, limit=20):
     query = str(query).strip()
     if not query: raise ValueError('Укажите слова для поиска чата')
