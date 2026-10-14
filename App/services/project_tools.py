@@ -1,3 +1,9 @@
+"""
+Файл: /App/services/project_tools.py
+Разработчик: DenBroLiik
+Версия: 2.0.8
+Описание: Доступ к выбранной папке и отслеживаемые команды с подтверждением.
+"""
 """Device-local project folders and reviewed process execution.
 
 File tools are confined to a selected folder. Approved processes run with the
@@ -22,6 +28,17 @@ SKIP={'.git','.ssh','.gnupg','node_modules','target','build','__pycache__','.ven
 def settings(identifier):
     raw=get_db().get_setting('project_access:'+identifier)
     return json.loads(raw) if raw else {'root':'','enabled':False}
+
+
+def approval_mode(identifier):
+    return 'automatic' if get_db().get_setting('project_approval:'+identifier) == 'automatic' else 'manual'
+
+
+def set_approval_mode(identifier, mode):
+    if identifier == workspaces.DEFAULT or identifier not in {w['id'] for w in workspaces.list_workspaces()}:
+        raise ValueError('Автоматическое подтверждение доступно только для выбранного проекта')
+    if mode not in {'manual','automatic'}:raise ValueError('Неизвестный режим подтверждения')
+    get_db().set_setting('project_approval:'+identifier, mode)
 
 
 def configure(identifier,path,enabled=True):
@@ -101,7 +118,7 @@ def write_file(identifier,name,content,cancelled,approve):
     return {'path':name,'saved':True,'bytes':len(content.encode())}
 
 
-def run_command(identifier,argv,cancelled,approve):
+def start_command(identifier, argv, cancelled, approve, owner):
     if is_android():raise ValueError('Запуск системных команд доступен в приложении Linux/Windows')
     base=root(identifier)
     if not isinstance(argv,list) or not argv or not all(isinstance(a,str) and a and '\0' not in a for a in argv):
@@ -111,30 +128,13 @@ def run_command(identifier,argv,cancelled,approve):
         raise ValueError('Пользователь не подтвердил запуск команды')
     if cancelled.is_set():raise CancelledError()
     if root(identifier)!=base:raise ValueError('Папка проекта изменилась после подготовки команды')
-    output=deque(maxlen=32)
-    options={'start_new_session':True} if os.name!='nt' else {'creationflags':subprocess.CREATE_NEW_PROCESS_GROUP}
-    process=subprocess.Popen(argv,cwd=base,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,**options)
-    def collect():
-        try:
-            while chunk:=process.stdout.read(4096):output.append(chunk)
-        finally:process.stdout.close()
-    reader=threading.Thread(target=collect,daemon=True);reader.start()
-    deadline=time.monotonic()+600
-    try:
-        while process.poll() is None:
-            if cancelled.wait(0.1):raise CancelledError()
-            if time.monotonic()>deadline:raise RuntimeError('Команда остановлена после 10 минут; запустите длительную сборку в терминале')
-    finally:
-        if process.poll() is None:
-            if os.name=='nt':
-                subprocess.run(['taskkill','/T','/F','/PID',str(process.pid)],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-            else:
-                try:os.killpg(process.pid,signal.SIGTERM)
-                except ProcessLookupError:pass
-                try:process.wait(timeout=2)
-                except subprocess.TimeoutExpired:
-                    try:os.killpg(process.pid,signal.SIGKILL)
-                    except ProcessLookupError:pass
-            process.wait(timeout=5)
-        reader.join(timeout=2)
-    return {'exit_code':process.returncode,'output':b''.join(output).decode('utf-8',errors='replace'),'cwd':str(base),'argv':argv}
+    from . import task_processes
+    return task_processes.start(owner, identifier, argv, base)
+
+
+def run_command(identifier,argv,cancelled,approve,owner=None):
+    from . import task_processes
+    import uuid
+    owner=owner or uuid.uuid4().hex
+    started=start_command(identifier,argv,cancelled,approve,owner)
+    return task_processes.wait(started['id'],owner,identifier,cancelled)
