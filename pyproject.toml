@@ -4,7 +4,7 @@ version = "2.0.8"
 description = "Xopilot by DenBroLiik"
 requires-python = ">=3.10"
 dependencies = [
-    "flet==1.0.3",
+    "flet==1.0.4",
     "screeninfo==0.8.1; platform_system != 'Android'",
     "litert-lm-api>=0.17.0; platform_system != 'Android'",
     "sounddevice==0.5.6; platform_system != 'Android'",
