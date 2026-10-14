@@ -33,6 +33,10 @@ def describe(tool,args):
 def summarize(tool,result):
     links=[]
     if isinstance(result,dict):
+        if tool=='computer_start':return 'Доступ разрешён до завершения задачи',[]
+        if tool=='computer_view':return 'Экран просмотрен · элементов: '+str(len(result.get('controls',[]))),[]
+        if tool=='computer_input':return 'Выполнено: '+str(result.get('target_name') or result.get('action','действие')),[]
+        if tool=='launch_app':return 'Открыто: '+str(result.get('name') or result.get('package','приложение')),[]
         if 'chats' in result:
             rows=result['chats'];titles=' · '.join(str(r.get('title','Чат')) for r in rows[:2])
             links=links_in(' '.join(str(m.get('excerpt','')) for r in rows for m in r.get('matches',[])))
