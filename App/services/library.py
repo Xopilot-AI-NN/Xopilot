@@ -48,8 +48,6 @@ def import_folder(folder):
                 materials.append({'name': relative, 'path': path, 'source': str(root), 'enabled': True})
             except Exception as exc:
                 errors.append(f'{relative}: {exc}')
-    if not materials and not errors:
-        raise ValueError('В папке нет поддерживаемых документов, изображений или кода')
     return materials, errors
 
 

@@ -226,24 +226,6 @@ def build_workspace_settings(page, identifier, on_changed=None):
         multiline=True, min_lines=3, max_lines=6, hint_text='Цель проекта, стиль ответов, важные условия'))
     status = ft.Text('', size=12, color=color('#47747a'))
     heading = ft.Text('Пространство · '+item['name'],expand=True,max_lines=2)
-    approval = modern_input(ft.Dropdown(label='Подтверждение действий', value=project_tools.approval_mode(identifier),
-        options=[ft.DropdownOption(key='manual',text='Вручную — проверять каждое действие'),
-                 ft.DropdownOption(key='automatic',text='Автоматически — доверенный проект')]))
-    def persist_mode(value):
-        project_tools.set_approval_mode(identifier,value)
-        approval.value=value;page.update()
-    def change_mode(e):
-        if e.control.value != 'automatic':persist_mode('manual');return
-        approval.value=project_tools.approval_mode(identifier)
-        def accept(_):
-            page.pop_dialog();persist_mode('automatic')
-        page.show_dialog(ft.AlertDialog(modal=True,title=ft.Text('Доверять действиям этого проекта?'),
-            content=ft.Text('ИИ сможет изменять файлы и запускать команды без отдельного подтверждения. '
-                'Команды выполняются с вашими системными правами и могут обращаться за пределы папки. '
-                'Включайте только для кода и материалов, которым доверяете. Настройка действует на этом устройстве.'),
-            actions=[ft.TextButton(content='Отмена',on_click=lambda _:page.pop_dialog()),
-                     ft.FilledButton(content='Включить автоматически',on_click=accept)]))
-    approval.on_change=change_mode
     def save(_):
         try:
             # Библиотека сохраняется сразу; не перезаписываем её старым снимком формы.
@@ -257,7 +239,7 @@ def build_workspace_settings(page, identifier, on_changed=None):
     library.width=None;library.height=None;library.expand=True
     overview=ft.Container(padding=16,border_radius=18,bgcolor=color('#f3fffc'),
         content=ft.Column(horizontal_alignment=ft.CrossAxisAlignment.STRETCH,spacing=12,controls=[ft.Row(wrap=True,controls=[
-            ft.Container(width=max(220,width-240),content=name),ft.Container(width=180,content=icon)]),instructions,approval,
+            ft.Container(width=max(220,width-240),content=name),ft.Container(width=180,content=icon)]),instructions,
             ft.Text('Инструкции и отмеченные материалы доступны ИИ во всех чатах пространства.',size=12,color=color('#47747a'))]))
     result=ft.AlertDialog(bgcolor=color('#eafffa'),shape=ft.RoundedRectangleBorder(radius=24),
         inset_padding=ft.Padding.symmetric(horizontal=18,vertical=20),

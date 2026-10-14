@@ -44,7 +44,7 @@ class TaskTests(unittest.TestCase):
         self.assertEqual(result.count('Файлы проекта · выполнено'),20)
 
     def test_parallel_real_commands_and_background_server_are_tracked(self):
-        project_tools.set_approval_mode(self.workspace,'automatic')
+        project_tools.set_chat_approval_mode(1,'automatic')
         commands=[{'tool':'run_project_command','arguments':{'argv':[sys.executable,'-c',f'import time; time.sleep(1); print({i})']}} for i in range(3)]
         responses=iter([json.dumps({'actions':commands}),json.dumps({'tool':'start_project_process','arguments':{
             'argv':[sys.executable,'-u','-c','import time; print("server ready"); time.sleep(30)']}}),json.dumps({'final':'done'})])

@@ -246,7 +246,7 @@ def run_agent(prompt, *, chat_id, history, attachments, instructions, level, can
     def reviewed(request):
         if task:task.checkpoint()
         if cancelled.is_set():raise CancelledError()
-        if request.get('kind') in {'command','file'} and project_tools.approval_mode(workspace_id)=='automatic':
+        if request.get('kind') in {'command','file','device'} and project_tools.chat_approval_mode(chat_id)=='automatic':
             return True
         # Several parallel actions never stack competing approval dialogs.
         with approval_lock:

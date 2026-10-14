@@ -41,6 +41,17 @@ def set_approval_mode(identifier, mode):
     get_db().set_setting('project_approval:'+identifier, mode)
 
 
+def chat_approval_mode(chat_id):
+    if not isinstance(chat_id,int) or chat_id<=0:return 'manual'
+    return 'automatic' if get_db().get_setting('chat_approval:'+str(chat_id))=='automatic' else 'manual'
+
+
+def set_chat_approval_mode(chat_id,mode):
+    if type(chat_id) is not int or chat_id<=0:raise ValueError('Режим действий доступен в обычном чате')
+    if mode not in {'manual','automatic'}:raise ValueError('Неизвестный режим подтверждения')
+    get_db().set_setting('chat_approval:'+str(chat_id),mode)
+
+
 def configure(identifier,path,enabled=True):
     if identifier=='all' or identifier not in {w['id'] for w in workspaces.list_workspaces()}:
         raise ValueError('Выберите рабочее пространство')
