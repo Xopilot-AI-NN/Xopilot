@@ -122,7 +122,9 @@ def delete_chat(chat_id: int) -> bool:
     """
     global _active_chat_id
     deleted = get_db().delete_chat(chat_id)
-    if deleted:get_db().set_setting('chat_approval:'+str(chat_id),'manual')
+    if deleted:
+        get_db().set_setting('chat_approval:'+str(chat_id),'manual')
+        get_db().set_setting('chat_approval_consent:'+str(chat_id),'false')
     if _active_chat_id == chat_id:
         _active_chat_id = None
     return deleted

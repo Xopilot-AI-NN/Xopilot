@@ -52,15 +52,19 @@ class PanelTests(unittest.TestCase):
         db=Settings();page=Mock(width=1000,height=800,web=True);current=[1]
         with patch.object(project_tools,'get_db',return_value=db):
             button,refresh=build_confirmation_button(page,lambda:current[0])
-            button.items[1].on_click(None)
+            button.on_click(None)
             self.assertEqual(project_tools.chat_approval_mode(1),'manual')
             page.show_dialog.call_args.args[0].actions[-1].on_click(None)
             self.assertEqual(project_tools.chat_approval_mode(1),'automatic')
             current[0]=2;refresh()
-            self.assertEqual(button.content.content.controls[1].value,'Вручную')
+            self.assertEqual(button.content.controls[1].value,'Вручную')
             self.assertEqual(project_tools.chat_approval_mode(2),'manual')
-            current[0]=1;refresh();button.items[0].on_click(None)
+            current[0]=1;refresh();button.on_click(None)
             self.assertEqual(project_tools.chat_approval_mode(1),'manual')
+            count=page.show_dialog.call_count
+            button.on_click(None)
+            self.assertEqual(project_tools.chat_approval_mode(1),'automatic')
+            self.assertEqual(page.show_dialog.call_count,count)
             current[0]=-1;refresh();self.assertFalse(button.visible)
 
     def test_empty_folder_can_be_connected_as_project_and_copied_without_error(self):
