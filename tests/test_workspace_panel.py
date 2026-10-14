@@ -56,14 +56,17 @@ class PanelTests(unittest.TestCase):
             self.assertEqual(project_tools.chat_approval_mode(1),'manual')
             page.show_dialog.call_args.args[0].actions[-1].on_click(None)
             self.assertEqual(project_tools.chat_approval_mode(1),'automatic')
+            self.assertEqual(button.content.controls[0].icon,ft.Icons.AUTO_MODE)
             current[0]=2;refresh()
             self.assertEqual(button.content.controls[1].value,'Вручную')
+            self.assertEqual(button.content.controls[0].icon,ft.Icons.FACT_CHECK_OUTLINED)
             self.assertEqual(project_tools.chat_approval_mode(2),'manual')
             current[0]=1;refresh();button.on_click(None)
             self.assertEqual(project_tools.chat_approval_mode(1),'manual')
             count=page.show_dialog.call_count
             button.on_click(None)
             self.assertEqual(project_tools.chat_approval_mode(1),'automatic')
+            self.assertEqual(button.content.controls[0].icon,ft.Icons.AUTO_MODE)
             self.assertEqual(page.show_dialog.call_count,count)
             current[0]=-1;refresh();self.assertFalse(button.visible)
 
