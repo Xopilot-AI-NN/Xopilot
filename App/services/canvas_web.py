@@ -113,8 +113,7 @@ class WebSession:
 
 def document(chat_id, workspace_id, identifier):
     if chat_id < 0: raise ValueError('Просмотр сайта недоступен в защищённом/временном чате')
-    value = next((doc for doc in canvases.list_documents(chat_id, workspace_id) if doc['id'] == identifier), None)
-    if value is None: raise ValueError('Canvas этого чата или проекта не найден')
+    value = canvases.resolve_document(chat_id, workspace_id, identifier)
     if value['kind'] != 'web' and Path(value['title']).suffix.lower() not in {'.html', '.htm'}:
         raise ValueError('Для просмотра сайта выберите тип Canvas «Сайт» или HTML-файл')
     return value
@@ -122,6 +121,7 @@ def document(chat_id, workspace_id, identifier):
 
 def inspect(chat_id, workspace_id, identifier, action=None):
     value = document(chat_id, workspace_id, identifier)
+    identifier = value['id']
     if is_android():
         from . import mobile_runtime
         import base64

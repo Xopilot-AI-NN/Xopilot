@@ -49,6 +49,25 @@ class DocumentWorkflowTests(unittest.TestCase):
         self.assertEqual(image.size, (1200, 700))
         self.assertNotEqual(image.getpixel((120,140)), (255,255,255))
 
+    def test_web_canvas_lookup_accepts_unique_title_and_keeps_scope(self):
+        from App.services import canvas_web
+        doc = canvases.create_document('Сайт проверки', 'web', '<button>42</button>', chat_id=self.chat)
+        self.assertEqual(canvases.resolve_document(self.chat,'all',' САЙТ ПРОВЕРКИ ')['id'],doc['id'])
+        self.assertEqual(canvas_web.document(self.chat, 'all', 'Сайт проверки')['id'], doc['id'])
+        other = canvases.create_document('Чужой сайт', 'web', 'secret', chat_id=self.chat+100)
+        with self.assertRaises(ValueError) as error:
+            canvas_web.document(self.chat, 'all', other['id'])
+        self.assertNotIn(other['id'], str(error.exception))
+        self.assertNotIn('Чужой сайт', str(error.exception))
+        with self.assertRaises(ValueError): canvas_web.document(-1, 'all', doc['id'])
+
+    def test_duplicate_canvas_titles_require_id(self):
+        from App.services import canvas_web
+        first = canvases.create_document('Одинаковое название', 'web', 'one', chat_id=self.chat)
+        canvases.create_document('Одинаковое название', 'web', 'two', chat_id=self.chat)
+        with self.assertRaises(ValueError): canvas_web.document(self.chat, 'all', first['title'])
+        self.assertEqual(canvas_web.document(self.chat, 'all', first['id'])['content'], 'one')
+
     def test_folder_copies_keep_structure_and_skip_symlinks_hidden_build(self):
         folder = self.root / 'project'
         (folder/'src').mkdir(parents=True)
