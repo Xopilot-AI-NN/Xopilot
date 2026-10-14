@@ -173,7 +173,7 @@ def generate_reply(prompt_text, history=None, attachments=None, *, instructions=
     payload = json.dumps({'model': config['model'], 'messages': messages, 'stream': False}, ensure_ascii=False).encode('utf-8')
     parsed = urlsplit(config['url'])
     connection_class = http.client.HTTPSConnection if parsed.scheme == 'https' else http.client.HTTPConnection
-    connection = connection_class(parsed.hostname, parsed.port, timeout=120)
+    connection = connection_class(parsed.hostname, parsed.port, timeout=10)
     connection.response_class = lambda sock, **kwargs: http.client.HTTPResponse(
         _ResponseSocket(sock, cancelled), **kwargs)
     finished = threading.Event()
@@ -202,6 +202,7 @@ def generate_reply(prompt_text, history=None, attachments=None, *, instructions=
         if config['key']:
             headers['Authorization'] = 'Bearer ' + config['key']
         connection.connect()
+        connection.sock.settimeout(120)
         # Keep an independently owned handle: HTTPConnection closes its socket
         # when a response uses Connection: close, before its body has arrived.
         # SSLSocket deliberately has no dup(); duplicate only its underlying

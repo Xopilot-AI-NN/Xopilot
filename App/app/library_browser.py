@@ -1,3 +1,9 @@
+"""
+Файл: /App/app/library_browser.py
+Разработчик: DenBroLiik
+Версия: 2.0.8
+Описание: Поиск, просмотр и управление материалами пространства.
+"""
 """Searchable library, with document preview, notes and folder import."""
 import asyncio
 from pathlib import Path
@@ -13,7 +19,7 @@ except ImportError:
     from services.platforms import is_android
 
 
-def build_library_dialog(page, workspace_id, on_changed=None):
+def build_library_content(page, workspace_id, on_changed=None):
     item = next(item for item in workspaces.list_workspaces() if item['id'] == workspace_id)
     width = min(750, max(220, (page.width or 1000) - 112))
     height = min(560, max(300, (page.height or 760) - 180))
@@ -175,12 +181,19 @@ def build_library_dialog(page, workspace_id, on_changed=None):
             actions=[ft.TextButton(content='Отмена', on_click=lambda _: page.pop_dialog()),
                      ft.FilledButton(content='Сохранить' if entry else 'Добавить', on_click=save)]))
     render()
-    return ft.AlertDialog(bgcolor=color('#eafffa'), shape=ft.RoundedRectangleBorder(radius=22),
-        title=ft.Text('Библиотека · ' + item['name'], color=color('#123b43')),
-        content=ft.Column(width=width, height=height, spacing=14, controls=[search,
+    return ft.Column(width=width, height=height, spacing=14, controls=[search,
             ft.Row(wrap=True, spacing=8, controls=[
                 ft.OutlinedButton(content='Файлы', icon=ft.Icons.ATTACH_FILE, on_click=add_files),
                 *([] if is_android() else [ft.OutlinedButton(content='Папка', icon=ft.Icons.CREATE_NEW_FOLDER_OUTLINED, on_click=folder_dialog)]),
                 ft.OutlinedButton(content='Заметка', icon=ft.Icons.NOTE_ADD_OUTLINED, on_click=note_dialog)]),
-            feedback, ft.ListView(expand=True, controls=[rows])]),
+            feedback, ft.ListView(expand=True, controls=[rows])])
+
+
+def build_library_dialog(page, workspace_id, on_changed=None):
+    if workspace_id != workspaces.DEFAULT:
+        from .workspace_browser import build_workspace_settings
+        return build_workspace_settings(page, workspace_id, on_changed=on_changed)
+    return ft.AlertDialog(bgcolor=color('#eafffa'), shape=ft.RoundedRectangleBorder(radius=22),
+        title=ft.Text('Библиотека', color=color('#123b43')),
+        content=build_library_content(page, workspace_id, on_changed),
         actions=[ft.TextButton(content='Закрыть', on_click=lambda _: page.pop_dialog())])

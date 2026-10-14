@@ -119,7 +119,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
     refresh_menu_chats = lambda: None
     load_chat_messages = lambda cid: private_chats.messages(cid) if is_private(cid) else globals()['load_chat_messages'](cid)
     save_user_message = lambda cid, text, **kw: private_chats.add_message(cid, 'user', text, **kw) if is_private(cid) else globals()['save_user_message'](cid, text, **kw)
-    save_ai_message = lambda cid, text: private_chats.add_message(cid, 'ai', text) if is_private(cid) else globals()['save_ai_message'](cid, text)
+    save_ai_message = lambda cid, text, attachments=None: private_chats.add_message(cid, 'ai', text) if is_private(cid) else globals()['save_ai_message'](cid, text, **({'attachments': attachments} if attachments else {}))
     list_chat_items = lambda: globals()['list_chat_items']() + private_chats.items()
     rename_chat = lambda cid, title: private_chats.rename(cid, title) if is_private(cid) else globals()['rename_chat'](cid, title)
     clear_chat_messages = lambda cid: private_chats.clear(cid) if is_private(cid) else globals()['clear_chat_messages'](cid)
@@ -152,6 +152,12 @@ def build_app_ui(page: ft.Page) -> ft.Control:
     draft_before_edit = ("", [])
     is_sending = False  # защита от повторного Enter/клика, пока предыдущая отправка (вкл. инференс ИИ) ещё идёт
     request_cancelled = threading.Event()
+    try:from ..services.task_control import TaskControl
+    except ImportError:from services.task_control import TaskControl
+    try:from ..services import task_processes
+    except ImportError:from services import task_processes
+    task_control = TaskControl(request_cancelled)
+    request_done=asyncio.Event();request_done.set()
     failed_request = None
     failed_reason = ""
     active_chat_id: int | None = None  # заполняется ниже при загрузке истории из БД и меняется при переключении/создании/удалении чата
@@ -164,7 +170,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                              overflow=ft.TextOverflow.ELLIPSIS)
     composer_label = ft.Text("", size=11, color=color("#47747a"), expand=True,
                              max_lines=3, overflow=ft.TextOverflow.ELLIPSIS)
-    composer_status = ft.Container(visible=False, content=ft.Row(controls=[composer_label]))
+    composer_status = ft.Container(visible=False, content=ft.Row(wrap=True,controls=[composer_label]))
     send_button = build_send_button(submit_prompt)
     empty_state = ft.Container(
         expand=True, alignment=ft.Alignment.CENTER, visible=True,
@@ -193,7 +199,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
     composer_status.content.controls.append(cancel_edit_button)
 
     def stop_reply(_):
-        request_cancelled.set()
+        task_control.cancel()
         composer_label.value = "Останавливаю ответ…"
         page.update()
 
@@ -202,7 +208,15 @@ def build_app_ui(page: ft.Page) -> ft.Control:
 
     stop_button = ft.TextButton(content="Остановить", on_click=stop_reply, visible=False)
     retry_button = ft.TextButton(content="Повторить", on_click=retry_reply, visible=False)
-    composer_status.content.controls.extend([stop_button, retry_button])
+    def pause_reply(_):
+        task_control.resume() if task_control.paused else task_control.pause()
+        refresh_composer()
+    pause_button = ft.TextButton(content='Пауза',on_click=pause_reply,visible=False)
+    def show_tasks(_):
+        from .task_browser import open_tasks
+        open_tasks(page,task_control,active=lambda:is_sending)
+    tasks_button=ft.TextButton(content='Команды',on_click=show_tasks)
+    composer_status.content.controls.extend([pause_button,tasks_button,stop_button,retry_button])
 
     def refresh_composer(update=True):
         send_button.visible = bool(prompt.value or selected_files or editing_message is not None or is_sending)
@@ -210,12 +224,15 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         send_button.disabled = is_sending
         send_button.opacity = 0.5 if is_sending else 1
         cancel_edit_button.visible = editing_message is not None and not is_sending
-        composer_status.visible = is_sending or editing_message is not None or failed_request is not None
-        composer_label.value = ("Готовлю ответ…" if is_sending else
+        composer_status.visible = is_sending or editing_message is not None or failed_request is not None or (task_processes.has_processes() and not is_private(active_chat_id))
+        composer_label.value = (task_control.state if is_sending and task_control.paused else "Готовлю ответ…" if is_sending else
                                 "Редактирование сообщения" if editing_message is not None else
-                                failed_reason or "Ответ не получен")
+                                failed_reason or ("Фоновые процессы работают" if task_processes.has_running() else "Журнал команд" if task_processes.has_processes() else "Ответ не получен"))
         composer_label.tooltip = failed_reason if failed_request is not None and not is_sending else None
+        tasks_button.visible = not is_private(active_chat_id)
         stop_button.visible = is_sending
+        pause_button.visible = is_sending
+        pause_button.content = 'Продолжить' if task_control.paused else 'Пауза'
         retry_button.visible = failed_request is not None and not is_sending and editing_message is None
         height = available_height(page)
         short_phone = is_android() and isinstance(height, (int, float)) and height < 440
@@ -319,7 +336,8 @@ def build_app_ui(page: ft.Page) -> ft.Control:
     async def close_voice_modes(e):
         page._xopilot_connected=False
         nonlocal editing_message, draft_before_edit, failed_request, failed_reason
-        request_cancelled.set()
+        if is_private(active_chat_id):task_control.cancel()
+        elif is_sending:task_control.connection(False)
         memory_capture.cancel()
         persist_draft()
         await asyncio.gather(voice_input.close(e), live.close(e))
@@ -346,13 +364,39 @@ def build_app_ui(page: ft.Page) -> ft.Control:
 
     async def reconnect_voice_modes(_):
         page._xopilot_connected=True
+        task_control.connection(True)
         voice_input.reconnect()
         live.reconnect()
         refresh_composer()
 
     page.on_disconnect = close_voice_modes
     page.on_connect = reconnect_voice_modes
-    page.on_close = close_voice_modes
+    async def shutdown(e=None):
+        task_control.cancel()
+        try:from ..services import task_processes
+        except ImportError:from services import task_processes
+        await asyncio.to_thread(task_processes.stop_all)
+        if is_sending:
+            try:await asyncio.wait_for(request_done.wait(),timeout=15)
+            except asyncio.TimeoutError:pass
+        await close_voice_modes(e)
+    page.on_close = shutdown
+    if isinstance(page,ft.Page) and not page.web and not is_android():
+        page.window.prevent_close=True
+        async def window_event(e):
+            if e.type != ft.WindowEventType.CLOSE:return
+            try:from ..services import task_processes
+            except ImportError:from services import task_processes
+            async def exit_app(_):
+                await shutdown(e);await page.window.destroy()
+            if is_sending or task_processes.has_running():
+                page.show_dialog(ft.AlertDialog(modal=True,title=ft.Text('Завершить работу Xopilot?'),
+                    content=ft.Text('Задача ИИ и запущенные приложением процессы будут остановлены. '
+                        'Сохранённые файлы и сообщения останутся. Несохранённое обдумывание продолжить после выхода нельзя.'),
+                    actions=[ft.TextButton(content='Остаться',on_click=lambda _:page.pop_dialog()),
+                             ft.FilledButton(content='Остановить и выйти',on_click=exit_app)]))
+            else:await exit_app(None)
+        page.window.on_event=window_event
 
     async def refresh_attachments(animated: bool = False):
         rendered = build_file_attachments(selected_files, remove_file)
@@ -477,6 +521,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         refresh_composer()
 
     async def on_send(e, retry=False):
+        nonlocal task_control
         memory_capture.cancel()
         nonlocal editing_message, is_sending, failed_request, failed_reason
         if retry and failed_request is None:
@@ -514,7 +559,16 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         ]
         request_chat_id = active_chat_id
         is_sending = True
+        request_done.clear()
         request_cancelled.clear()
+        def task_state(value):
+            async def refresh_state():
+                if is_sending:
+                    composer_label.value=value
+                    pause_button.content='Продолжить' if task_control.paused else 'Пауза'
+                    page.update()
+            page.run_task(refresh_state)
+        task_control=TaskControl(request_cancelled,on_state=task_state)
         refresh_composer()
         try:
             if api_frame and not retry and editing_message is None:
@@ -622,6 +676,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                 private_request = is_private(request_chat_id)
                 use_api = api_chat.is_api_selected() and not private_request
                 reply_generator = api_chat.generate_reply if use_api else generate_reply
+                await asyncio.to_thread(task_control.checkpoint)
                 if not use_api:
                     chosen = get_selected_chat_model()
                     if not chosen:
@@ -641,6 +696,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                 instructions, shared_files = ("", []) if private_request else workspaces.chat_resources(request_chat_id)
                 if not private_request:
                     instructions += user_memory.context(text)
+                await asyncio.to_thread(task_control.checkpoint)
                 if request_cancelled.is_set():
                     raise CancelledError()
                 try:from ..services.agent import needs_tools
@@ -663,6 +719,10 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                                 preview=json.dumps(request['argv'],ensure_ascii=False,indent=2)
                                 label='Запустить команду?'
                                 note='Процесс выполняется с вашими правами. Проверьте аргументы и доверяйте коду проекта.'
+                            elif kind == 'device':
+                                preview = json.dumps(request['arguments'], ensure_ascii=False, indent=2)
+                                label = request['title']
+                                note = 'Действие будет выполнено на этом телефоне.'
                             else:
                                 import difflib
                                 preview=''.join(difflib.unified_diff(request['before'].splitlines(True),request['after'].splitlines(True),
@@ -673,7 +733,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                                 answer[0]=value;done.set();page.pop_dialog()
                             dialog=ft.AlertDialog(modal=True,bgcolor=color('#eafffa'),title=ft.Text(label),
                                 content=ft.Column(width=640,height=min(450,max(240,(page.height or 800)-220)),scroll=ft.ScrollMode.AUTO,
-                                    controls=[ft.Text('Папка: '+request['cwd'],size=12),ft.Text(note,size=12),
+                                    controls=[*([ft.Text('Папка: '+request['cwd'],size=12)] if request.get('cwd') else []),ft.Text(note,size=12),
                                               ft.Text(preview,selectable=True,font_family='monospace',size=12)]),
                                 actions=[ft.TextButton(content='Отклонить',on_click=lambda _:choose(False)),
                                          ft.FilledButton(content='Подтвердить',on_click=lambda _:choose(True))])
@@ -696,13 +756,13 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                     reply_text = await asyncio.to_thread(run_agent, text, chat_id=request_chat_id,
                         history=[dict(item) for item in chat_context[:-1]], attachments=[*shared_files, *sent_attachments],
                         instructions=instructions,level=tool_level,cancelled=request_cancelled,approve=approve_action,
-                        on_progress=progress, generate=reply_generator, request_id=chat_context[-1].get('id'))
+                        on_progress=progress, generate=reply_generator,task=task_control,network=use_api, request_id=chat_context[-1].get('id'))
                 else:
                     reply_text = await asyncio.to_thread(
-                        reply_generator, text,
+                        task_control.generate, reply_generator, text, network=use_api,
                         history=[dict(item) for item in chat_context[:-1]],
                         attachments=[*shared_files, *sent_attachments],
-                        instructions=instructions, cancelled=request_cancelled,
+                        instructions=instructions,
                         **({"private": True} if private_request else {}),
                     )
             except (CancelledError, asyncio.CancelledError):
@@ -728,7 +788,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
             if reply_text:
                 ai_id = None
                 try:
-                    ai_id = save_ai_message(request_chat_id, reply_text)
+                    ai_id = save_ai_message(request_chat_id, reply_text, attachments=getattr(reply_text, 'files', None))
                 except Exception as exc:
                     recovery_done = False
 
@@ -737,7 +797,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                         if recovery_done:
                             return
                         try:
-                            recovered_id = save_ai_message(request_chat_id, reply_text)
+                            recovered_id = save_ai_message(request_chat_id, reply_text, attachments=getattr(reply_text, 'files', None))
                         except Exception as retry_error:
                             page.show_dialog(ft.SnackBar(ft.Text(f"Запись не удалась: {retry_error}")))
                             return
@@ -745,6 +805,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                         if active_chat_id == request_chat_id:
                             chat_list.controls.insert(0, build_ai_message(
                                 reply_text, on_action=handle_message_action, message_id=recovered_id,
+                                files=_rebuild_files(getattr(reply_text, 'files', [])),
                             ))
                             chat_context.append({"role": "ai", "content": reply_text, "id": recovered_id})
                             chat_list.update()
@@ -764,12 +825,14 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                     ))
                     return
                 # Реверс-список: ответ ИИ тоже вставляется в начало (низ визуала).
-                chat_list.controls.insert(0, build_ai_message(reply_text, on_action=handle_message_action, message_id=ai_id))
+                chat_list.controls.insert(0, build_ai_message(reply_text, on_action=handle_message_action, message_id=ai_id,
+                    files=_rebuild_files(getattr(reply_text, 'files', []))))
                 chat_context.append({"role": "ai", "content": reply_text, "id": ai_id})
                 chat_list.update()
                 memory_capture.submit(text, reply_generator, private=private_request)
         finally:
             is_sending = False
+            request_done.set()
             refresh_model_button(private=is_private(active_chat_id))
             refresh_composer()
 
@@ -797,7 +860,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                 reply_to=msg.reply_to,
                 message_id=msg.id,
             )
-        return build_ai_message(msg.content, on_action=handle_message_action, message_id=msg.id)
+        return build_ai_message(msg.content, on_action=handle_message_action, message_id=msg.id, files=_rebuild_files(msg.attachments))
 
     def _prepare_chat_view(chat_id: int, stored=None):
         """Загружает историю указанного чата, готовит контекст/пагинацию и возвращает
@@ -1135,8 +1198,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         page.update()
 
     def delete_chat_by_id(chat_id: int):
-        """Удаляет чат. Если он был активным — переключается на самый новый из оставшихся,
-        а если чатов больше не осталось — создаётся новый.
+        """Удаляет чат. Вместо удалённого активного чата открывает новый пустой чат.
         """
         if is_sending or live.busy or voice_input.busy:
             page.show_dialog(ft.SnackBar(ft.Text("Дождитесь завершения ответа или голосового ввода.")))
@@ -1156,13 +1218,12 @@ def build_app_ui(page: ft.Page) -> ft.Control:
             return
         if chat_id == active_chat_id:
             try:
-                remaining = [item for item in workspaces.filter_chats(list_chat_items()) if not is_private(item[0])]
-            except Exception:
-                remaining = []
-            if remaining:
-                switch_chat(remaining[0][0])
-            else:
-                start_new_chat(workspace_id=workspaces.selected_workspace())
+                new_id = create_new_chat()
+                scope = workspaces.selected_workspace()
+                workspaces.assign_chat(new_id, scope)
+                switch_chat(new_id)
+            except Exception as exc:
+                page.show_dialog(ft.SnackBar(ft.Text(f'Чат удалён, но новый чат не создан: {exc}')))
         drafts.pop(chat_id, None)
         refresh_menu_chats()
         page.update()
