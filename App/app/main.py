@@ -333,6 +333,9 @@ def build_app_ui(page: ft.Page) -> ft.Control:
     model_button, refresh_model_button = build_model_button(on_select=choose_chat_model,
         get_agent_level=lambda: agent_mode, on_agent_level=change_agent_level)
 
+    from .confirmation_button import build_confirmation_button
+    confirmation_button,refresh_confirmation = build_confirmation_button(page,lambda:active_chat_id,lambda:not is_sending)
+
     async def close_voice_modes(e):
         page._xopilot_connected=False
         nonlocal editing_message, draft_before_edit, failed_request, failed_reason
@@ -876,6 +879,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         workspace_text.value = workspace_name
         model_button.disabled = is_private(chat_id)
         refresh_model_button(private=is_private(chat_id))
+        refresh_confirmation()
 
         empty_state.content.controls[1].value = "С чего начнём?"
         empty_state.content.controls[2].value = "Напишите вопрос, прикрепите файл или начните голосовой разговор."
@@ -990,6 +994,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         on_add_material=on_add_material,
         attachments=attachment_strip,
         model_button=model_button,
+        agent_button=confirmation_button,
         voice_button=voice_input.button,
         voice_status=voice_input.status,
         live_button=live.button,
@@ -1496,7 +1501,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                        brand_button(ft.Icons.DOWNLOAD_OUTLINED, "Экспортировать чат", export_chat, size=36),
                        brand_button(ft.Icons.DRAW_OUTLINED, "Canvas", open_canvas, size=36),
                        brand_button(ft.Icons.DELETE_OUTLINE,'Удалить чат',confirm_delete_current,size=36)]
-    header_row = ft.Row(controls=[header_title, *desktop_actions])
+    header_row = ft.Row(controls=[header_title,*desktop_actions])
     header = ft.Container(
         padding=ft.Padding.symmetric(horizontal=14, vertical=8),
         border=ft.Border.only(bottom=ft.BorderSide(1, color("#b9eee4"))),
@@ -1511,7 +1516,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         height = available_height(page)
         short_phone = is_android() and isinstance(height, (int, float)) and height < 440
         small = compact_layout(page.width) or short_phone
-        header_row.controls = [mobile_menu_button, header_title, more_actions] if small else [header_title, *desktop_actions]
+        header_row.controls = [mobile_menu_button, header_title, more_actions] if small else [header_title,*desktop_actions]
         header_row.spacing = 6 if small else 10
         header.padding = ft.Padding.symmetric(horizontal=8 if small else 14, vertical=8)
         getattr(background, '_xopilot_set_compact', lambda _: None)(small)

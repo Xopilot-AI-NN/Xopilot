@@ -12,10 +12,10 @@ from .palette import color, apply_palette
 from .file_selection import pick_materials
 from .material_viewer import open_material,export_material
 try:
-    from ..services import library, workspaces
+    from ..services import library, workspaces,project_tools
     from ..services.platforms import is_android
 except ImportError:
-    from services import library, workspaces
+    from services import library, workspaces,project_tools
     from services.platforms import is_android
 
 
@@ -25,6 +25,7 @@ def build_library_content(page, workspace_id, on_changed=None):
     height = min(560, max(300, (page.height or 760) - 180))
     search = ft.TextField(hint_text='Поиск в библиотеке', prefix_icon=ft.Icons.SEARCH)
     rows = ft.Column(spacing=8)
+    folder_card=ft.Container(visible=False,padding=12,border_radius=16,bgcolor=color('#dff8f3'))
     feedback = ft.Text('Отмеченные материалы используются ИИ во всех чатах пространства.', size=12, color=color('#47747a'))
     picker = ft.FilePicker()
 
@@ -75,6 +76,19 @@ def build_library_content(page, workspace_id, on_changed=None):
     def render(e=None):
         query = (search.value or '').casefold().strip()
         try:
+            cfg=project_tools.settings(workspace_id) if workspace_id!=workspaces.DEFAULT else {}
+            folder_card.visible=bool(cfg.get('enabled') and cfg.get('root'))
+            if folder_card.visible:
+                def open_project(_):
+                    from .project_browser import open_project
+                    current=next(w for w in workspaces.list_workspaces() if w['id']==workspace_id)
+                    open_project(page,current)
+                folder_card.content=ft.Column(spacing=5,controls=[
+                    ft.Row(controls=[ft.Icon(ft.Icons.FOLDER_OPEN_OUTLINED,color=color('#087f8c')),
+                        ft.Text('Папка проекта · '+Path(cfg['root']).name,expand=True),
+                        ft.OutlinedButton(content='Открыть',on_click=open_project)]),
+                    ft.Text(cfg['root'],size=11,selectable=True),
+                    ft.Text('Файлы доступны ИИ на этом компьютере. Папка может быть пустой; её путь не синхронизируется.',size=11,color=color('#47747a'))])
             items = [m for m in library.entries(workspace_id) if query in m['name'].casefold()]
             controls = []
             for entry in items:
@@ -125,7 +139,16 @@ def build_library_content(page, workspace_id, on_changed=None):
 
     def folder_dialog(_):
         path = ft.TextField(label='Папка на этом компьютере', hint_text='/home/user/project')
-        error = ft.Text('Будут созданы копии поддерживаемых файлов с сохранением структуры названий.', size=12, color=color('#47747a'))
+        use = ft.Dropdown(label='Как использовать папку',value='project',
+            options=[ft.DropdownOption(key='project',text='Папка проекта — можно начать с пустой'),
+                     ft.DropdownOption(key='copies',text='Копии файлов в библиотеке')])
+        error = ft.Text('Подключённая папка доступна ИИ для чтения и записи. Запись и команды подчиняются режиму подтверждения этого чата.',size=12,color=color('#47747a'))
+        def mode_changed(_):
+            button.content='Подключить папку' if use.value=='project' else 'Импортировать копии'
+            error.value=('ИИ работает с настоящими файлами выбранной папки на этом компьютере. Пустая папка тоже подходит.'
+                if use.value=='project' else 'В библиотеке сохраняются копии поддерживаемых файлов. Пустая папка не содержит материалов для копирования.')
+            page.update()
+        use.on_change=mode_changed
         async def browse(_):
             selected = await picker.get_directory_path(dialog_title='Добавить папку в библиотеку')
             if selected:
@@ -136,9 +159,15 @@ def build_library_content(page, workspace_id, on_changed=None):
             error.value = 'Копирую материалы…'
             page.update()
             try:
+                if use.value=='project':
+                    await asyncio.to_thread(project_tools.configure,workspace_id,path.value or '')
+                    feedback.value='Папка подключена. Можно создавать первые файлы в чате проекта.'
+                    page.pop_dialog();render()
+                    if on_changed:on_changed()
+                    page.update();return
                 materials, errors = await asyncio.to_thread(library.import_folder, path.value or '')
                 library.append_materials(workspace_id, materials)
-                feedback.value = f'Из папки добавлено файлов: {len(materials)}' + (f' · ошибок: {len(errors)}' if errors else '')
+                feedback.value = (f'Из папки добавлено файлов: {len(materials)}' if materials else 'Папка пуста или нет поддерживаемых файлов. Можно подключить её как папку проекта.') + (f' · ошибок: {len(errors)}' if errors else '')
                 if errors:
                     error.value = '\n'.join(errors)
                     button.disabled = False
@@ -152,9 +181,9 @@ def build_library_content(page, workspace_id, on_changed=None):
                 error.value = str(exc)
                 button.disabled = False
             page.update()
-        button = ft.FilledButton(content='Импортировать', on_click=import_files)
+        button = ft.FilledButton(content='Подключить папку', on_click=import_files)
         page.show_dialog(ft.AlertDialog(modal=True, bgcolor=color('#eafffa'), title=ft.Text('Добавить папку', color=color('#123b43')),
-            content=ft.Column(width=min(width, 500), tight=True, controls=[path,
+            content=ft.Column(width=min(width, 500), tight=True, controls=[path,use,
                 *([ft.OutlinedButton(content='Выбрать папку', icon=ft.Icons.FOLDER_OPEN, on_click=browse)] if not page.web else []), error]),
             actions=[ft.TextButton(content='Закрыть', on_click=lambda _: page.pop_dialog()), button]))
 
@@ -186,7 +215,7 @@ def build_library_content(page, workspace_id, on_changed=None):
                 ft.OutlinedButton(content='Файлы', icon=ft.Icons.ATTACH_FILE, on_click=add_files),
                 *([] if is_android() else [ft.OutlinedButton(content='Папка', icon=ft.Icons.CREATE_NEW_FOLDER_OUTLINED, on_click=folder_dialog)]),
                 ft.OutlinedButton(content='Заметка', icon=ft.Icons.NOTE_ADD_OUTLINED, on_click=note_dialog)]),
-            feedback, ft.ListView(expand=True, controls=[rows])])
+            feedback,folder_card, ft.ListView(expand=True, controls=[rows])])
 
 
 def build_library_dialog(page, workspace_id, on_changed=None):
