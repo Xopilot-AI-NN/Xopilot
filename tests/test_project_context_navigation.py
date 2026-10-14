@@ -68,6 +68,14 @@ class ContextTests(unittest.TestCase):
             return sum(v*w for v,w in zip(linear,(.2126,.7152,.0722)))
         for theme in ('light', 'dark', 'midnight', 'ocean', 'forest', 'lavender', 'sunset'):
             palette.set_theme(Mock(controls=[create,browse,ai,remove], overlay=[]), theme)
+            close = palette.apply_palette(ft.TextButton(content='Закрыть'))
+            cancel = palette.apply_palette(ft.TextButton(content='Отмена'))
+            for foreground, background in (
+                (close.style.color[ft.ControlState.DEFAULT], close.style.bgcolor[ft.ControlState.DEFAULT]),
+                (cancel.style.color, palette.color('#eafffa')),
+            ):
+                pair = sorted((luminance(foreground), luminance(background)))
+                self.assertGreaterEqual((pair[1]+.05)/(pair[0]+.05), 4.5)
             for button in (create,browse,ai,remove):
                 for tone in button.gradient.colors:
                     pair = sorted((luminance(button.content.color), luminance(tone)))

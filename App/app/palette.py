@@ -132,11 +132,17 @@ def apply_palette(root):
                 style = obj.style or ft.ButtonStyle()
                 changes = {'shape': ft.RoundedRectangleBorder(radius=20), 'elevation': 0,
                            'overlay_color': ft.Colors.with_opacity(.10, ink)}
-                if isinstance(obj, (ft.FilledButton, ft.Button)):
+                close_action = isinstance(obj, ft.TextButton) and str(label).strip().casefold() == 'закрыть'
+                if isinstance(obj, (ft.FilledButton, ft.Button)) or close_action:
                     changes.update(bgcolor={ft.ControlState.DEFAULT: tones[0], ft.ControlState.HOVERED: tones[1], ft.ControlState.DISABLED: color('#dff8f3')},
                                    color={ft.ControlState.DEFAULT: ink, ft.ControlState.DISABLED: color('#47747a')})
+                    if close_action:
+                        changes.update(side=ft.BorderSide(1, outline),
+                                       padding=ft.Padding.symmetric(horizontal=20, vertical=12))
                 else:
-                    changes['color'] = ink
+                    # Tonal ink belongs on its light fill. Transparent actions
+                    # need a light foreground on dark dialog surfaces.
+                    changes['color'] = tones[1] if is_dark_theme() else ink
                     if isinstance(obj, ft.OutlinedButton):
                         changes['side'] = ft.BorderSide(1, outline)
                 obj.style = replace(style, **changes)
