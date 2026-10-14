@@ -200,11 +200,12 @@ class MemoryCaptureLifecycleTests(unittest.IsolatedAsyncioTestCase):
 
 class StreamedAndroidExportTests(unittest.IsolatedAsyncioTestCase):
     async def test_export_existing_file_passes_only_path_to_native_service(self):
-        bridge = AsyncMock(side_effect=['export-token', {'token':'export-token', 'tag':'export',
+        bridge = AsyncMock(side_effect=[None, 'export-token', {'token':'export-token', 'tag':'export',
             'state':'ready','exported':True}, None])
         with patch.object(mobile_documents,'call_async',bridge), patch.object(Path,'read_bytes',side_effect=AssertionError('No whole-file buffers')):
             self.assertTrue(await mobile_documents.save_document_file('large.mp4', '/private/large.mp4'))
-        self.assertEqual(bridge.await_args_list[0].args, ('stageExport', {'path':'/private/large.mp4','name':'large.mp4'}))
+        self.assertEqual(bridge.await_args_list[0].args, ('pendingDocuments',))
+        self.assertEqual(bridge.await_args_list[1].args, ('stageExport', {'path':'/private/large.mp4','name':'large.mp4'}))
 
 
 class StorageInterfaceTests(unittest.IsolatedAsyncioTestCase):

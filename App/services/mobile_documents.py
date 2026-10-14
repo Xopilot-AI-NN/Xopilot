@@ -1,4 +1,9 @@
-"""Recover ordinary-chat SAF attachments when Android replaces the process."""
+"""
+Файл: /App/services/mobile_documents.py
+Разработчик: DenBroLiik
+Версия: 2.0.8
+Описание: Восстановление выбранных файлов и экспортов Android без потери черновиков.
+"""
 import asyncio
 import re
 import os
@@ -72,15 +77,23 @@ async def import_selection(operation):
 
 
 async def pick_chat_documents(chat_id):
-    return await import_selection(await call_async('pickDocuments', {'tag': f'chat:{chat_id}'}))
+    await _recover_before_new_operation()
+    result = await import_selection(await call_async('pickDocuments', {'tag': f'chat:{chat_id}'}))
+    if result and result.get('chat_id') == chat_id:
+        # Include files recovered immediately before this selection, so the UI
+        # cannot overwrite them when it next persists its attachment strip.
+        result['files'] = read_draft(chat_id).get('files', [])
+    return result
 
 
 async def pick_workspace_documents(workspace_id):
     uuid.UUID(workspace_id)
+    await _recover_before_new_operation()
     return await import_selection(await call_async('pickDocuments', {'tag': f'workspace:{workspace_id}'}))
 
 
 async def pick_avatar():
+    await _recover_before_new_operation()
     return await import_selection(await call_async('pickDocuments', {'tag': 'avatar'}))
 
 
@@ -96,7 +109,16 @@ async def recover_pending_documents():
     return None
 
 
+async def _recover_before_new_operation():
+    operation = await call_async('pendingDocuments')
+    if operation and operation.get('state') == 'copying':
+        await recover_pending_documents()
+    elif operation and operation.get('state') in ('ready', 'error'):
+        await import_selection(operation)
+
+
 async def save_document(name, data):
+    await _recover_before_new_operation()
     root = app_data_dir() / 'export_staging'
     root.mkdir(parents=True, exist_ok=True)
     descriptor, path = tempfile.mkstemp(dir=root)
@@ -114,6 +136,7 @@ async def save_document(name, data):
 
 async def save_document_file(name, path):
     """Stage and export with native streaming; no whole-file Python/Flutter copy."""
+    await _recover_before_new_operation()
     token = await call_async('stageExport', {'path': str(path), 'name': name})
     result = await import_selection(await call_async('exportDocument', {'token': token}))
     return bool(result and result.get('exported'))

@@ -1,3 +1,9 @@
+/*
+Файл: /extensions/flet_xopilot_mobile/.../DocumentPicker.java
+Разработчик: DenBroLiik
+Версия: 2.0.8
+Описание: Восстановление выбора файлов Android после замены Activity или процесса.
+*/
 package ru.xopilot.mobile;
 
 import android.app.Activity;
@@ -24,6 +30,8 @@ final class DocumentPicker {
     private final SharedPreferences preferences;
     private final Handler main = new Handler(Looper.getMainLooper());
     private MethodChannel.Result callback;
+    private static final int FIRST_DYNAMIC_REQUEST = 10000;
+    private static final int LAST_DYNAMIC_REQUEST = 60000;
 
     DocumentPicker(Context context) {
         this.context = context;
@@ -43,6 +51,8 @@ final class DocumentPicker {
     }
 
     void start(Activity activity, String tag, MethodChannel.Result result) {
+        try { releaseAbandonedWaiting(); }
+        catch (Exception error) { result.error("document_picker", error.getMessage(), null); return; }
         if (preferences.contains("operation")) {
             result.error("document_picker", "Сначала завершите предыдущий выбор файлов", null);
             return;
@@ -54,6 +64,8 @@ final class DocumentPicker {
             operation.put("token", UUID.randomUUID().toString());
             operation.put("tag", tag);
             operation.put("state", "waiting");
+            int request = nextRequest();
+            operation.put("request", request);
             if (!preferences.edit().putString("operation", operation.toString()).commit())
                 throw new IOException("Не удалось сохранить выбор файлов");
             callback = result;
@@ -62,7 +74,7 @@ final class DocumentPicker {
             intent.setType(tag.equals("avatar") ? "image/*" : "*/*");
             intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, !tag.equals("avatar"));
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            activity.startActivityForResult(intent, REQUEST);
+            activity.startActivityForResult(intent, request);
         } catch (Exception error) {
             preferences.edit().remove("operation").commit();
             callback = null;
@@ -71,12 +83,18 @@ final class DocumentPicker {
     }
 
     boolean result(int request, int code, Intent data) {
-        if (request != REQUEST && request != EXPORT_REQUEST) return false;
+        if (request != REQUEST && request != EXPORT_REQUEST &&
+            (request < FIRST_DYNAMIC_REQUEST || request > LAST_DYNAMIC_REQUEST)) return false;
         // A new plugin instance still receives this result after Android kills
         // the original process. The persisted tag retains the destination chat.
-        if (!preferences.contains("operation")) return true;
+        if (!preferences.contains("operation")) return false;
         try {
             JSONObject operation = new JSONObject(preferences.getString("operation", "{}"));
+            int expected = operation.optInt("request", "export".equals(operation.optString("tag")) ? EXPORT_REQUEST : REQUEST);
+            // A cancelled/restored picker must never deliver its late result
+            // into a newer request or into a different chat/workspace.
+            if (request != expected) return false;
+            if (!"waiting".equals(operation.optString("state"))) return true;
             operation.put("state", "copying");
             preferences.edit().putString("operation", operation.toString()).commit();
             List<Uri> uris = new ArrayList<>();
@@ -93,7 +111,7 @@ final class DocumentPicker {
                     JSONArray files = new JSONArray();
                     File root = new File(context.getFilesDir(), "pending_documents/" + operation.getString("token"));
                     if (!uris.isEmpty() && !root.mkdirs() && !root.isDirectory()) throw new IOException("Нет места для файлов");
-                    if (request == EXPORT_REQUEST) {
+                    if ("export".equals(operation.optString("tag"))) {
                         if (!uris.isEmpty()) {
                             try (InputStream input = new FileInputStream(new File(root, "export"));
                                  OutputStream output = context.getContentResolver().openOutputStream(uris.get(0), "wt")) {
@@ -123,7 +141,8 @@ final class DocumentPicker {
                     try { operation.put("state", "error").put("error", "Не удалось скопировать выбранные файлы. Повторите выбор."); }
                     catch (Exception ignored) { }
                 } finally {
-                    boolean saved = preferences.edit().putString("operation", operation.toString()).commit();
+                    boolean current = operation.optString("token").equals(currentToken());
+                    boolean saved = current && preferences.edit().putString("operation", operation.toString()).commit();
                     main.post(() -> {
                         MethodChannel.Result waiting = callback;
                         callback = null;
@@ -171,6 +190,7 @@ final class DocumentPicker {
     }
 
     String stageExport(String path, String name) throws Exception {
+        releaseAbandonedWaiting();
         if (preferences.contains("operation")) throw new IllegalStateException("Сначала завершите предыдущий выбор файлов");
         File source = new File(path).getCanonicalFile();
         String privateRoot = context.getFilesDir().getCanonicalPath() + File.separator;
@@ -197,6 +217,8 @@ final class DocumentPicker {
             if (!token.equals(operation.optString("token")) || !"staged".equals(operation.optString("state")))
                 throw new IllegalStateException("Экспорт не подготовлен");
             operation.put("state", "waiting");
+            int request = nextRequest();
+            operation.put("request", request);
             if (!preferences.edit().putString("operation", operation.toString()).commit())
                 throw new IOException("Не удалось сохранить экспорт");
             callback = result;
@@ -205,7 +227,7 @@ final class DocumentPicker {
             intent.setType("application/octet-stream");
             intent.putExtra(Intent.EXTRA_TITLE, operation.getString("name"));
             intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-            activity.startActivityForResult(intent, EXPORT_REQUEST);
+            activity.startActivityForResult(intent, request);
         } catch (Exception error) {
             callback = null;
             try { acknowledge(token); } catch (Exception ignored) { }
@@ -222,5 +244,26 @@ final class DocumentPicker {
         if (files != null) for (File file : files) if (!file.delete()) throw new IOException("Не удалось убрать временный файл");
         if (root.exists() && !root.delete()) throw new IOException("Не удалось убрать временную папку");
         preferences.edit().remove("operation").commit();
+    }
+
+    private String currentToken() {
+        try { return new JSONObject(preferences.getString("operation", "{}")).optString("token"); }
+        catch (Exception ignored) { return ""; }
+    }
+
+    private int nextRequest() throws IOException {
+        int previous = preferences.getInt("request_sequence", FIRST_DYNAMIC_REQUEST - 1);
+        int next = previous >= LAST_DYNAMIC_REQUEST ? FIRST_DYNAMIC_REQUEST : previous + 1;
+        if (!preferences.edit().putInt("request_sequence", next).commit())
+            throw new IOException("Не удалось подготовить выбор файлов");
+        return next;
+    }
+
+    private void releaseAbandonedWaiting() throws Exception {
+        if (callback != null || !preferences.contains("operation")) return;
+        JSONObject operation = new JSONObject(preferences.getString("operation", "{}"));
+        // Only a fresh explicit selection/export supersedes a waiting request
+        // with no live callback. Never discard ready files or a running copy.
+        if ("waiting".equals(operation.optString("state"))) acknowledge(operation.getString("token"));
     }
 }
