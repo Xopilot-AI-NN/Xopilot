@@ -81,6 +81,9 @@ public final class XopilotMobilePlugin implements FlutterPlugin, MethodChannel.M
                     else canvasWeb.inspect(activityBinding.getActivity(),(Map<String,Object>)call.arguments,result);
                     return;
                 case "canvasWebClose": canvasWeb.close();result.success(null);return;
+                case "listApps": result.success(DeviceActions.apps(context)); return;
+                case "launchApp": result.success(DeviceActions.launch(context, call.argument("package"))); return;
+                case "controlMedia": result.success(DeviceActions.media(context, call.argument("action"))); return;
                 case "releaseMemory":
                     if (engine != null || active != null || overlay.enabled() || ScreenCaptureService.current != null || activityBinding == null) {
                         result.success(false);return;
@@ -237,7 +240,6 @@ public final class XopilotMobilePlugin implements FlutterPlugin, MethodChannel.M
     }
     @Override public void onReattachedToActivityForConfigChanges(ActivityPluginBinding binding) { onAttachedToActivity(binding); }
     @Override public void onDetachedFromActivity() {
-        canvasWeb.close();
         onDetachedFromActivityForConfigChanges(); finishScreen("Приложение закрыто");
         ScreenCaptureService.stop(context);
     }
@@ -378,7 +380,7 @@ public final class XopilotMobilePlugin implements FlutterPlugin, MethodChannel.M
     @Override public void onDetachedFromEngine(FlutterPluginBinding binding) {
         ((Application)context).unregisterActivityLifecycleCallbacks(lifecycle);
         overlay.dispose(); LiveCaptureService.stopped = null;
-        cameraFrames.close();
+        cameraFrames.close(); canvasWeb.close();
         ScreenCaptureService.stop(context);
         finishScreen("Приложение закрыто");
         channel.setMethodCallHandler(null);
