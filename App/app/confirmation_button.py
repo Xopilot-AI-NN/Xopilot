@@ -23,7 +23,6 @@ def build_confirmation_button(page,get_chat_id,can_change=lambda:True):
         label.value='Автоматически' if mode=='automatic' else 'Вручную'
         icon.name=ft.Icons.AUTO_MODE if mode=='automatic' else ft.Icons.FACT_CHECK_OUTLINED
         trigger.tooltip='Подтверждение действий · '+label.value
-        menu.visible=not private
         trigger.visible=not private
         trigger.width=40 if compact else (150 if mode=='automatic' else 116)
         label.visible=not compact
@@ -35,7 +34,7 @@ def build_confirmation_button(page,get_chat_id,can_change=lambda:True):
         if identifier is None or identifier<0:return
         def save():
             project_tools.set_chat_approval_mode(identifier,value);refresh();page.update()
-        if value=='manual':save();return
+        if value=='manual' or project_tools.chat_approval_consent(identifier):save();return
         def accept(_):page.pop_dialog();save()
         page.show_dialog(ft.AlertDialog(modal=True,title=ft.Text('Автоматические действия в этом чате?'),
             content=ft.Text('ИИ сможет выполнять действия без отдельных запросов подтверждения. '
@@ -44,16 +43,15 @@ def build_confirmation_button(page,get_chat_id,can_change=lambda:True):
                 'Разрешение действует только для этого чата на этом устройстве. Включайте для задач и материалов, которым доверяете.'),
             actions=[ft.TextButton(content='Отмена',on_click=lambda _:page.pop_dialog()),
                      ft.FilledButton(content='Включить автоматически',on_click=accept)]))
-    menu=ft.PopupMenuButton(tooltip='Подтверждение действий',items=[
-        ft.PopupMenuItem(content=ft.Text('Вручную'),icon=ft.Icons.FACT_CHECK_OUTLINED,on_click=lambda _:change('manual')),
-        ft.PopupMenuItem(content=ft.Text('Автоматически'),icon=ft.Icons.AUTO_MODE,on_click=lambda _:change('automatic'))])
+    def toggle(_):
+        identifier=get_chat_id()
+        change('manual' if project_tools.chat_approval_mode(identifier)=='automatic' else 'automatic')
     trigger=ft.Container(height=36,padding=ft.Padding.symmetric(horizontal=10),border_radius=18,
-        bgcolor=color('#dff8f3'),border=ft.Border.all(1,color('#b9eee4')),
+        ink=True,on_click=toggle,bgcolor=color('#dff8f3'),border=ft.Border.all(1,color('#b9eee4')),
         content=ft.Row(spacing=6,controls=[icon,label]))
-    menu.content=trigger
     def resize(value):
         nonlocal compact
         compact=value;refresh()
-    menu._xopilot_set_compact=resize
-    refresh();apply_palette(menu)
-    return menu,refresh
+    trigger._xopilot_set_compact=resize
+    refresh();apply_palette(trigger)
+    return trigger,refresh

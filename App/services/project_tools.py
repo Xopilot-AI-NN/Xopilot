@@ -50,6 +50,11 @@ def set_chat_approval_mode(chat_id,mode):
     if type(chat_id) is not int or chat_id<=0:raise ValueError('Режим действий доступен в обычном чате')
     if mode not in {'manual','automatic'}:raise ValueError('Неизвестный режим подтверждения')
     get_db().set_setting('chat_approval:'+str(chat_id),mode)
+    if mode=='automatic':get_db().set_setting('chat_approval_consent:'+str(chat_id),'true')
+
+
+def chat_approval_consent(chat_id):
+    return type(chat_id) is int and chat_id>0 and get_db().get_setting('chat_approval_consent:'+str(chat_id))=='true'
 
 
 def configure(identifier,path,enabled=True):
