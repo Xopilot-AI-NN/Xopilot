@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 from PIL import Image, ImageOps
 from .db import get_db
+from .image_safety import open_raster
 
 KEY='profile_v1'
 GOOGLE_SOURCE='profile_google_source_v1'
@@ -45,8 +46,7 @@ def import_google(account_id,*,name='',avatar=None,picture_url='',db=None):
 
 def normalize_avatar(data):
     if len(data)>10*1024*1024:raise ValueError('Выберите изображение до 10 МБ')
-    with Image.open(io.BytesIO(data)) as image:
-        if image.width*image.height>20_000_000:raise ValueError('Изображение слишком большое')
+    with open_raster(io.BytesIO(data)) as image:
         image=ImageOps.exif_transpose(image).convert('RGB')
         image=ImageOps.fit(image,(256,256),method=Image.Resampling.LANCZOS)
         output=io.BytesIO();image.save(output,format='JPEG',quality=90)
@@ -61,7 +61,7 @@ def validate(data):
     if not isinstance(avatar,str) or len(avatar)>MAX_AVATAR:raise ValueError('Неверная аватарка')
     if avatar:
         decoded=base64.b64decode(avatar,validate=True)
-        with Image.open(io.BytesIO(decoded)) as image:
+        with open_raster(io.BytesIO(decoded), formats=('JPEG',)) as image:
             if image.size!=(256,256) or image.format!='JPEG':raise ValueError('Неверный формат аватарки')
             image.verify()
     result = {'name':name.strip(),'avatar':avatar}

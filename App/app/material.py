@@ -11,13 +11,14 @@
 import flet as ft
 try:
     from .palette import color
+    from ..services.image_safety import open_raster
 except ImportError:
     from app.palette import color
+    from services.image_safety import open_raster
 import os
 import io
 import asyncio
 from pathlib import Path
-from PIL import Image
 from functools import lru_cache
 
 
@@ -31,8 +32,7 @@ def image_preview(path):
 @lru_cache(maxsize=32)
 def _image_preview(path,_size,_modified):
         try:
-                with Image.open(path) as image:
-                        if image.width*image.height>20_000_000:return b''
+                with open_raster(path) as image:
                         image.draft('RGB',(256,256))
                         image.thumbnail((256, 256))
                         buffer = io.BytesIO()

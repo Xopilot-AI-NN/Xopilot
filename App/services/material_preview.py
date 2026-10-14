@@ -8,6 +8,7 @@ from . import storage
 from .db import get_db
 from .paths import app_data_dir
 from .attachments import TEXT_EXTENSIONS, IMAGE_EXTENSIONS
+from .image_safety import open_raster
 
 TEXT_PREVIEW_BYTES = 64 * 1024
 WEB_EXPORT_BYTES = 16 * 1024 * 1024
@@ -50,8 +51,8 @@ def preview(path, name):
         result['truncated'] = len(raw) > TEXT_PREVIEW_BYTES
         result['text'] = raw[:TEXT_PREVIEW_BYTES].decode('utf-8-sig', errors='replace')
     elif extension in IMAGE_EXTENSIONS:
-        from PIL import Image, ImageOps
-        with Image.open(path) as image:
+        from PIL import ImageOps
+        with open_raster(path, max_pixels=None) as image:
             # Bound decompression before loading pixels, including crafted images.
             if image.width * image.height > 20_000_000:
                 result['text'] = 'Изображение слишком большое для встроенного просмотра. Сохраните оригинал, чтобы открыть его.'
