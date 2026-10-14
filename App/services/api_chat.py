@@ -8,6 +8,7 @@ import threading
 import time
 from concurrent.futures import CancelledError
 from urllib.parse import urlsplit
+from .task_control import network_error
 from .db import get_db, get_setting
 from .attachments import build_attachment_message_parts
 
@@ -233,6 +234,8 @@ def generate_reply(prompt_text, history=None, attachments=None, *, instructions=
     except Exception as exc:
         if cancelled is not None and cancelled.is_set():
             raise CancelledError() from exc
+        if network_error(exc):
+            raise ConnectionError('Потеряно соединение с API') from exc
         if isinstance(exc, RuntimeError):
             raise
         raise RuntimeError('Не удалось прочитать ответ API. Проверьте соединение и совместимость Chat Completions.') from exc

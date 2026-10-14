@@ -180,7 +180,7 @@ def _ai_markdown_value(text: str) -> str:
     return text
 
 
-def build_ai_message(text: str, on_action=None, message_id: int | None = None) -> ft.Container:
+def build_ai_message(text: str, on_action=None, message_id: int | None = None, files=None) -> ft.Container:
     """Пузырь сообщения ИИ (слева). Ответ рендерится как Markdown (GitHub Flavored):
     **жирный**, *курсив*, заголовки, списки, таблицы, код с подсветкой, ссылки.
     Кнопка «Копировать» и цитаты работают с исходным Markdown-текстом."""
@@ -198,6 +198,9 @@ def build_ai_message(text: str, on_action=None, message_id: int | None = None) -
             ),
         ],
     )
+    if files:
+        bubble_content.controls.insert(0, ft.Row(wrap=True, spacing=6,
+            controls=[file_utils.build_file_tile(file) for file in files]))
     bubble = ft.Container(
         padding=ft.Padding.symmetric(horizontal=12, vertical=9),
         border_radius=20,

@@ -77,4 +77,3 @@ class ControllerTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError,'401'):
             TaskControl().generate(generate,'prompt',network=True,probe=lambda:True)
         self.assertEqual(generate.call_count,1)
-
