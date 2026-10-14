@@ -111,18 +111,89 @@ class LivePreviewTests(unittest.IsolatedAsyncioTestCase):
 class RetryUITests(unittest.IsolatedAsyncioTestCase):
     setUp = test_real_answers.PersistenceUITests.setUp
 
+    async def test_main_button_pauses_then_sends_instruction_and_continues(self):
+        import asyncio
+        import threading
+        from concurrent.futures import CancelledError
+        started=threading.Event();calls=[]
+        def generate(text,cancelled,**kwargs):
+            calls.append(text)
+            if len(calls)==1:
+                started.set()
+                while not cancelled.is_set():time.sleep(.01)
+                raise CancelledError()
+            return 'Обновлённый ответ'
+        self.generate.side_effect=generate
+        self.prompt_container.call_args.kwargs['attachments'].update=Mock()
+        self.prompt.value='Исходный вопрос'
+        worker=asyncio.create_task(self.send(None))
+        button=self.prompt_container.call_args.kwargs['send_button']
+        try:
+            self.assertTrue(await asyncio.to_thread(started.wait,2))
+            self.assertEqual(button.tooltip,'Приостановить задачу')
+            await button.on_click(None)
+            self.assertEqual(button.tooltip,'Продолжить задачу')
+            self.prompt.value='Уточнение: ответь 42'
+            await button.on_click(None)
+            await asyncio.wait_for(worker,3)
+        finally:
+            if not worker.done():worker.cancel();await worker
+        self.assertEqual(self.save.call_count,2)
+        self.assertEqual(self.save.call_args.args[1],'Уточнение: ответь 42')
+        self.assertIn('Уточнение: ответь 42',calls[-1])
+        self.save_ai.assert_called_once_with(1,'Обновлённый ответ')
+        self.assertEqual(self.prompt.value,'')
+
+    async def test_busy_messages_wait_for_completion_and_preserve_draft(self):
+        import asyncio
+        started=threading.Event();release=threading.Event();calls=[]
+        def generate(text,cancelled,**kwargs):
+            calls.append((text,kwargs))
+            if len(calls)==1:
+                started.set()
+                while not release.wait(.01):
+                    if cancelled.is_set():raise AssertionError('Queued message interrupted generation')
+            return 'Ответ '+text
+        self.generate.side_effect=generate
+        self.save.side_effect=[11,13]
+        self.prompt_container.call_args.kwargs['attachments'].update=Mock()
+        self.prompt.value='Первый вопрос'
+        worker=asyncio.create_task(self.send(None))
+        button=self.prompt_container.call_args.kwargs['send_button']
+        try:
+            self.assertTrue(await asyncio.to_thread(started.wait,2))
+            self.prompt.value='Следующий вопрос'
+            await button.on_click(None)
+            self.assertEqual(len(calls),1)
+            self.assertEqual(button.tooltip,'Приостановить задачу')
+            self.assertEqual(button.content.name,ft.Icons.PAUSE_ROUNDED)
+            self.prompt.value='Ещё не отправленный черновик'
+            release.set();await asyncio.wait_for(worker,3)
+            scheduled=[c for c in self.page.run_task.call_args_list if c.args and c.args[0]==self.send and len(c.args)==4]
+            self.assertEqual(len(scheduled),1)
+            await self.send(*scheduled[0].args[1:])
+        finally:
+            release.set()
+            if not worker.done():worker.cancel();await worker
+        self.assertEqual([c[0] for c in calls],['Первый вопрос','Следующий вопрос'])
+        self.assertEqual(self.save.call_count,2)
+        self.assertEqual(self.save_ai.call_count,2)
+        self.assertEqual(self.prompt.value,'Ещё не отправленный черновик')
+        history=calls[1][1].get('history',[])
+        self.assertNotIn('Следующий вопрос',[m.get('content') for m in history])
+
     async def test_worker_cancellation_offers_retry_without_duplicate_question(self):
         from concurrent.futures import CancelledError
         self.generate.side_effect = [CancelledError(), 'Повторный ответ']
         self.prompt.value = 'Вопрос'
         await self.send(None)
         composer = self.prompt_container.call_args.kwargs['composer_status']
-        retry = composer.content.controls[1].controls[-1]
+        retry = self.prompt_container.call_args.kwargs['send_button']
         self.assertTrue(composer.visible)
-        self.assertTrue(retry.visible)
-        await retry.on_click(None)
-        self.assertEqual(self.save.call_count, 1)
         self.assertFalse(retry.visible)
+        await self.send(None,retry=True)
+        self.assertEqual(self.save.call_count, 1)
+        self.assertNotEqual(retry.tooltip, 'Продолжить задачу')
 
     async def test_retry_uses_edited_question(self):
         from concurrent.futures import CancelledError
@@ -134,11 +205,11 @@ class RetryUITests(unittest.IsolatedAsyncioTestCase):
         self.prompt.focus = AsyncMock()
         await action('edit', 'Старый вопрос', [], 11)
         composer = self.prompt_container.call_args.kwargs['composer_status']
-        self.assertFalse(composer.content.controls[1].controls[-1].visible)
+        self.assertNotEqual(self.prompt_container.call_args.kwargs['send_button'].tooltip, 'Продолжить задачу')
         self.prompt.value = 'Исправленный вопрос'
         await self.send(None)
         composer = self.prompt_container.call_args.kwargs['composer_status']
-        await composer.content.controls[1].controls[-1].on_click(None)
+        await self.send(None,retry=True)
         self.assertEqual(self.generate.call_args.args[0], 'Исправленный вопрос')
         self.assertEqual(self.save.call_count, 1)
 
@@ -148,13 +219,13 @@ class RetryUITests(unittest.IsolatedAsyncioTestCase):
         await self.send(None)
         self.prompt.value = 'Следующий черновик'
         composer = self.prompt_container.call_args.kwargs['composer_status']
-        retry = composer.content.controls[1].controls[-1]
-        self.assertTrue(retry.visible)
-        await retry.on_click(None)
+        retry = self.prompt_container.call_args.kwargs['send_button']
+        self.assertFalse(retry.visible)
+        await self.send(None,retry=True)
         self.assertEqual(self.save.call_count, 1)
         self.assertEqual(self.generate.call_count, 2)
         self.assertEqual(self.prompt.value, 'Следующий черновик')
-        self.assertFalse(retry.visible)
+        self.assertNotEqual(retry.tooltip, 'Продолжить задачу')
 
 
 class PaletteTests(unittest.TestCase):

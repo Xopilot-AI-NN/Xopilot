@@ -142,7 +142,19 @@ def build_app_ui(page: ft.Page) -> ft.Control:
     page.bgcolor = color("#b3f2ff")
 
     async def submit_prompt(e):
-        await on_send(e)
+        if is_sending:
+            if (prompt.value or '').strip() or selected_files:
+                await send_instruction()
+            else:
+                task_control.resume() if task_control.paused else task_control.pause()
+                refresh_composer()
+        else:
+            pending=next((item for item in queued_messages if item['chat_id']==active_chat_id),None)
+            if pending:
+                if (prompt.value or '').strip() or selected_files:await send_instruction(force_queue=True)
+                queued_messages.remove(pending);pending['badge'].visible=False
+                await on_send(e,queue_item=pending)
+            else:await on_send(e)
 
     prompt = build_prompt(on_submit=submit_prompt)
     selected_files = []
@@ -151,6 +163,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
     editing_message = None
     draft_before_edit = ("", [])
     is_sending = False  # защита от повторного Enter/клика, пока предыдущая отправка (вкл. инференс ИИ) ещё идёт
+    queued_messages=[]
     request_cancelled = threading.Event()
     try:from ..services.task_control import TaskControl
     except ImportError:from services.task_control import TaskControl
@@ -206,37 +219,54 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         composer_label.value = "Останавливаю ответ…"
         page.update()
 
-    async def retry_reply(e):
-        await on_send(e, retry=True)
-
     stop_button = ft.TextButton(content="Остановить", on_click=stop_reply, visible=False)
-    retry_button = ft.TextButton(content="Повторить", on_click=retry_reply, visible=False)
-    def pause_reply(_):
-        task_control.resume() if task_control.paused else task_control.pause()
+    composer_actions.controls.append(stop_button)
+
+    async def send_instruction(force_queue=False):
+        text=prompt.value or ''
+        files=selected_files.copy()
+        attachments=[(f.name,f.path) for f in files if getattr(f,'path',None)]
+        try:identifier=save_user_message(active_chat_id,text,attachments=attachments)
+        except Exception as exc:
+            page.show_dialog(ft.SnackBar(ft.Text('Уточнение не отправлено: '+str(exc))))
+            return
+        chat_context.append({'role':'user','content':text,'id':identifier})
+        message=build_user_message(text,files,on_action=handle_message_action,message_id=identifier)
+        if task_control.paused and not force_queue:
+            task_control.add_instruction(text,attachments,message_id=identifier)
+        else:
+            badge=ft.Text('В очереди · после текущей задачи',size=10,color=color('#47747a'))
+            message=ft.Column(tight=True,spacing=2,controls=[message,badge],data=identifier)
+            queued_messages.append(dict(id=identifier,text=text,attachments=attachments,files=files,
+                                        chat_id=active_chat_id,badge=badge))
+        cast(ft.ListView,chat.content).controls.insert(0,message)
+        prompt.value='';selected_files.clear();persist_draft()
+        await refresh_attachments()
         refresh_composer()
-    pause_button = ft.TextButton(content='Пауза',on_click=pause_reply,visible=False)
-    def show_tasks(_):
-        from .task_browser import open_tasks
-        open_tasks(page,task_control,active=lambda:is_sending)
-    tasks_button=ft.TextButton(content='Команды',on_click=show_tasks)
-    composer_actions.controls.extend([pause_button,tasks_button,stop_button,retry_button])
 
     def refresh_composer(update=True):
-        send_button.visible = bool(prompt.value or selected_files or editing_message is not None or is_sending)
+        has_input=bool((prompt.value or '').strip() or selected_files)
+        pending_count=sum(item['chat_id']==active_chat_id for item in queued_messages)
+        send_button.visible = bool(has_input or editing_message is not None or is_sending or pending_count)
         live.button.visible = not send_button.visible
-        send_button.disabled = is_sending
-        send_button.opacity = 0.5 if is_sending else 1
+        send_button.disabled = False
+        send_button.opacity = 1
+        send_button.content.name=(ft.Icons.SEND_ROUNDED if has_input else
+            ft.Icons.PLAY_ARROW_ROUNDED if (is_sending and task_control.paused) or (not is_sending and pending_count) else
+            ft.Icons.PAUSE_ROUNDED if is_sending else ft.Icons.SEND_ROUNDED)
+        send_button.tooltip=('Отправить уточнение и продолжить' if is_sending and has_input and task_control.paused else
+            'Добавить сообщение в очередь' if is_sending and has_input else
+            'Продолжить задачу' if is_sending and task_control.paused else
+            'Обработать сообщение из очереди' if not is_sending and pending_count and not has_input else
+            'Приостановить задачу' if is_sending else 'Отправить сообщение')
         cancel_edit_button.visible = editing_message is not None and not is_sending
-        composer_status.visible = is_sending or editing_message is not None or failed_request is not None or (task_processes.has_processes() and not is_private(active_chat_id))
-        composer_label.value = (task_control.state if is_sending and task_control.paused else "Готовлю ответ…" if is_sending else
+        composer_status.visible = bool(is_sending or pending_count or editing_message is not None or failed_request is not None)
+        composer_label.value = (task_control.state if is_sending and task_control.paused else "Обдумывание…" if is_sending else
                                 "Редактирование сообщения" if editing_message is not None else
                                 failed_reason or ("Фоновые процессы работают" if task_processes.has_running() else "Журнал команд" if task_processes.has_processes() else "Ответ не получен"))
+        if pending_count:composer_label.value+=f' · сообщений в очереди: {pending_count}'
         composer_label.tooltip = failed_reason if failed_request is not None and not is_sending else None
-        tasks_button.visible = not is_private(active_chat_id)
         stop_button.visible = is_sending
-        pause_button.visible = is_sending
-        pause_button.content = 'Продолжить' if task_control.paused else 'Пауза'
-        retry_button.visible = failed_request is not None and not is_sending and editing_message is None
         height = available_height(page)
         short_phone = is_android() and isinstance(height, (int, float)) and height < 440
         attachment_strip.visible = bool(selected_files) and not (is_android() and isinstance(height, (int, float)) and height < 260)
@@ -526,7 +556,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         prompt.update()
         refresh_composer()
 
-    async def on_send(e, retry=False):
+    async def on_send(e, retry=False, queue_item=None):
         nonlocal task_control
         memory_capture.cancel()
         nonlocal editing_message, is_sending, failed_request, failed_reason
@@ -534,13 +564,16 @@ def build_app_ui(page: ft.Page) -> ft.Control:
             return
         if is_sending or voice_input.busy:
             return  # Не отправляем незавершённую диктовку и не дублируем запросы.
+        if queue_item and queue_item['chat_id']!=active_chat_id:
+            queue_item['badge'].visible=True;queued_messages.insert(0,queue_item)
+            return
         try:
             from ..services import api_chat
         except ImportError:
             from services import api_chat
-        api_frame = (not live.busy and not is_private(active_chat_id)
+        api_frame = (not queue_item and not live.busy and not is_private(active_chat_id)
                      and api_chat.is_api_selected() and (live.camera_on or live.screen_on))
-        if not retry and (live.busy or ((live.camera_on or live.screen_on) and not api_frame)):
+        if not retry and not queue_item and (live.busy or ((live.camera_on or live.screen_on) and not api_frame)):
             live.frame_question.value = prompt.value or ""
             before = list(live.files)
             live.files.extend(f for f in selected_files if f not in live.files)
@@ -556,23 +589,36 @@ def build_app_ui(page: ft.Page) -> ft.Control:
             page.update()
             return
         prompt.error_text = None
-        text = failed_request[0] if retry and failed_request else prompt.value or ""
-        if not retry and not text.strip() and not selected_files:
+        text = queue_item['text'] if queue_item else failed_request[0] if retry and failed_request else prompt.value or ""
+        if not retry and not text.strip() and not (queue_item['files'] if queue_item else selected_files):
             return
-        sent_files = selected_files.copy()
-        sent_attachments = failed_request[1] if retry and failed_request else [
+        sent_files = queue_item['files'] if queue_item else selected_files.copy()
+        sent_attachments = queue_item['attachments'] if queue_item else failed_request[1] if retry and failed_request else [
             (f.name, f.path) for f in sent_files if getattr(f, "path", None)
         ]
+        request_history=(failed_request[2] if retry and len(failed_request)>2 else
+                         [dict(item) for item in chat_context if item.get('id') not in {q['id'] for q in queued_messages}])
+        if queue_item:
+            queued_ids={item['id'] for item in queued_messages}|{queue_item['id']}
+            request_history=[dict(item) for item in chat_context if item.get('id') not in queued_ids]
+            current=next((item for item in chat_context if item.get('id')==queue_item['id']),None)
+            if current:chat_context.remove(current);chat_context.append(current)
         request_chat_id = active_chat_id
+        new_id=queue_item['id'] if queue_item else None
+        request_success=False
+        def recover_request():
+            updates=task_control.instruction_snapshot()
+            full_text=text+('\n\nУточнения пользователя:\n'+'\n'.join(u['text'] for u in updates) if updates else '')
+            files=list(dict.fromkeys([*sent_attachments,*(f for u in updates for f in u['attachments'])]))
+            return full_text,files,request_history
         is_sending = True
         request_done.clear()
         request_cancelled.clear()
         def task_state(value):
             async def refresh_state():
                 if is_sending:
-                    composer_label.value=value
-                    pause_button.content='Продолжить' if task_control.paused else 'Пауза'
-                    page.update()
+                    refresh_composer(update=False)
+                    composer_label.value=value;page.update()
             page.run_task(refresh_state)
         task_control=TaskControl(request_cancelled,on_state=task_state)
         refresh_composer()
@@ -600,7 +646,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                 chat_context.clear()
             should_reply = False
 
-            if retry:
+            if retry or queue_item:
                 should_reply = True
             elif editing_message is not None:
                 original_id, original_text, original_files = editing_message
@@ -660,11 +706,12 @@ def build_app_ui(page: ft.Page) -> ft.Control:
             # Сразу очищаем поле ввода и показываем отправленное сообщение — ДО генерации ответа ИИ.
             # Раньше это делалось после инференса — поле висело непустым на время генерации,
             # из-за чего Enter казался сломанным, а повторные нажатия дублировали отправку.
-            if not retry:
+            if not retry and not queue_item:
                 prompt.value = ""
                 selected_files.clear()
                 persist_draft()
             prompt.update()
+            refresh_composer()
             page.run_task(refresh_attachments)
             chat_list.update()
             # Реверс-список: новое сообщение уже внизу (индекс 0), скролл не нужен.
@@ -710,6 +757,23 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                 tool_level=agent_mode if agent_mode in LEVELS else ('auto' if needs_tools(text) else None)
                 if tool_level and not private_request:
                     loop = asyncio.get_running_loop()
+                    from .task_messages import TaskMessages
+                    def remember_action(identifier,content):
+                        if active_chat_id!=request_chat_id:return
+                        existing=next((m for m in chat_context if m.get('id')==identifier),None)
+                        if existing:existing['content']=content
+                        else:chat_context.append({'role':'ai','content':content,'id':identifier})
+                    async def append_comment(content):
+                        if request_cancelled.is_set():return
+                        identifier=save_ai_message(request_chat_id,content)
+                        remember_action(identifier,content)
+                        if active_chat_id==request_chat_id:
+                            chat_list.controls.insert(0,build_ai_message(content,on_action=handle_message_action,message_id=identifier))
+                            chat_list.update()
+                    task_messages=TaskMessages(page,request_chat_id,workspaces.chat_workspace(request_chat_id)['id'],
+                        current_chat=lambda:active_chat_id,chat_list=chat_list,
+                        save=save_ai_message,update=update_message,on_record=remember_action,
+                        on_comment=lambda content:page.run_task(append_comment,content))
                     def progress(value):
                         def refresh():
                             if is_sending:
@@ -736,19 +800,25 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                                 label='Изменить файл?' if request['exists'] else 'Создать файл?'
                                 note=request['path']
                             def choose(value):
-                                answer[0]=value;done.set();page.pop_dialog()
-                            dialog=ft.AlertDialog(modal=True,bgcolor=color('#eafffa'),title=ft.Text(label),
-                                content=ft.Column(width=640,height=min(450,max(240,(page.height or 800)-220)),scroll=ft.ScrollMode.AUTO,
-                                    controls=[*([ft.Text('Папка: '+request['cwd'],size=12)] if request.get('cwd') else []),ft.Text(note,size=12),
-                                              ft.Text(preview,selectable=True,font_family='monospace',size=12)]),
-                                actions=[ft.TextButton(content='Отклонить',on_click=lambda _:choose(False)),
-                                         ft.FilledButton(content='Подтвердить',on_click=lambda _:choose(True))])
-                            page.show_dialog(dialog)
+                                answer[0]=value;done.set()
+                                decision.value='Подтверждено' if value else 'Отклонено'
+                                controls.disabled=True;page.update()
+                            decision=ft.Text('Ожидает вашего решения',size=12)
+                            controls=ft.Row(wrap=True,controls=[
+                                ft.TextButton(content='Отклонить',on_click=lambda _:choose(False)),
+                                ft.FilledButton(content='Подтвердить',on_click=lambda _:choose(True))])
+                            card=ft.Container(padding=14,border_radius=18,bgcolor=color('#eafffa'),
+                                border=ft.Border.all(1,color('#b9eee4')),content=ft.Column(spacing=10,
+                                    controls=[ft.Text(label,weight=ft.FontWeight.W_600),
+                                              *([ft.Text('Папка: '+request['cwd'],size=12)] if request.get('cwd') else []),
+                                              ft.Text(note,size=12),ft.Text(preview,selectable=True,font_family='monospace',size=12),
+                                              decision,controls]))
+                            apply_palette(card);chat_list.controls.insert(0,card);chat_list.update()
                             async def watch_cancel():
                                 while not done.is_set():
                                     await asyncio.sleep(0.2)
                                     if request_cancelled.is_set():
-                                        done.set();dialog.open=False;page.update()
+                                        done.set();decision.value='Задача остановлена';controls.disabled=True;page.update()
                             page.run_task(watch_cancel)
                         try:
                             approval_task=page.run_task(show_approval)
@@ -760,28 +830,30 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                             if request_cancelled.is_set():return False
                         return answer[0]
                     reply_text = await asyncio.to_thread(run_agent, text, chat_id=request_chat_id,
-                        history=[dict(item) for item in chat_context[:-1]], attachments=[*shared_files, *sent_attachments],
+                        history=request_history, attachments=[*shared_files, *sent_attachments],
                         instructions=instructions,level=tool_level,cancelled=request_cancelled,approve=approve_action,
-                        on_progress=progress, generate=reply_generator,task=task_control,network=use_api, request_id=chat_context[-1].get('id'))
+                        on_progress=progress, generate=reply_generator,task=task_control,network=use_api, request_id=new_id if new_id is not None else chat_context[-1].get('id'),
+                        on_action=task_messages.dispatch,on_message=task_messages.comment)
                 else:
                     reply_text = await asyncio.to_thread(
                         task_control.generate, reply_generator, text, network=use_api,
-                        history=[dict(item) for item in chat_context[:-1]],
+                        history=request_history,
                         attachments=[*shared_files, *sent_attachments],
                         instructions=instructions,
                         **({"private": True} if private_request else {}),
                     )
             except (CancelledError, asyncio.CancelledError):
+                task_control.cancel()
                 if request_chat_id != active_chat_id:
                     return
-                failed_request = (text, sent_attachments)
+                failed_request = recover_request()
                 failed_reason = "Генерация остановлена. Вопрос сохранён."
                 page.show_dialog(ft.SnackBar(ft.Text("Генерация остановлена. Вопрос сохранён.")))
                 return
             except Exception as exc:
                 if request_chat_id != active_chat_id:
                     return
-                failed_request = (text, sent_attachments)
+                failed_request = recover_request()
                 failed_reason = f"Не удалось получить ответ ИИ: {exc}"
                 page.show_dialog(ft.SnackBar(ft.Text(f"Не удалось получить ответ ИИ: {exc}")))
                 return
@@ -836,9 +908,22 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                 chat_context.append({"role": "ai", "content": reply_text, "id": ai_id})
                 chat_list.update()
                 memory_capture.submit(text, reply_generator, private=private_request)
+                request_success=True
         finally:
             is_sending = False
             request_done.set()
+            pending=task_control.take_pending_instructions() if request_success else []
+            if pending and not request_cancelled.is_set():
+                identifiers={u['message_id'] for u in pending}
+                failed_request=('\n'.join(u['text'] for u in pending),
+                    list(dict.fromkeys(f for u in pending for f in u['attachments'])),
+                    [dict(m) for m in chat_context if m.get('id') not in identifiers])
+                page.run_task(on_send,None,True)
+            elif request_success and not request_cancelled.is_set():
+                followup=next((item for item in queued_messages if item['chat_id']==active_chat_id),None)
+                if followup:
+                    queued_messages.remove(followup);followup['badge'].visible=False
+                    page.run_task(on_send,None,False,followup)
             refresh_model_button(private=is_private(active_chat_id))
             refresh_composer()
 
@@ -866,6 +951,23 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                 reply_to=msg.reply_to,
                 message_id=msg.id,
             )
+        from .task_summaries import decode
+        record=decode(msg.content) if not is_private(active_chat_id) else None
+        if record:
+            from .task_messages import TaskMessages
+            journal=TaskMessages(page,active_chat_id,workspaces.chat_workspace(active_chat_id)['id'],
+                current_chat=lambda:active_chat_id,chat_list=lambda:cast(ft.ListView,chat.content),
+                save=save_ai_message,update=update_message)
+            return journal.restore_saved(record,msg.id)
+        if msg.content.startswith('Действие ИИ ·') and not is_private(active_chat_id):
+            workspace_id=workspaces.chat_workspace(active_chat_id)['id']
+            for process in task_processes.snapshots('chat:'+str(active_chat_id),workspace_id):
+                if f"PID {process['pid']} ·" in msg.content:
+                    from .task_messages import TaskMessages
+                    journal=TaskMessages(page,active_chat_id,workspace_id,current_chat=lambda:active_chat_id,
+                        chat_list=lambda:cast(ft.ListView,chat.content),save=save_ai_message,update=update_message)
+                    return journal.restore(dict(id=process['id'],label='Команда проекта',tool='run_project_command',
+                        arguments={'argv':process['argv']},phase='result',result=process),msg.id)
         return build_ai_message(msg.content, on_action=handle_message_action, message_id=msg.id, files=_rebuild_files(msg.attachments))
 
     def _prepare_chat_view(chat_id: int, stored=None):
@@ -895,7 +997,8 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         failed_request = ((stored[-1].content, stored[-1].attachments)
                           if stored and stored[-1].role == "user" else None)
         chat_context.clear()
-        chat_context.extend({"role": msg.role, "content": msg.content, "id": msg.id} for msg in stored)
+        from .task_summaries import context
+        chat_context.extend({"role": msg.role, "content": context(msg.content) if msg.role=='ai' and not is_private(chat_id) else msg.content, "id": msg.id} for msg in stored)
         # Реверс-список: ленивая подгрузка истории строит только последние MESSAGE_PAGE_SIZE сообщений,
         # остальные догружаются порциями при прокрутке вверх (см. on_chat_scroll).
         stored.reverse()  # реверс один раз здесь, чтобы ниже не слайсить с конца
