@@ -256,7 +256,7 @@ def build_workspace_settings(page, identifier, on_changed=None):
     library=build_library_content(page,identifier,on_changed)
     library.width=None;library.height=None;library.expand=True
     overview=ft.Container(padding=16,border_radius=18,bgcolor=color('#f3fffc'),
-        content=ft.Column(spacing=12,controls=[ft.Row(wrap=True,controls=[
+        content=ft.Column(horizontal_alignment=ft.CrossAxisAlignment.STRETCH,spacing=12,controls=[ft.Row(wrap=True,controls=[
             ft.Container(width=max(220,width-240),content=name),ft.Container(width=180,content=icon)]),instructions,approval,
             ft.Text('Инструкции и отмеченные материалы доступны ИИ во всех чатах пространства.',size=12,color=color('#47747a'))]))
     result=ft.AlertDialog(bgcolor=color('#eafffa'),shape=ft.RoundedRectangleBorder(radius=24),

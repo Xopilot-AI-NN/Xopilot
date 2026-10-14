@@ -181,7 +181,7 @@ def build_library_content(page, workspace_id, on_changed=None):
             actions=[ft.TextButton(content='Отмена', on_click=lambda _: page.pop_dialog()),
                      ft.FilledButton(content='Сохранить' if entry else 'Добавить', on_click=save)]))
     render()
-    return ft.Column(width=width, height=height, spacing=14, controls=[search,
+    return ft.Column(width=width, height=height, horizontal_alignment=ft.CrossAxisAlignment.STRETCH, spacing=14, controls=[search,
             ft.Row(wrap=True, spacing=8, controls=[
                 ft.OutlinedButton(content='Файлы', icon=ft.Icons.ATTACH_FILE, on_click=add_files),
                 *([] if is_android() else [ft.OutlinedButton(content='Папка', icon=ft.Icons.CREATE_NEW_FOLDER_OUTLINED, on_click=folder_dialog)]),
