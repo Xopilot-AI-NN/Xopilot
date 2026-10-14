@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- Файл: /Icons/icon_cursor/icon_ai_cursor.svg; Разработчик: DenBroLiik; Версия: 2.0.8; Описание: Отражённый указатель ИИ. -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
   <defs>
     <linearGradient id="sendGrad" x1="0%" y1="100%" x2="100%" y2="0%"
@@ -8,6 +9,7 @@
     </linearGradient>
   </defs>
 
+  <g transform="translate(24 0) scale(-1 1)">
   <!-- Body: outer triangle -->
   <path
     d="M22 2L15 22L11 13L2 9L22 2Z"
@@ -24,4 +26,5 @@
     stroke-width="1.8"
     stroke-linecap="round"
   />
+  </g>
 </svg>

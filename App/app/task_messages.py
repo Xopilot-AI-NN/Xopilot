@@ -139,7 +139,7 @@ class TaskMessages:
         stop=ft.TextButton(content='Остановить процесс',visible=False)
         state.max_lines=2;state.overflow=ft.TextOverflow.ELLIPSIS
         links=ft.Row(wrap=True,spacing=0,visible=False)
-        tile=ft.ExpansionTile(title=label,subtitle=state,leading=ft.Icon(ft.Icons.TERMINAL,size=16),dense=True,
+        tile=ft.ExpansionTile(title=label,subtitle=state,leading=(ft.Image(src='Icons/icon_cursor/icon_ai_cursor.svg',width=18,height=18) if event['tool'].startswith('computer_') else ft.Icon(ft.Icons.TERMINAL,size=16)),dense=True,
             min_tile_height=36,tile_padding=0,controls_padding=8,expanded=False,
             expanded_cross_axis_alignment=ft.CrossAxisAlignment.STRETCH,
             controls=[ft.Text(arguments,size=11,font_family='monospace',selectable=True),detail])

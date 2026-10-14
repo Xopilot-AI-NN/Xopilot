@@ -789,10 +789,10 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                                 preview=json.dumps(request['argv'],ensure_ascii=False,indent=2)
                                 label='Запустить команду?'
                                 note='Процесс выполняется с вашими правами. Проверьте аргументы и доверяйте коду проекта.'
-                            elif kind == 'device':
+                            elif kind in {'device','computer_session'}:
                                 preview = json.dumps(request['arguments'], ensure_ascii=False, indent=2)
                                 label = request['title']
-                                note = 'Действие будет выполнено на этом телефоне.'
+                                note = ('Доступ к экрану и элементам приложений завершится вместе с задачей. Ваша мышь и клавиатура не используются.' if kind=='computer_session' else 'Действие будет выполнено на этом компьютере.' if request.get('platform')=='linux' else 'Действие будет выполнено на этом телефоне.')
                             else:
                                 import difflib
                                 preview=''.join(difflib.unified_diff(request['before'].splitlines(True),request['after'].splitlines(True),
