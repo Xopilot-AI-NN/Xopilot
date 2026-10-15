@@ -140,12 +140,12 @@ class WaylandScreen:
             self.send(surface,5,uint(region));self.send(region,0)
             self.layers[layer]={}
             self.send(manager,0,uint(layer,surface,self.output,3)+string('xopilot-ai-cursor'))
-            self.send(layer,0,uint(36,36));self.send(layer,1,uint(5))
+            self.send(layer,0,uint(22,22));self.send(layer,1,uint(5))
             self.send(layer,2,struct.pack('=i',-1));self.send(layer,4,uint(0))
             self.send(surface,6)
             while 'serial' not in self.layers[layer]:self.event()
             self.send(layer,6,uint(self.layers[layer]['serial']))
-            pixbuf=GdkPixbuf.Pixbuf.new_from_file_at_scale(asset,36,36,True)
+            pixbuf=GdkPixbuf.Pixbuf.new_from_file_at_scale(asset,22,22,True)
             from PIL import Image
             image=Image.frombytes('RGBA',(pixbuf.get_width(),pixbuf.get_height()),pixbuf.get_pixels(),'raw','RGBA',pixbuf.get_rowstride(),1)
             rgba=image.tobytes();pixels=bytearray()
@@ -155,7 +155,7 @@ class WaylandScreen:
             pool=self.allocate();buffer=self.allocate()
             self.send(shm,0,uint(pool,len(pixels)),fd)
             self.send(pool,0,uint(buffer,0,image.width,image.height,image.width*4,0))
-            self.send(surface,1,uint(buffer)+struct.pack('=ii',0,0));self.send(surface,2,struct.pack('=iiii',0,0,36,36))
+            self.send(surface,1,uint(buffer)+struct.pack('=ii',0,0));self.send(surface,2,struct.pack('=iiii',0,0,22,22))
             self.cursor={'surface':surface,'layer':layer,'fd':fd,'point':(x,y)}
         old_x,old_y=self.cursor['point']
         for step in range(1,9):

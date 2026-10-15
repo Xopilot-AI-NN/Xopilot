@@ -13,6 +13,20 @@ from App.services import desktop_control as desktop
 
 
 class DesktopTests(unittest.TestCase):
+    def test_cursor_overlay_failure_does_not_fail_or_repeat_completed_action(self):
+        import subprocess
+        code="""
+from App.services.linux_desktop_bridge import Desktop
+from unittest.mock import Mock
+d=Desktop();d.accessibility=Mock();d.native=Mock();d.size=[100,100]
+d.accessibility.targets={'target':{'entry':{'rect':[10,10,20,20]}}}
+d.accessibility.perform.return_value={'performed':True}
+d.native.mark.side_effect=RuntimeError('No overlay protocol')
+assert d.input({'target':'target','action':'click'})=={'performed':True}
+d.accessibility.perform.assert_called_once()
+"""
+        subprocess.run(['/usr/bin/python3','-c',code],check=True,cwd=Path(__file__).resolve().parents[1])
+
     def test_denial_does_not_start_helper(self):
         session=desktop.ComputerSession()
         with patch.object(desktop,'Bridge') as bridge:

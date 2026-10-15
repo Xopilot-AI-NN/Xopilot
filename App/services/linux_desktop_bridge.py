@@ -79,14 +79,16 @@ class Desktop:
         if not self.accessibility:raise RuntimeError('Сессия интерфейса не разрешена')
         target=self.accessibility.targets.get(a.get('target'))
         if not target:raise ValueError('Нужен target из последнего computer_view')
+        result=self.accessibility.perform(a)
         rect=target['entry']['rect']
         if self.native and rect and rect[2]>0 and rect[3]>0:
             x,y=rect[0]+rect[2]//2,rect[1]+rect[3]//2
             if 0<=x<self.size[0] and 0<=y<self.size[1]:
                 from pathlib import Path
                 asset=Path(os.environ.get('XOPILOT_CURSOR_ASSET',str(Path(__file__).parent.parent/'assets/Icons/icon_cursor/icon_ai_cursor.svg')))
-                self.native.mark(x,y,str(asset))
-        return self.accessibility.perform(a)
+                try:self.native.mark(x,y,str(asset))
+                except Exception:pass  # An unavailable visual marker must not replay a completed action.
+        return result
 
     def inspect(self):
         if not self.accessibility:raise RuntimeError('Сессия не разрешена')
