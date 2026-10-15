@@ -1,4 +1,9 @@
-"""Shared Material You inspired tonal actions, adapting to the app theme."""
+"""
+Файл: /App/app/buttons/brand.py
+Разработчик: DenBroLiik
+Версия: 2.0.8
+Описание: Тональные кнопки Xopilot с мягким градиентом и геометрией Material 3.
+"""
 import flet as ft
 from ..palette import is_dark_theme
 from ..button_colors import action_role, button_tones
@@ -40,7 +45,7 @@ def style_brand_button(button, role):
 def brand_button(icon, tooltip, on_click=None, size=40):
     if is_android():
         size = max(48, size)
-    button = ft.Container(width=size, height=size, border_radius=size/2,
+    button = ft.Container(width=size, height=size, border_radius=min(18,size*.4),
         alignment=ft.Alignment.CENTER, ink=True, tooltip=tooltip,
         content=ft.Icon(icon, size=20), on_click=on_click)
     return style_brand_button(button, action_role(icon, tooltip))

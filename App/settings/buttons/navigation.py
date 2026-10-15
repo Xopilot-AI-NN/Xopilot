@@ -1,5 +1,7 @@
 """
 Файл: /App/settings/buttons/navigation.py
+Разработчик: DenBroLiik
+Версия: 2.0.8
 Описание: Кнопка перехода между страницами настроек.
 """
 
@@ -16,11 +18,9 @@ except ImportError:
 
 def build_navigation_button(icon, label: str, subtitle: str, on_click) -> ft.Container:
     return ft.Container(
-        height=74,
-        padding=12,
-        border_radius=12,
+        padding=16,
+        border_radius=22,
         bgcolor=color('#f3fffc'),
-        border=ft.Border.all(1, color('#b6e5df')),
         ink=True,
         on_click=on_click,
         content=ft.Row(
@@ -30,7 +30,7 @@ def build_navigation_button(icon, label: str, subtitle: str, on_click) -> ft.Con
                 style_brand_button(ft.Container(
                     width=44,
                     height=44,
-                    border_radius=22,
+                    border_radius=16,
                     bgcolor=color("#dff8f3"),
                     alignment=ft.Alignment.CENTER,
                     content=ft.Icon(icon, size=24, color=color("#087f8c")),
@@ -43,7 +43,7 @@ def build_navigation_button(icon, label: str, subtitle: str, on_click) -> ft.Con
                         ft.Text(subtitle, size=12, color=color("#47747a"), max_lines=2),
                     ],
                 ),
-                ft.Icon(ft.Icons.CHEVRON_RIGHT, color=color("#47747a"), opacity=0.4),
+                ft.Icon(ft.Icons.CHEVRON_RIGHT, color=color("#47747a"), opacity=0.65),
             ],
         ),
     )

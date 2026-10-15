@@ -18,7 +18,7 @@ import platform
 def build_background() -> ft.Container:
     return ft.Container(
         expand=True,
-        bgcolor=color("#b3f2ff"),
+        bgcolor=color("#f3fffc"),
     )
 
 def build_background_layout(
@@ -61,9 +61,9 @@ def build_background_layout(
 
     main_content = ft.Container(
         expand=True,
-        bgcolor=color("#d9ffe6"),
-        border_radius=16,
-        border=ft.Border.all(2, outline_color()),
+        bgcolor=color("#eafffa"),
+        border_radius=24,
+        border=ft.Border.all(1, outline_color()),
         content=main_column,
     )
 

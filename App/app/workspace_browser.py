@@ -25,7 +25,8 @@ except ImportError:
 ICON_MAP = dict(zip(workspaces.ICONS, [ft.Icons.FOLDER_OUTLINED, ft.Icons.CODE, ft.Icons.MENU_BOOK, ft.Icons.SCIENCE, ft.Icons.BRUSH, ft.Icons.WORK_OUTLINE, ft.Icons.SCHOOL, ft.Icons.MUSIC_NOTE, ft.Icons.FLIGHT, ft.Icons.ROCKET_LAUNCH, ft.Icons.FAVORITE_BORDER, ft.Icons.LIGHTBULB_OUTLINE]))
 
 def build_workspaces_dialog(page, on_select=None, on_changed=None, on_open_chat=None, on_create_chat=None):
-    cards = ft.Column(spacing=8)
+    cards = ft.Column(spacing=10)
+    search=modern_input(ft.TextField(hint_text="Найти пространство",prefix_icon=ft.Icons.SEARCH_ROUNDED,dense=True))
     feedback = ft.Text('Инструкции и материалы пространства доступны во всех его чатах.', size=12, color=color('#47747a'))
     width = max(240, min(600, page.width - 112)) if isinstance(page.width, (float, int)) else 600
     height = max(230, min(450, page.height - 180)) if isinstance(page.height, (float, int)) else 450
@@ -164,7 +165,9 @@ def build_workspaces_dialog(page, on_select=None, on_changed=None, on_open_chat=
         selected = workspaces.selected_workspace()
         chats = list_chat_items()
         cards.controls = []
+        query=(search.value or '').strip().casefold()
         for item in workspaces.list_workspaces():
+            if query and query not in item['name'].casefold():continue
             count = len(workspaces.filter_chats(chats, item['id']))
             details = f'{count} чатов' + (' · выбрано' if selected == item['id'] else '')
             if item.get('instructions'):
@@ -185,10 +188,13 @@ def build_workspaces_dialog(page, on_select=None, on_changed=None, on_open_chat=
                     actions = [ft.IconButton(icon=ft.Icons.TUNE, tooltip='Настройки пространства', icon_color=color('#087f8c'), on_click=edit),
                                ft.IconButton(icon=ft.Icons.DELETE_OUTLINE, tooltip='Удалить пространство', icon_color=color('#c94b4b'), on_click=remove)]
             cards.controls.append(ft.Container(
-                bgcolor=color('#dff8f3') if selected == item['id'] else color('#f3fffc'), padding=10, border_radius=14,
+                bgcolor=color('#dff8f3') if selected == item['id'] else color('#f3fffc'), padding=16, border_radius=22,
+                ink=True,on_click=lambda _,i=item:open_workspace(i['id']) if i['id']==workspaces.DEFAULT else workspace_home(i),
+                border=ft.Border.all(1,color('#a8ddd7') if selected==item['id'] else ft.Colors.TRANSPARENT),
                 content=ft.Row(controls=[
-                    ft.Icon(ICON_MAP.get(item.get('icon'), ft.Icons.FOLDER_OUTLINED), color=color('#087f8c')),
-                    ft.Container(expand=True, ink=True, on_click=lambda _, i=item: open_workspace(i['id']) if i['id'] == workspaces.DEFAULT else workspace_home(i),
+                    ft.Container(width=44,height=44,border_radius=16,bgcolor=color('#c9f1e9'),alignment=ft.Alignment.CENTER,
+                        content=ft.Icon(ICON_MAP.get(item.get('icon'),ft.Icons.FOLDER_OUTLINED),size=23,color=color('#087f8c'))),
+                    ft.Container(expand=True,
                                  content=ft.Column(spacing=3, controls=[
                                      ft.Text(item['name'], color=color('#123b43'), weight=ft.FontWeight.W_600,
                                              max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
@@ -197,7 +203,11 @@ def build_workspaces_dialog(page, on_select=None, on_changed=None, on_open_chat=
                                  ])),
                     *actions,
                 ])))
+        if not cards.controls:cards.controls=[ft.Container(padding=24,content=ft.Text('Пространства не найдены',color=color('#47747a')))]
 
+    def filter_spaces(_):
+        render();page.update()
+    search.on_change=filter_spaces
     render()
     return ft.AlertDialog(
         modal=False, bgcolor=color('#eafffa'), shape=ft.RoundedRectangleBorder(radius=18),
@@ -205,7 +215,7 @@ def build_workspaces_dialog(page, on_select=None, on_changed=None, on_open_chat=
         content=ft.Column(width=width, height=height, spacing=14, controls=[
             ft.Row(controls=[ft.Text('Рабочие пространства', size=20, color=color('#123b43'), expand=True),
                              ft.IconButton(icon=ft.Icons.ADD, tooltip='Создать пространство', icon_color=color('#087f8c'),
-                                           on_click=lambda _: edit_workspace())]), feedback,
+                                           on_click=lambda _: edit_workspace())]), feedback, search,
             ft.ListView(expand=True, controls=[cards])]),
         actions=[ft.TextButton(content='Закрыть', on_click=lambda _: page.pop_dialog())],
     )

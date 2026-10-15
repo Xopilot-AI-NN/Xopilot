@@ -1,4 +1,9 @@
-"""The existing aqua palette with a matching dark appearance."""
+"""
+Файл: /App/app/palette.py
+Разработчик: DenBroLiik
+Версия: 2.0.8
+Описание: Палитра Xopilot и общие компоненты Material 3 для всех экранов.
+"""
 from dataclasses import fields, is_dataclass, replace
 from weakref import WeakValueDictionary
 import flet as ft
@@ -125,12 +130,20 @@ def apply_palette(root):
             for value in obj:
                 visit(value)
         elif is_dataclass(obj):
+            if isinstance(obj, ft.AlertDialog):
+                obj.shape=ft.RoundedRectangleBorder(radius=28)
+                if obj.content_padding is None:obj.content_padding=20
+                if isinstance(obj.title,ft.Text):
+                    obj.title.size=22;obj.title.weight=ft.FontWeight.W_600
+                    obj.title.color=color('#123b43')
+                obj.actions_alignment=ft.MainAxisAlignment.END
             if isinstance(obj, (ft.FilledButton, ft.Button, ft.OutlinedButton, ft.TextButton)):
                 from .button_colors import action_role, button_tones
                 label = obj.content if isinstance(obj.content, str) else getattr(obj.content, 'value', '')
                 tones, ink, outline = button_tones(action_role(obj.icon, label), is_dark_theme())
                 style = obj.style or ft.ButtonStyle()
                 changes = {'shape': ft.RoundedRectangleBorder(radius=20), 'elevation': 0,
+                           'padding':ft.Padding.symmetric(horizontal=18,vertical=12),
                            'overlay_color': ft.Colors.with_opacity(.10, ink)}
                 close_action = isinstance(obj, ft.TextButton) and str(label).strip().casefold() == 'закрыть'
                 if isinstance(obj, (ft.FilledButton, ft.Button)) or close_action:
@@ -221,8 +234,11 @@ def apply_palette(root):
 def set_theme(page, mode):
     global _mode
     _mode = mode if mode in THEMES else 'light'
+    from .design import material_theme
+    page.theme=material_theme()
+    page.dark_theme=page.theme
     page.theme_mode = ft.ThemeMode.DARK if THEMES[_mode][1] else ft.ThemeMode.LIGHT
-    page.bgcolor = color('#b3f2ff')
+    page.bgcolor = color('#eafffa')
     for control in [*page.controls, *page.overlay, *open_dialogs(page)]:
         apply_palette(control)
 

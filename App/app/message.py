@@ -104,7 +104,7 @@ def build_user_message(
     bubble = ft.Container(
         padding=ft.Padding.symmetric(horizontal=12, vertical=9),
         border_radius=20,
-        bgcolor=color("#e6ffffff"),
+        bgcolor=color("#dff8f3"),
         blur=None if is_android() else 2,
         content=ft.Column(
             spacing=6,

@@ -45,7 +45,7 @@ def build_settings_dialog(
     on_delete_chat=None,
     restore_section=None,
 ) -> ft.AlertDialog:
-    status = ft.Text("Изменения применяются сразу", size=11, color=ft.Colors.WHITE, expand=True)
+    status = ft.Text("Изменения применяются сразу", size=12, color=color("#47747a"), expand=True)
 
     def set_status(text: str):
         status.value = text
@@ -111,9 +111,9 @@ def build_settings_dialog(
          lambda: build_memory_page(page, set_status)),
     ]
 
-    page_title = ft.Text("Настройки", size=18, color=ft.Colors.WHITE, weight=ft.FontWeight.BOLD,
+    page_title = ft.Text("Настройки", size=22, color=color("#123b43"), weight=ft.FontWeight.W_600,
                          max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)
-    page_host = ft.Column(spacing=0, expand=True)
+    page_host = ft.Column(spacing=0, expand=True, scroll=ft.ScrollMode.AUTO)
     selected_page = [None]
 
     async def load_personalization(index, generation):
@@ -196,10 +196,11 @@ def build_settings_dialog(
         width=max(220, min(750, page.width - (24 if mobile_form else 112))) if isinstance(page.width, (int, float)) else 750,
         height=max(220, min(900 if start_section==0 else 600, page.height - (48 if mobile_form else 140))) if isinstance(page.height, (int, float)) else 600,
         spacing=0,
-        scroll=ft.ScrollMode.AUTO,
         controls=[
             ft.Container(
-                padding=ft.Padding.symmetric(horizontal=18, vertical=13),
+                padding=ft.Padding.symmetric(horizontal=18, vertical=16),
+                bgcolor=color("#eafffa"),
+                border=ft.Border.only(bottom=ft.BorderSide(1,color("#b9eee4"))),
                 border_radius=ft.BorderRadius.only(top_left=16, top_right=16),
                 content=ft.Column(
                     spacing=6,
@@ -212,12 +213,13 @@ def build_settings_dialog(
                                     expand=True,
                                     spacing=1,
                                     controls=[
-                                        ft.Text("Xopilot", size=14, weight=ft.FontWeight.W_500),
+                                        ft.Text("Xopilot", size=12, weight=ft.FontWeight.W_500, color=color("#087f8c")),
                                         page_title,
                                     ],
                                 ),
                                 ft.IconButton(icon=ft.Icons.CLOSE,
-                                    tooltip="Закрыть настройки", on_click=close),
+                                    tooltip="Закрыть настройки", on_click=close,
+                                    icon_color=color("#123b43"),bgcolor=color("#dff8f3"),icon_size=22),
                             ],
                         ),
                         ft.Row(controls=[status]),
@@ -226,18 +228,19 @@ def build_settings_dialog(
             ),
             ft.Container(
                 padding=ft.Padding.symmetric(horizontal=12, vertical=8),
+                expand=True,
                 bgcolor=color("#eafffa"),
-                content=ft.Row(controls=[page_host]),
+                content=ft.Row(expand=True,vertical_alignment=ft.CrossAxisAlignment.STRETCH,controls=[page_host]),
             ),
         ],
     )
-    style_brand_button(content.controls[0], 'create')
+
 
     dialog = ft.AlertDialog(
         modal=False,
         content=content,
         bgcolor=color("#eafffa"),
-        shape=ft.RoundedRectangleBorder(radius=16),
+        shape=ft.RoundedRectangleBorder(radius=28),
         inset_padding=ft.Padding.all(12) if mobile_form else ft.Padding.symmetric(horizontal=32, vertical=20),
         content_padding=ft.Padding.all(0) if mobile_form else None,
         barrier_color=color("#88000000"),
