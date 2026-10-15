@@ -777,7 +777,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                             chat_list.controls.insert(0,build_ai_message(content,on_action=handle_message_action,message_id=identifier))
                             chat_list.update()
                     task_messages=TaskMessages(page,request_chat_id,workspaces.chat_workspace(request_chat_id)['id'],
-                        current_chat=lambda:active_chat_id,chat_list=chat_list,
+                        current_chat=lambda:active_chat_id,chat_list=lambda:cast(ft.ListView,chat.content),
                         save=save_ai_message,update=update_message,on_record=remember_action,
                         on_comment=lambda content:page.run_task(append_comment,content))
                     def progress(value):
@@ -1568,7 +1568,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
     refresh_menu_chats = getattr(menu_overlay, '_xopilot_refresh_chats', lambda: None)
 
     page._xopilot_connected=True
-    page._xopilot_can_sync=lambda: not is_sending and not live.busy and not voice_input.busy and editing_message is None and not is_private(active_chat_id)
+    page._xopilot_can_sync=lambda: not remote_tasks.running() and not is_sending and not live.busy and not voice_input.busy and editing_message is None and not is_private(active_chat_id)
     def refresh_after_sync():
         profile_refresh=getattr(page,'_xopilot_profile_refresh',None)
         if profile_refresh:profile_refresh()

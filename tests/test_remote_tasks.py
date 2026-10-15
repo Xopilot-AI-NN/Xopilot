@@ -34,3 +34,19 @@ class RemoteTests(unittest.TestCase):
         for kind in ('device','computer_session'):
             title,preview=approval_content({'kind':kind,'title':'Кнопка QA','arguments':{'action':'click','target':'id'}})
             self.assertEqual(title,'Кнопка QA');self.assertIn('click',preview)
+
+    def test_lost_submit_reply_reuses_exact_encrypted_operation(self):
+        import json
+        from App.services.cloud_account import CloudError
+        values={}
+        db=Mock();db.get_setting.side_effect=lambda key:values.get(key)
+        db.set_setting.side_effect=lambda key,value:values.__setitem__(key,value)
+        account={'session_id':'phone','account_id':'owner'}
+        with patch.object(remote,'get_db',return_value=db),patch.object(remote,'credentials',return_value=(account,b'x'*32)),patch.object(remote.cloud,'request',side_effect=[CloudError('connection_failed'),{'ok':True}]) as request:
+            with self.assertRaises(remote.DeliveryPending) as pending:remote.submit('pc','Do work')
+            identifier=pending.exception.identifier
+            self.assertEqual(remote.pending_deliveries(),[identifier])
+            first=request.call_args.kwargs['body']
+            remote.retry(identifier)
+            self.assertEqual(request.call_args.kwargs['body'],first)
+            self.assertEqual(remote.pending_deliveries(),[])

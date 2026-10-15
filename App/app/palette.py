@@ -160,7 +160,8 @@ def apply_palette(root):
                     side=ft.BorderSide(width=2 if state == ft.ControlState.FOCUSED else 1,
                         color=focus if state == ft.ControlState.FOCUSED else edge))
                     for state in (ft.ControlState.DEFAULT, ft.ControlState.FOCUSED, ft.ControlState.DISABLED)}
-                obj.bgcolor = obj.fill_color = surface
+                obj.bgcolor = surface
+                obj.fill_color = color('#f3fffc')
                 obj.filled = True
                 obj.color = text
                 obj.text_style = ft.TextStyle(color=text, size=obj.text_size or 13)
@@ -238,7 +239,7 @@ def modern_input(control):
                     '#087f8c' if state == ft.ControlState.FOCUSED else '#a8ddd7')))
         for state in (ft.ControlState.DEFAULT, ft.ControlState.FOCUSED, ft.ControlState.ERROR, ft.ControlState.DISABLED)}
     control.filled = True
-    control.bgcolor = color('#f3fffc')
+    control.bgcolor = control.fill_color = color('#f3fffc')
     control.color = color('#123b43')
     control.cursor_color = color('#087f8c')
     control.content_padding = ft.Padding.symmetric(horizontal=16, vertical=14)

@@ -190,4 +190,7 @@ class TaskMessages:
         if isinstance(result,dict) and result.get('running') and not item['watching']:
             item['watching']=True;self.page.run_task(self.watch,item,result['id'])
         if event['phase'] in {'result','error'}:self.persist(item)
-        if self.mounted(item):self.chat_list.update()
+        if self.mounted(item):
+            # Attach new controls through the page; partial list patches can leave
+            # dynamically inserted tiles invisible until the next user event.
+            self.page.update()

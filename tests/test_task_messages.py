@@ -21,6 +21,7 @@ class MessageTests(unittest.IsolatedAsyncioTestCase):
         event=dict(id='action1',tool='run_project_command',label='Команда',arguments={'argv':['python','-c','print(42)']},phase='start')
         await journal.receive(event)
         self.assertEqual(len(chat.controls),1);save.assert_not_called()
+        page.update.assert_called_once() # A new tile must reach the actual page immediately.
         await journal.receive({**event,'phase':'result','result':{'pid':42,'id':'process','running':False,
             'exit_code':0,'cwd':'/project','output':'42\n'}})
         self.assertEqual(len(chat.controls),1)

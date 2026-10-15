@@ -24,6 +24,12 @@ _state = {'running': False, 'error': '', 'progress': ''}
 _guard = lambda: True
 
 
+class DeliveryPending(RuntimeError):
+    def __init__(self,identifier):
+        self.identifier=identifier
+        super().__init__('Соединение прервалось. Проверьте доставку: повтор использует то же задание и не создаёт копию.')
+
+
 def credentials():
     account = cloud.state()
     if not account: raise ValueError('Сначала войдите в аккаунт Xopilot')
@@ -80,7 +86,10 @@ def submit(target, prompt, workspace_id='all'):
     get_db().set_setting(pending_key, json.dumps(body))
     ids = json.loads(get_db().get_setting('remote_jobs:'+account['account_id']) or '[]')
     ids.append(identifier); get_db().set_setting('remote_jobs:'+account['account_id'], json.dumps(ids))
-    cloud.request('/remote/jobs', method='POST', body=body)
+    try:cloud.request('/remote/jobs', method='POST', body=body)
+    except cloud.CloudError as exc:
+        if exc.code=='connection_failed' or exc.status>=500:raise DeliveryPending(identifier) from None
+        raise
     get_db().set_setting(pending_key, '')
     return identifier
 
@@ -105,7 +114,15 @@ def decide(identifier, question, request, approved):
         body={'question': question, 'decision': encode(identifier, 'decision:'+question, value)})
 
 
-def cancel(identifier): cloud.request('/remote/jobs/'+identifier, method='DELETE')
+def cancel(identifier):
+    cloud.request('/remote/jobs/'+identifier, method='DELETE')
+    get_db().set_setting('remote_pending:'+identifier,'')
+
+
+def pending_deliveries():
+    account,_=credentials()
+    identifiers=json.loads(get_db().get_setting('remote_jobs:'+account['account_id']) or '[]')
+    return [identifier for identifier in identifiers if get_db().get_setting('remote_pending:'+identifier)]
 def running(): return _active.is_set()
 def status(): return dict(_state)
 
