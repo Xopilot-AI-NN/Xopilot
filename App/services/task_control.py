@@ -14,6 +14,14 @@ import uuid
 from urllib.parse import urlsplit
 
 
+class RateLimitedError(RuntimeError):
+    """Provider quota exhausted: pause one model step without replaying tools."""
+
+
+class EmptyModelReplyError(RuntimeError):
+    """A provider response with no usable assistant content."""
+
+
 def network_error(error):
     current = error
     while current:
@@ -52,6 +60,7 @@ class TaskControl:
         self.id = uuid.uuid4().hex
         self.cancelled = cancelled or threading.Event()
         self._manual = False
+        self._pause_reason = ''
         self._offline = False
         self._condition = threading.Condition()
         self._revision = 0
@@ -71,6 +80,7 @@ class TaskControl:
             self._updates.append(update);self._instructions.append(update)
             self._revision += 1
             self._manual = False
+            self._pause_reason = ''
             self._condition.notify_all()
         self._notify()
 
@@ -93,19 +103,19 @@ class TaskControl:
     def state(self):
         with self._condition:
             if self.cancelled.is_set(): return 'Остановлено'
-            if self._manual: return 'На паузе'
+            if self._manual: return self._pause_reason or 'На паузе'
             if self._offline: return 'Нет соединения · продолжу автоматически'
             return 'Выполняется'
 
     def _notify(self):
         if self.on_state: self.on_state(self.state)
 
-    def pause(self):
-        with self._condition: self._manual = True; self._condition.notify_all()
+    def pause(self, reason=''):
+        with self._condition: self._manual = True; self._pause_reason = reason; self._condition.notify_all()
         self._notify()
 
     def resume(self):
-        with self._condition: self._manual = False; self._condition.notify_all()
+        with self._condition: self._manual = False; self._pause_reason = ''; self._condition.notify_all()
         self._notify()
 
     def connection(self, available):
@@ -137,6 +147,7 @@ class TaskControl:
         """
         probe = probe or (probe_api if network else None)
         self.probe = probe
+        empty_retries = 0
         while True:
             self.checkpoint(probe)
             updates,revision=self._take_updates()
@@ -159,5 +170,15 @@ class TaskControl:
             except Exception as exc:
                 if self.cancelled.is_set(): raise CancelledError() from exc
                 if self.paused: continue
+                if network and isinstance(exc,EmptyModelReplyError):
+                    if not empty_retries:
+                        empty_retries=1
+                        continue  # Only repeat the unfinished model step, never tools.
+                    empty_retries=0
+                    self.pause('Модель вернула пустой ответ · нажмите продолжить')
+                    continue
+                if network and isinstance(exc,RateLimitedError):
+                    self.pause('Лимит API · продолжите позже или смените модель')
+                    continue
                 if not network or not network_error(exc): raise
                 self.connection(False)

@@ -1,3 +1,9 @@
+"""
+Файл: /App/services/api_chat.py
+Разработчик: DenBroLiik
+Версия: 2.0.8
+Описание: Совместимый API чата, отмена запросов и восстановимые ошибки провайдера.
+"""
 """OpenAI-compatible Chat Completions transport, selected explicitly by the user."""
 import base64
 import http.client
@@ -8,7 +14,7 @@ import threading
 import time
 from concurrent.futures import CancelledError
 from urllib.parse import urlsplit
-from .task_control import network_error
+from .task_control import network_error, RateLimitedError, EmptyModelReplyError
 from .db import get_db, get_setting
 from .attachments import build_attachment_message_parts
 
@@ -230,7 +236,7 @@ def generate_reply(prompt_text, history=None, attachments=None, *, instructions=
                     _json_unsupported.add(format_key)
                     return generate_reply(prompt_text,history,attachments,instructions=instructions,cancelled=cancelled)
             if response.status == 429:
-                raise RuntimeError('Лимит запросов API (HTTP 429). Повторите позже или выберите другую модель.')
+                raise RateLimitedError('Лимит запросов API (HTTP 429). Повторите позже или выберите другую модель.')
             if response.status >= 500:
                 raise RuntimeError(f'Сервис ИИ временно недоступен (HTTP {response.status}). Повторите запрос позже.')
             raise RuntimeError(f'API вернул HTTP {response.status}. Проверьте URL, ключ и модель.')
@@ -239,7 +245,7 @@ def generate_reply(prompt_text, history=None, attachments=None, *, instructions=
         if isinstance(text, list):
             text = '\n'.join(part.get('text', '') for part in text if isinstance(part, dict))
         if not isinstance(text, str) or not text.strip():
-            raise RuntimeError('API не вернул текст ответа')
+            raise EmptyModelReplyError('API не вернул текст ответа')
         if cancelled is not None and cancelled.is_set():
             raise CancelledError()
         record_generation(text)

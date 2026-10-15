@@ -104,3 +104,11 @@ class DesktopTests(unittest.TestCase):
             catalog=agent.available_tools({'enabled':False})
             self.assertNotIn('run_project_command',catalog);self.assertIn('computer_start',catalog)
             self.assertIn('run_project_command',agent.available_tools({'enabled':True,'root':'/project'}))
+
+    def test_direct_documented_parameters_are_normalized_and_missing_query_is_repaired(self):
+        from App.services.agent import parse_response
+        result=parse_response('{"tool":"search_chats","query":"ОРИОН"}')
+        self.assertEqual(result['arguments'],{'query':'ОРИОН'})
+        invalid=parse_response('{"tool":"search_chats","arguments":{}}')
+        self.assertIn('query',invalid['error'])
+        self.assertIn('error',parse_response('{"tool":"write_project_file","path":"a.py"}'))
