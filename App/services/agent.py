@@ -73,7 +73,11 @@ def needs_tools(prompt):
     if re.search(r'(как назывался|в каком|где).{0,35}(чат|разговор|бесед)',prompt,re.I):return True
     if re.search(r'(управляй|нажми|кликни|клик|перемести|введи|напечата|click|type).{0,80}(мыш|курсор|клавиатур|экран|кнопк|поле|desktop|screen)|управляй.{0,40}(компьютер|пк)',prompt,re.I):return True
     if re.match(r'\s*(как|how)\b',prompt,re.I):return False
+    if any(re.search(r'(?:используй|вызови|через|using|use)\b.{0,100}\b'+re.escape(name)+r'\b',prompt,re.I|re.S)
+           for name in TOOLS):return True
     return bool(re.search(r'(создай|создать|сделай|напиши|измени|обнови|create|write|edit|update).{0,90}(canvas|канвас|файл|документ|file|document|pdf|docx|xlsx|отчёт|отчет)|'
+                          r'(прочитай|прочти|read).{0,80}(файл|file|readme|\.(?:md|py|txt|rs|html)\b)|'
+                          r'(выполни|run|execute).{0,70}(команд|command|argv)|'
                           r'(canvas|канвас).{0,90}(созда|сдела|напи|измени)|компилируй|скомпилируй|compile|запусти.{0,40}(код|скрипт|программ)|'
                           r'(найди|найти|поищи|find|search).{0,60}(чат|разговор|бесед|chat)|'
                           r'(открой|запусти|open).{0,50}(приложен|app|youtube|браузер)|'

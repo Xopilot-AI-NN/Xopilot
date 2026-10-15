@@ -126,3 +126,11 @@ d.accessibility.perform.assert_called_once()
         invalid=parse_response('{"tool":"search_chats","arguments":{}}')
         self.assertIn('query',invalid['error'])
         self.assertIn('error',parse_response('{"tool":"write_project_file","path":"a.py"}'))
+
+    def test_explicit_file_reads_and_named_tools_require_actual_execution(self):
+        from App.services.agent import needs_tools
+        for prompt in ['Read README.md in the attached project using read_project_file.',
+                       'Прочитай файл main.py','Use run_project_command with argv ["python","--version"]',
+                       'Выполни команду python --version']:
+            self.assertTrue(needs_tools(prompt),prompt)
+        self.assertFalse(needs_tools('How do I use read_project_file?'))

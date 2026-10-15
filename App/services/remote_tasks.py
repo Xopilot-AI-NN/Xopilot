@@ -74,12 +74,66 @@ def hosts():
         raise
 
 
-def submit(target, prompt, workspace_id='all'):
+def devices():
+    credentials()
+    return cloud.request('/remote/devices')['devices']
+
+
+def request_pair(target):
+    credentials()
+    return cloud.request('/remote/pairings',method='POST',body={'target':target})
+
+
+def pairing_requests():
+    credentials()
+    return cloud.request('/remote/pairings')['requests']
+
+
+def announce():
+    if is_android():raise ValueError('Принимать задания может только ПК')
+    account,_=credentials()
+    value=cloud.request('/remote/host',method='POST',body={})
+    get_db().set_setting('remote_host:'+account['account_id'],json.dumps(value))
+    return value
+
+
+def confirm_pair(sender,approved,*,guard=None):
+    account,_=credentials()
+    cloud.request('/remote/pairings/'+sender,method='POST',body={'approved':bool(approved)})
+    announce()
+    if approved:start(guard=guard)
+
+
+def unlink(peer):
+    credentials()
+    cloud.request('/remote/links/'+peer,method='DELETE')
+    if not is_android():announce()
+
+
+def workspace_target(identifier,value=None):
+    account=cloud.state()
+    if not account or identifier=='all':return ''
+    key='remote_workspace:'+account['account_id']+':'+identifier
+    if value is not None:get_db().set_setting(key,value)
+    return get_db().get_setting(key) or ''
+
+
+def submit(target, prompt, workspace_id='all', *, chat_id=None):
     account, _ = credentials()
     if not str(prompt).strip(): raise ValueError('Введите задание для ПК')
     identifier = str(uuid.uuid4())
     task = {'version': 1, 'id': identifier, 'sender': account['session_id'], 'target': target,
             'prompt': str(prompt), 'workspace_id': workspace_id}
+    if chat_id is not None:
+        if workspace_id=='all' or workspaces.chat_workspace(chat_id)['id']!=workspace_id:
+            raise ValueError('Режим ПК доступен только в чате выбранного пространства')
+        if not cloud_sync.options()['enabled']:raise ValueError('Включите синхронизацию чатов и пространств')
+        cloud_sync.run()
+        ledger=json.loads(get_db().get_setting(cloud_sync.ledger_key(account['account_id'])) or '{}')
+        key=next((key for key,record in ledger.get('records',{}).items()
+                  if record.get('scope')=='chats' and record.get('local_id')==chat_id and not record.get('deleted')),None)
+        if not key:raise ValueError('Чат ещё не синхронизирован. Включите синхронизацию чатов и повторите отправку.')
+        task['chat_uuid']=key.split(':',1)[1]
     # Keep this immutable operation for a user-triggered retry after a lost reply.
     pending_key = 'remote_pending:'+identifier
     body = {'id': identifier, 'target': target, 'task': encode(identifier, 'task', task)}
@@ -158,14 +212,35 @@ def _execute(row, cancelled):
         raise ValueError('Адресат или отправитель зашифрованного задания не совпадает')
     if task.get('version') != 1 or not isinstance(task.get('prompt'), str): raise ValueError('Неверный формат задания')
     workspace = task.get('workspace_id', 'all')
+    cid=None
+    if task.get('chat_uuid'):
+        cloud_sync.run()
+        ledger=json.loads(get_db().get_setting(cloud_sync.ledger_key(account['account_id'])) or '{}')
+        record=ledger.get('records',{}).get('chat:'+task['chat_uuid'],{})
+        if record.get('scope')!='chats' or record.get('deleted') or not record.get('local_id'):
+            raise ValueError('Чат не синхронизирован с ПК')
+        cid=record['local_id']
+        if workspace=='all' or workspaces.chat_workspace(cid)['id']!=workspace:
+            raise ValueError('Чат не принадлежит выбранному пространству')
     if workspace not in {item['id'] for item in workspaces.list_workspaces()}:
         raise ValueError('Пространство ещё не синхронизировано с ПК')
     # Do not switch the user's visible chat or overwrite an unfinished draft.
-    cid = get_db().create_chat('Задание с телефона')
-    workspaces.assign_chat(cid, workspace)
-    chat_store.save_user_message(cid, task['prompt'])
+    history=[]
+    if cid is None:
+        cid = get_db().create_chat('Задание с телефона')
+        workspaces.assign_chat(cid, workspace)
+        chat_store.save_user_message(cid, task['prompt'])
+    else:
+        snapshot=json.loads(get_db().sync_chat_snapshot(cid))
+        messages=snapshot['messages']
+        if not messages or messages[-1].get('text',messages[-1].get('content'))!=task['prompt']:
+            raise ValueError('Чат изменился после отправки задания. Синхронизируйте устройства и повторите.')
+        history=[{'role':m['role'],'content':m.get('text',m.get('content',''))} for m in messages[:-1]]
     instructions, files = workspaces.chat_resources(cid)
-    if api_chat.is_api_selected(): generate = api_chat.generate_reply
+    if task.get('chat_uuid'):
+        files=[*files,*[tuple(item) for item in messages[-1].get('attachments',[])]]
+    api_selected=api_chat.is_api_selected()
+    if api_selected: generate = api_chat.generate_reply
     else:
         chosen = model_settings.get_selected_chat_model()
         if not chosen: raise ValueError('На ПК выберите API или установленную локальную модель')
@@ -174,13 +249,25 @@ def _execute(row, cancelled):
         _state['progress'] = value
         if cancelled.is_set(): raise CancelledError()
         _result(row['id'], 'running', {'progress': value})
-    reply = agent.run_agent(task['prompt'], chat_id=cid, history=[], attachments=files, instructions=instructions,
-        level='auto', cancelled=cancelled, generate=generate, on_progress=progress,
-        approve=lambda request: _approve(row['id'], request, cancelled), request_id='remote:'+row['id'])
+    try:
+        reply = agent.run_agent(task['prompt'], chat_id=cid, history=history, attachments=files, instructions=instructions,
+            level='auto', cancelled=cancelled, generate=generate, on_progress=progress,network=api_selected,
+            approve=lambda request: _approve(row['id'], request, cancelled), request_id='remote:'+row['id'])
+    except CancelledError:raise
+    except Exception as exc:
+        chat_store.save_ai_message(cid,'Не удалось выполнить задание на ПК: '+str(exc))
+        if cloud_sync.options()['enabled']:
+            try:cloud_sync.run()
+            except Exception:pass
+        raise
     chat_store.save_ai_message(cid, reply, attachments=reply.files)
-    _result(row['id'], 'completed', {'reply': str(reply), 'files': [name for name, _ in reply.files], 'workspace_id': workspace})
     # Deliver the generated chat/files using the existing E2EE replication path.
-    if cloud_sync.options()['enabled']: cloud_sync.run()
+    sync_pending=False
+    if cloud_sync.options()['enabled']:
+        try:cloud_sync.run()
+        except Exception:sync_pending=True  # Completed actions must never be rerun for a sync failure.
+    _result(row['id'], 'completed', {'reply': str(reply), 'files': [name for name, _ in reply.files],
+        'workspace_id': workspace,'sync_pending':sync_pending})
 
 
 def start(*, guard=None):

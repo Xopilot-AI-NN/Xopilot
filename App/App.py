@@ -171,6 +171,8 @@ class Init():
         page.run_task(persist_loop)
         page.run_task(memory_cleanup_loop)
         if not is_android():
+            from app.remote_browser import listen_for_pairing
+            page.run_task(listen_for_pairing,page)
             from services import remote_tasks
             try:
                 remote_tasks.start(guard=lambda:page._xopilot_can_sync() and page._xopilot_can_release_model())

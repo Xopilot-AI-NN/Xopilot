@@ -55,6 +55,7 @@ def build_prompt_container(
     live_status: ft.Control | None = None,
     send_button: ft.Control | None = None,
     composer_status: ft.Control | None = None,
+    execution_mode: ft.Control | None = None,
     agent_button: ft.Control | None = None,
     compact: bool = False,
     viewport_width: float | None = None,
@@ -81,7 +82,7 @@ def build_prompt_container(
                 # Keep child positions stable when a status/panel disappears.
                 # Without these shells Flutter remounts the following field
                 # when visible children are filtered, losing keyboard focus.
-                *[ft.Container(content=control) for control in (attachments, voice_status, live_status, composer_status) if control is not None],
+                *[ft.Container(content=control) for control in (execution_mode, attachments, voice_status, live_status, composer_status) if control is not None],
                 input_row,
                 tools,
             ],

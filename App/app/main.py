@@ -139,9 +139,16 @@ def build_app_ui(page: ft.Page) -> ft.Control:
 
     install_theme(page, get_setting("theme", "light"))
     page.padding = 0
-    page.bgcolor = color("#b3f2ff")
+    page.bgcolor = color("#eafffa")
+
+    remote_workspace = None
 
     async def submit_prompt(e):
+        if remote_workspace and remote_workspace.busy:
+            if (prompt.value or '').strip():
+                page.show_dialog(ft.SnackBar(ft.Text('Дождитесь завершения задания на ПК, затем отправьте следующий запрос.')))
+            else:await remote_workspace.stop()
+            return
         if is_sending:
             if (prompt.value or '').strip() or selected_files:
                 await send_instruction()
@@ -215,6 +222,8 @@ def build_app_ui(page: ft.Page) -> ft.Control:
     composer_actions.controls.append(cancel_edit_button)
 
     def stop_reply(_):
+        if remote_workspace and remote_workspace.busy:
+            page.run_task(remote_workspace.stop);return
         task_control.cancel()
         composer_label.value = "Останавливаю ответ…"
         page.update()
@@ -272,6 +281,13 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         attachment_strip.visible = bool(selected_files) and not (is_android() and isinstance(height, (int, float)) and height < 260)
         empty_state.visible = not chat_context and not short_phone
         cast(ft.ListView, chat.content).scroll = ft.ScrollMode.AUTO if chat_context else ft.ScrollMode.HIDDEN
+        if remote_workspace:
+            remote_workspace.refresh()
+            if remote_workspace.busy:
+                send_button.visible=True;live.button.visible=False
+                composer_label.value='ИИ работает на компьютере'
+                send_button.content.icon=ft.Icons.STOP_ROUNDED
+                send_button.tooltip='Остановить задание на ПК'
         if update:
             page.update()
     attachment_strip = build_file_attachments(selected_files, lambda _: None)
@@ -560,12 +576,23 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         refresh_composer()
 
     async def on_send(e, retry=False, queue_item=None):
-        nonlocal task_control
+        nonlocal task_control, editing_message, is_sending, failed_request, failed_reason
+        if remote_workspace and remote_workspace.eligible and remote_workspace.target and not retry and not queue_item:
+            text=(prompt.value or '').strip()
+            if not text and not selected_files:return
+            attachments=[(f.name,f.path) for f in selected_files if getattr(f,'path',None)]
+            prompt.value='';selected_files.clear();persist_draft();await refresh_attachments()
+            is_sending=True
+            completed=False
+            try:completed=await remote_workspace.send(text,attachments)
+            finally:
+                is_sending=False;refresh_composer()
+                if completed:getattr(page,'_xopilot_sync_refresh',lambda:None)()
+            return
         if remote_tasks.running():
             page.show_dialog(ft.SnackBar(ft.Text('ПК выполняет удалённое задание. Дождитесь результата или отмените его в «Подключение к ПК».')))
             return
         memory_capture.cancel()
-        nonlocal editing_message, is_sending, failed_request, failed_reason
         if retry and failed_request is None:
             return
         if is_sending or voice_input.busy:
@@ -1103,6 +1130,12 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         _loading_older = False
 
     chat = build_chat(chat_messages, on_scroll=on_chat_scroll)
+    from .workspace_remote import WorkspaceRemote
+    remote_workspace=WorkspaceRemote(page,lambda:active_chat_id,
+        lambda:'all' if is_private(active_chat_id) else workspaces.chat_workspace(active_chat_id)['id'],
+        lambda:cast(ft.ListView,chat.content),add_live_user_message,
+        lambda:getattr(page,'_xopilot_sync_refresh',lambda:None)(),refresh_composer)
+
     prompt_container = build_prompt_container(
         prompt,
         on_send,
@@ -1116,6 +1149,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         live_status=live.status,
         send_button=send_button,
         composer_status=composer_status,
+        execution_mode=remote_workspace.selector,
         compact=compact_layout(page.width),
         viewport_width=page.width,
     )
@@ -1568,7 +1602,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
     refresh_menu_chats = getattr(menu_overlay, '_xopilot_refresh_chats', lambda: None)
 
     page._xopilot_connected=True
-    page._xopilot_can_sync=lambda: not remote_tasks.running() and not is_sending and not live.busy and not voice_input.busy and editing_message is None and not is_private(active_chat_id)
+    page._xopilot_can_sync=lambda: not (remote_workspace and remote_workspace.busy) and not remote_tasks.running() and not is_sending and not live.busy and not voice_input.busy and editing_message is None and not is_private(active_chat_id)
     def refresh_after_sync():
         profile_refresh=getattr(page,'_xopilot_profile_refresh',None)
         if profile_refresh:profile_refresh()
