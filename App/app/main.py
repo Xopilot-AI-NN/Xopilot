@@ -338,7 +338,9 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         get_pending_files=lambda: selected_files.copy(),
         on_pending_files_consumed=consume_live_files,
     )
-    page._xopilot_can_release_model = lambda: not (is_sending or voice_input.busy or live.busy or memory_capture.busy)
+    try: from ..services import remote_tasks
+    except ImportError: from services import remote_tasks
+    page._xopilot_can_release_model = lambda: not (is_sending or voice_input.busy or live.busy or memory_capture.busy or remote_tasks.running())
     page._xopilot_can_release_memory = lambda: page._xopilot_can_release_model() and not (live.camera_on or live.screen_on)
     # Typed call questions and recoverable errors use the visible chat field.
     live.frame_question = prompt
@@ -409,8 +411,9 @@ def build_app_ui(page: ft.Page) -> ft.Control:
     page.on_connect = reconnect_voice_modes
     async def shutdown(e=None):
         task_control.cancel()
-        try:from ..services import task_processes
-        except ImportError:from services import task_processes
+        try:from ..services import task_processes,remote_tasks
+        except ImportError:from services import task_processes,remote_tasks
+        if hasattr(remote_tasks,'shutdown'):await asyncio.to_thread(remote_tasks.shutdown)
         await asyncio.to_thread(task_processes.stop_all)
         if is_sending:
             try:await asyncio.wait_for(request_done.wait(),timeout=15)
@@ -558,6 +561,9 @@ def build_app_ui(page: ft.Page) -> ft.Control:
 
     async def on_send(e, retry=False, queue_item=None):
         nonlocal task_control
+        if remote_tasks.running():
+            page.show_dialog(ft.SnackBar(ft.Text('ПК выполняет удалённое задание. Дождитесь результата или отмените его в «Подключение к ПК».')))
+            return
         memory_capture.cancel()
         nonlocal editing_message, is_sending, failed_request, failed_reason
         if retry and failed_request is None:
@@ -802,7 +808,10 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                             def choose(value):
                                 answer[0]=value;done.set()
                                 decision.value='Подтверждено' if value else 'Отклонено'
-                                controls.disabled=True;page.update()
+                                controls.disabled=True
+                                card.padding=ft.Padding.symmetric(horizontal=10,vertical=4)
+                                card.content=ft.Row(spacing=8,controls=[ft.Icon(ft.Icons.CHECK_CIRCLE_OUTLINE if value else ft.Icons.CANCEL_OUTLINED,size=16),ft.Text(decision.value+' · '+label,size=12,expand=True)])
+                                apply_palette(card);page.update()
                             decision=ft.Text('Ожидает вашего решения',size=12)
                             controls=ft.Row(wrap=True,controls=[
                                 ft.TextButton(content='Отклонить',on_click=lambda _:choose(False)),

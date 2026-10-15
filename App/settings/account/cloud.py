@@ -43,6 +43,8 @@ def build_cloud_card(page):
         from .storage import open_storage
         from .billing import open_billing
         from .sync import open_sync
+        try: from ...app.remote_browser import open_remote
+        except ImportError: from app.remote_browser import open_remote
         def tile(icon,title,subtitle,callback,disabled=False):
             return ft.Container(padding=12,border_radius=16,bgcolor=color('#dff8f3'),
                 border=ft.Border.all(1,color('#b9eee4')),ink=not disabled,on_click=callback if not disabled else None,
@@ -53,6 +55,7 @@ def build_cloud_card(page):
         controls += [tile(ft.Icons.SYNC,'Синхронизация','Данные, профиль и лимит трафика' if account else 'Войдите, чтобы включить синхронизацию',lambda _:open_sync(page),not bool(account)),
             tile(ft.Icons.STORAGE_ROUNDED,'Хранилище','Материалы, занятое место и удаление копий',lambda _:open_storage(page)),
             tile(ft.Icons.PAYMENTS_OUTLINED,'Подписка Zephyr','Текущий тариф, условия и продление',lambda _:open_billing(page)),
+            tile(ft.Icons.DEVICES,'Подключение к ПК','Задания с телефона, подтверждения и результаты' if account else 'Войдите, чтобы подключить ПК',lambda _:open_remote(page),not bool(account)),
             ft.Text('Содержимое шифруется на устройстве. Временные чаты остаются локальными.',color=color('#47747a'),size=11),feedback]
         content.controls = controls
         refresh=getattr(page,'_xopilot_profile_refresh',None)
