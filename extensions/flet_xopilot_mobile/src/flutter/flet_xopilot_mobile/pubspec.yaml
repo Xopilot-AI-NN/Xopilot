@@ -11,7 +11,7 @@ dependencies:
   record: 7.1.1
   camera: 0.12.1
   flutter_tts: 4.2.5
-  flet: 1.0.3
+  flet: 1.0.4
   flutter:
     sdk: flutter
 

@@ -5,7 +5,7 @@ description = "Android platform services for Xopilot"
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [{name = "DenBroLiik"}]
-dependencies = ["flet==1.0.3"]
+dependencies = ["flet==1.0.4"]
 
 [tool.setuptools.package-data]
 "flutter.flet_xopilot_mobile" = ["**/*"]

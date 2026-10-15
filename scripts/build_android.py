@@ -4,7 +4,7 @@
 Версия: 2.0.8
 Описание: Сборка Android/ChromeOS APK с проверенными нативными библиотеками.
 
-Run with the same Python environment that provides Flet 1.0.3. The generated
+Run with the same Python environment that provides the pinned Flet version. The generated
 shell is based on Flet's pinned official template; NDK and compile SDK are set consistently across Android plugins.
 """
 import argparse
@@ -66,13 +66,24 @@ ANDROID_PLUGIN_NDK = '\n'.join([
 ])
 
 
-def prepare_template(jdk):
+def checked_flet_version():
     import flet
+    version=flet.version.flet_version
+    project=tomllib.loads((ROOT/'pyproject.toml').read_text())
+    expected=next(item.split('==',1)[1] for item in project['project']['dependencies'] if item.startswith('flet=='))
+    plugin=ROOT/'extensions/flet_xopilot_mobile/src/flutter/flet_xopilot_mobile/pubspec.yaml'
+    match=re.search(r'^  flet: ([0-9.]+)$',plugin.read_text(),re.M)
+    plugin_project=tomllib.loads((ROOT/'extensions/flet_xopilot_mobile/pyproject.toml').read_text())
+    plugin_requirement='flet=='+expected
+    if version!=expected or not match or match.group(1)!=expected or plugin_requirement not in plugin_project['project']['dependencies']:
+        raise RuntimeError('Flet versions must match in Python, pyproject.toml and the mobile plugin: expected '+expected)
+    return version
+
+
+def prepare_template(jdk):
     from flet_cli.commands.build_base import DEFAULT_TEMPLATE_URL
     from flet_cli.utils.template_cache import get_cached_template_zip
-    version = flet.version.flet_version
-    if version != '1.0.3':
-        raise RuntimeError('This Android bridge requires Flet 1.0.3 and Python runtime 3.14.7')
+    version=checked_flet_version()
     archive = get_cached_template_zip(DEFAULT_TEMPLATE_URL.format(version=version), version)
     destination = ROOT / 'build/android-template'
     if destination.exists(): shutil.rmtree(destination)
@@ -142,12 +153,15 @@ def main():
     parser.add_argument('--skip-native', action='store_true', help='Reuse already built Android DB libraries')
     parser.add_argument('--wheel-house', type=Path, help='Use prebuilt patched Android wheels (validated before packaging)')
     parser.add_argument('--build-number', type=int, help='Positive Android versionCode, e.g. CI run number')
+    parser.add_argument('--org', help='Override organization for a data-preserving test update without editing project settings')
     parser.add_argument('--build-version', help='Application version, e.g. 2.0.7')
     args = parser.parse_args()
     if args.build_number is not None and not 0 < args.build_number <= 2100000000:
         parser.error('--build-number must be between 1 and 2100000000')
     if args.build_version is not None and not re.fullmatch(r'\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?', args.build_version):
         parser.error('--build-version must be a semantic version, e.g. 2.0.7')
+    if args.org is not None and not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+',args.org):
+        parser.error('--org must be a reverse domain, e.g. ru.xopilot')
     environment = android_environment(args.jdk)
     from build_android_wheels import build as build_wheels, validate_wheelhouse
     wheelhouse = (args.wheel_house or ROOT/'build/android-wheels').resolve()
@@ -175,6 +189,7 @@ def main():
     # Expand the host-native patterns before passing them to Flet.
     exclude = ['--exclude', *android_exclusions()]
     numbering = ['--build-number', str(args.build_number)] if args.build_number is not None else []
+    if args.org is not None:numbering += ['--org',args.org]
     if args.build_version is not None:
         numbering += ['--build-version', args.build_version]
     subprocess.run([str(Path(sys.executable).parent / 'flet'), 'build', 'apk', str(ROOT),
