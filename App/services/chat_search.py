@@ -2,7 +2,7 @@
 Файл: /App/services/chat_search.py
 Разработчик: DenBroLiik
 Версия: 2.0.8
-Описание: Поиск и постраничное чтение обычных чатов по запросу ИИ.
+Описание: Поиск и сжатые выдержки обычных чатов по запросу ИИ.
           Защищённая и временная история не открывается этим модулем.
 """
 import re
@@ -39,7 +39,7 @@ def search(query, *, after_chat_id=0, limit=20):
             if query.casefold() in text or all(word in text for word in words):
                 position = text.find(words[0]) if words else 0
                 matches.append({'message_id': message.id, 'role': message.role,
-                                'excerpt': message.content[max(0, position-80):position+600]})
+                                'excerpt': _excerpt(message.content,query,budget=360)})
                 if len(matches) == 3: break
         if title_match or matches:
             result.append({'chat_id': identifier, 'title': title,
@@ -49,17 +49,37 @@ def search(query, *, after_chat_id=0, limit=20):
     return {'chats': result, 'next_after_chat_id': result[-1]['chat_id'] if len(result) == limit else None}
 
 
-def read(chat_id, *, after_message_id=0):
+def _excerpt(content, query='', budget=640):
+    """Extract relevant source text, not invented facts or the complete transcript."""
+    from ..app.task_summaries import decode
+    record=decode(content)
+    if record:
+        content=' · '.join(str(record.get(k,'')) for k in ('label','title','state','summary'))
+    text=re.sub(r'\s+', ' ', content).strip()
+    words=re.findall(r'\w+', str(query).casefold())
+    positions=[text.casefold().find(word) for word in words if word in text.casefold()]
+    position=min(positions) if positions else 0
+    start=max(0,position-100)
+    excerpt=text[start:start+budget]
+    return ('…' if start else '')+excerpt+('…' if start+budget<len(text) else '')
+
+
+def read(chat_id, *, after_message_id=0, query=''):
     identifier = int(chat_id)
     chat = next((row for row in get_db().list_chats() if row[0] == identifier and identifier > 0), None)
     if chat is None: raise ValueError('Обычный чат не найден')
-    rows, used, next_cursor = [], 0, None
     messages = [m for m in get_db().get_messages(identifier) if m.id > int(after_message_id)]
+    words=re.findall(r'\w+', str(query).casefold())
+    if words:
+        messages=[m for m in messages if any(word in m.content.casefold() for word in words)]
+    rows=[];used=0;next_cursor=None
     for message in messages:
-        # Paging is a tool-output bound; it does not truncate stored history.
-        if rows and used + len(message.content) > 24000:
-            next_cursor = rows[-1]['message_id']; break
-        rows.append({'message_id': message.id, 'role': message.role, 'content': message.content,
-                     'attachments': [name for name, _ in message.attachments]})
-        used += len(message.content)
-    return {'chat_id': identifier, 'title': chat[1], 'messages': rows, 'next_after_message_id': next_cursor}
+        text=_excerpt(message.content,query)
+        if rows and (used+len(text)>2800 or len(rows)>=8):
+            next_cursor=rows[-1]['message_id'];break
+        rows.append({'message_id':message.id,'role':message.role,'content':text,
+                     'attachments':[name for name,_ in message.attachments][:6]})
+        used+=len(text)
+    return {'chat_id':identifier,'title':chat[1],'format':'extractive_digest',
+            'note':'Короткие выдержки источников, не полная переписка. Не показанные сведения не считаются отсутствующими.',
+            'messages':rows,'next_after_message_id':next_cursor}

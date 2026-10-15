@@ -77,7 +77,16 @@ class TaskMessages:
         if stored and not process:
             state=stored['state'];summary=stored['summary'];links=stored.get('links',[]);detail=stored['detail']
         item['summary']=summary
-        item['state'].value=state+(' · '+summary if summary else '')
+        failed=state.startswith('Ошибка')
+        running=event['phase']=='start' and not stored
+        item['state'].value=('Не удалось выполнить · раскройте подробности' if failed else state+(' · '+summary if summary else ''))
+        tone=color('#c94b4b') if failed else color('#087f8c') if running else color('#47747a')
+        item['state'].color=tone
+        item['indicator'].icon=ft.Icons.ERROR_OUTLINE if failed else ft.Icons.MORE_HORIZ if running else ft.Icons.CHECK_CIRCLE_OUTLINE
+        item['indicator'].color=tone
+        item['card'].border=ft.Border(left=ft.BorderSide(2,tone))
+        if event['tool']=='computer_input' and isinstance(result,dict) and result.get('target_name'):
+            item['label'].value='Действие в окне · '+result['target_name']
         item['links'].controls=[ft.TextButton(content=ft.Text(url,size=11,max_lines=1,overflow=ft.TextOverflow.ELLIPSIS),
             width=240,height=28,on_click=lambda _,url=url:self.page.run_task(self.open_link,url)) for url in links]
         item['links'].visible=bool(links)
@@ -139,13 +148,14 @@ class TaskMessages:
         stop=ft.TextButton(content='Остановить процесс',visible=False)
         state.max_lines=2;state.overflow=ft.TextOverflow.ELLIPSIS
         links=ft.Row(wrap=True,spacing=0,visible=False)
-        tile=ft.ExpansionTile(title=label,subtitle=state,leading=(ft.Image(src='Icons/icon_cursor/icon_ai_cursor.svg',width=18,height=18) if event['tool'].startswith('computer_') else ft.Icon(ft.Icons.TERMINAL,size=16)),dense=True,
-            min_tile_height=36,tile_padding=0,controls_padding=8,expanded=False,
+        indicator=ft.Icon(ft.Icons.MORE_HORIZ,size=16,color=color('#087f8c'))
+        tile=ft.ExpansionTile(title=label,subtitle=state,leading=indicator,dense=True,
+            min_tile_height=30,tile_padding=0,controls_padding=8,expanded=False,
             expanded_cross_axis_alignment=ft.CrossAxisAlignment.STRETCH,
             controls=[ft.Text(arguments,size=11,font_family='monospace',selectable=True),detail])
-        card=ft.Container(padding=ft.Padding.symmetric(horizontal=8,vertical=2),border_radius=12,
-            bgcolor=color('#f3fffc'),content=ft.Column(spacing=0,controls=[tile,links,stop]))
-        item=dict(card=card,state=state,detail=detail,stop=stop,arguments=arguments,event=event,title=title,links=links,
+        card=ft.Container(padding=ft.Padding.symmetric(horizontal=10,vertical=0),border_radius=8,
+            bgcolor=None,content=ft.Column(spacing=0,controls=[tile,links,stop]))
+        item=dict(card=card,indicator=indicator,label=label,state=state,detail=detail,stop=stop,arguments=arguments,event=event,title=title,links=links,
                   message_id=None,watching=False)
         stop.on_click=lambda _:self.page.run_task(self.stop,item)
         apply_palette(card)

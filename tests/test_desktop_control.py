@@ -83,3 +83,24 @@ class DesktopTests(unittest.TestCase):
         with patch.object(desktop,'ComputerSession') as computer,patch.object(agent,'_run_agent',side_effect=RuntimeError('model failed')):
             with self.assertRaises(RuntimeError):agent.run_agent('test')
             computer.return_value.close.assert_called_once()
+
+    def test_model_click_case_is_normalized_but_missing_arguments_are_repaired_before_execution(self):
+        from App.services.agent import parse_response
+        import json
+        value=parse_response(json.dumps({'tool':'computer_input','arguments':{'action':'Click','target':'fresh','name':'Click'}}))
+        self.assertEqual(value['arguments']['action'],'click')
+        for value in [{}, {'action':'Click'}, {'action':'move','target':'fresh'}]:
+            parsed=parse_response(json.dumps({'tool':'computer_input','arguments':value}))
+            self.assertIn('error',parsed)
+        self.assertIn('error',parse_response('{"tool":"computer_input"}'))
+
+    def test_model_catalog_matches_phone_and_attached_folder(self):
+        from App.services import agent,platforms
+        with patch.object(platforms,'is_android',return_value=True):
+            catalog=agent.available_tools({'enabled':True,'root':'/project'})
+        self.assertNotIn('computer_start',catalog);self.assertNotIn('run_project_command',catalog)
+        self.assertIn('control_media',catalog);self.assertIn('read_chat',catalog)
+        with patch.object(platforms,'is_android',return_value=False),patch.object(desktop,'supported',return_value=True):
+            catalog=agent.available_tools({'enabled':False})
+            self.assertNotIn('run_project_command',catalog);self.assertIn('computer_start',catalog)
+            self.assertIn('run_project_command',agent.available_tools({'enabled':True,'root':'/project'}))

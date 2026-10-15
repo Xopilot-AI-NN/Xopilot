@@ -138,6 +138,19 @@ class TaskTests(unittest.TestCase):
         self.assertEqual(len(task_processes.snapshots('chat:1',self.workspace))-before,1)
 
 
+    def test_automatic_desktop_session_does_not_request_chat_confirmation(self):
+        from App.services import desktop_control
+        project_tools.set_chat_approval_mode(1,'automatic')
+        responses=iter(['{"tool":"computer_start","arguments":{}}','{"final":"Доступ открыт"}'])
+        review=Mock(return_value=False)
+        def start(cancelled,approve):
+            self.assertTrue(approve({'kind':'computer_session'}))
+            return {'active':True}
+        with patch.object(desktop_control.ComputerSession,'start',side_effect=start):
+            agent.run_agent('Открой доступ к экрану',chat_id=1,history=[],attachments=[],instructions='',level='auto',
+                cancelled=self.cancelled,approve=review,generate=lambda *a,**k:next(responses))
+        review.assert_not_called()
+
 class WebTests(unittest.TestCase):
     def test_private_network_and_mixed_dns_are_rejected_before_connect(self):
         for url in ('file:///etc/passwd','https://user:pass@example.com','http://localhost:7799'):
