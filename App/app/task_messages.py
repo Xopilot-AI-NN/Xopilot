@@ -8,6 +8,7 @@ import asyncio
 import json
 import re
 import shlex
+import uuid
 import flet as ft
 from .palette import color, apply_palette
 from .task_summaries import PREFIX,describe,summarize,context
@@ -31,6 +32,43 @@ def code_block(value):
     return fence+'\n'+value+'\n'+fence
 
 
+def build_action_group(cards,turn=None):
+    label=ft.Text(f'Действия ИИ · {len(cards)}',size=13,weight=ft.FontWeight.W_500)
+    state=ft.Text('Нажмите, чтобы посмотреть шаги и результаты',size=11,color=color('#47747a'))
+    body=ft.Column(spacing=4,controls=cards)
+    tile=ft.ExpansionTile(title=label,subtitle=state,leading=ft.Icon(ft.Icons.AUTO_AWESOME_OUTLINED,size=18,color=color('#087f8c')),
+        dense=True,expanded=False,min_tile_height=42,tile_padding=8,controls_padding=4,controls=[body])
+    group=ft.Container(border_radius=20,bgcolor=color('#f3fffc'),padding=4,content=ft.Column(spacing=0,controls=[tile]))
+    group._xopilot_action_cards=body
+    group._xopilot_action_label=label
+    group._xopilot_action_state=state
+    group._xopilot_action_turn=turn
+    for card in cards:card._xopilot_action_parent=group
+    apply_palette(group)
+    return group
+
+
+def group_action_controls(controls):
+    """Group saved turns without changing messages, their order or context data."""
+    flat=[]
+    for control in controls:
+        body=getattr(control,'_xopilot_action_cards',None)
+        flat.extend(reversed(body.controls)) if body is not None else flat.append(control)
+    result=[];groups={};legacy=0
+    for control in flat:
+        if not getattr(control,'_xopilot_action_record',False):
+            result.append(control);legacy+=1;continue
+        turn=getattr(control,'_xopilot_action_turn',None)
+        key=('turn',turn) if isinstance(turn,str) and turn else ('legacy',legacy)
+        if key not in groups:
+            group=build_action_group([],turn);groups[key]=group;result.append(group)
+        group=groups[key]
+        group._xopilot_action_cards.controls.insert(0,control)
+        control._xopilot_action_parent=group
+        group._xopilot_action_label.value=f'Действия ИИ · {len(group._xopilot_action_cards.controls)}'
+    return result
+
+
 class TaskMessages:
     def __init__(self,page,chat_id,workspace_id,*,current_chat,chat_list,save,update,on_record=None,on_comment=None):
         self.page,self.chat_id,self.workspace_id=page,chat_id,workspace_id
@@ -38,6 +76,8 @@ class TaskMessages:
         self.save,self.update=save,update
         self.on_record,self.on_comment=on_record,on_comment
         self.items={}
+        self.turn=uuid.uuid4().hex
+        self.group=None
 
     @property
     def chat_list(self):
@@ -57,7 +97,17 @@ class TaskMessages:
         except Exception as exc:self.page.show_dialog(ft.SnackBar(ft.Text(str(exc))))
 
     def mounted(self,item):
-        return self.current_chat()==self.chat_id and item['card'] in self.chat_list.controls
+        root=getattr(item['card'],'_xopilot_action_parent',self.group)
+        return self.current_chat()==self.chat_id and (item['card'] in self.chat_list.controls or root in self.chat_list.controls)
+
+    def refresh_group(self):
+        if self.group is None:return
+        self.group._xopilot_action_label.value=f'Действия ИИ · {len(self.items)}'
+        active=[i for i in self.items.values() if i['event']['phase']=='start' or
+                (isinstance(i['event'].get('result'),dict) and i['event']['result'].get('running'))]
+        failed=any(i['event'].get('error') for i in self.items.values())
+        self.group._xopilot_action_state.value=('Выполняется · '+active[-1]['event']['label'] if active else
+            'Есть ошибки · раскройте подробности' if failed else 'Завершено · шаги и результаты внутри')
 
     def refresh(self,item):
         event=item['event'];result=event.get('result')
@@ -93,12 +143,13 @@ class TaskMessages:
         item['link_values']=links
         item['detail'].value=detail
         item['stop'].visible=bool(process and process['running'])
+        self.refresh_group()
         return state,detail
 
     def persist(self,item):
         state,detail=self.refresh(item)
         event=item['event'];result=event.get('result')
-        record=dict(tool=event['tool'],label=event['label'],title=item['title'],state=state,
+        record=dict(turn=getattr(item['card'],'_xopilot_action_turn',None) or self.turn,tool=event['tool'],label=event['label'],title=item['title'],state=state,
             summary=item['summary'],links=item.get('link_values',[]),arguments_text=item['arguments'],detail=detail,
             process={key:value for key,value in result.items() if key!='output'} if isinstance(result,dict) and 'pid' in result else None)
         text=PREFIX+json.dumps(record,ensure_ascii=False)
@@ -118,7 +169,7 @@ class TaskMessages:
             snapshot=await asyncio.to_thread(process.stop)
             item['event'].update(phase='result',result=snapshot)
             self.persist(item)
-            if self.mounted(item):item['card'].update()
+            if self.mounted(item):(getattr(item['card'],'_xopilot_action_parent',None) or item['card']).update()
         except Exception as exc:self.page.show_dialog(ft.SnackBar(ft.Text(str(exc))))
 
     async def watch(self,item,identifier):
@@ -129,7 +180,7 @@ class TaskMessages:
             if result!=previous:
                 item['event'].update(result=result)
                 self.refresh(item)
-                if self.mounted(item):item['card'].update()
+                if self.mounted(item):(getattr(item['card'],'_xopilot_action_parent',None) or item['card']).update()
                 previous=result
             if not result['running']:
                 if item['message_id'] is not None:self.persist(item)
@@ -157,6 +208,8 @@ class TaskMessages:
             bgcolor=None,content=ft.Column(spacing=0,controls=[tile,links,stop]))
         item=dict(card=card,indicator=indicator,label=label,state=state,detail=detail,stop=stop,arguments=arguments,event=event,title=title,links=links,
                   message_id=None,watching=False)
+        card._xopilot_action_record=True
+        card._xopilot_action_turn=stored.get('turn') if stored else self.turn
         stop.on_click=lambda _:self.page.run_task(self.stop,item)
         apply_palette(card)
         return item
@@ -183,7 +236,11 @@ class TaskMessages:
         if item is None:
             item=self.make_item(event)
             self.items[event["id"]]=item
-            if self.current_chat()==self.chat_id:self.chat_list.controls.insert(0,item["card"])
+            if self.group is None:self.group=build_action_group([],self.turn)
+            self.group._xopilot_action_cards.controls.append(item['card'])
+            item['card']._xopilot_action_parent=self.group
+            if self.current_chat()==self.chat_id and self.group not in self.chat_list.controls:
+                self.chat_list.controls.insert(0,self.group)
         item['event']=event
         self.refresh(item)
         result=event.get('result')

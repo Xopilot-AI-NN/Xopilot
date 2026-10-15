@@ -9,12 +9,30 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import Mock
-from App.app.task_messages import TaskMessages,code_block
+from App.app.task_messages import TaskMessages,code_block,group_action_controls
 from App.services import task_processes
 from App.app.task_summaries import decode,summarize
 
 
 class MessageTests(unittest.IsolatedAsyncioTestCase):
+    async def test_multiple_tools_share_one_collapsed_turn_and_keep_individual_records(self):
+        page=Mock();chat=Mock(controls=[]);save=Mock(side_effect=[11,12])
+        journal=TaskMessages(page,1,'project',current_chat=lambda:1,chat_list=chat,save=save,update=Mock())
+        for identifier in ('one','two'):
+            await journal.receive(dict(id=identifier,tool='search_web',label='Поиск',arguments={'query':identifier},phase='result',result={'results':[]}))
+        self.assertEqual(len(chat.controls),1)
+        self.assertEqual(len(chat.controls[0]._xopilot_action_cards.controls),2)
+        self.assertFalse(chat.controls[0].content.controls[0].expanded)
+        records=[decode(call.args[1]) for call in save.call_args_list]
+        self.assertEqual(records[0]['turn'],records[1]['turn'])
+        restored=[journal.restore_saved(record,index) for index,record in enumerate(records)]
+        groups=group_action_controls(list(reversed(restored)))
+        self.assertEqual(len(groups),1)
+        self.assertEqual(groups[0]._xopilot_action_cards.controls,restored)
+        # Re-grouping on pagination must neither duplicate nor reorder steps.
+        again=group_action_controls(groups)
+        self.assertEqual(again[0]._xopilot_action_cards.controls,restored)
+
     async def test_action_updates_one_message_and_saves_command_output(self):
         page=Mock();chat=Mock(controls=[]);save=Mock(return_value=17);update=Mock()
         journal=TaskMessages(page,1,'project',current_chat=lambda:1,chat_list=chat,save=save,update=update)

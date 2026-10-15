@@ -1,3 +1,9 @@
+"""
+Файл: /App/settings/account/storage.py
+Разработчик: DenBroLiik
+Версия: 2.0.8
+Описание: Хранилище Material 3 / Xopilot: материалы, копии и освобождение места.
+"""
 import asyncio
 import json
 from datetime import datetime
@@ -62,12 +68,13 @@ def open_storage(page, initial_mode='local'):
     def card(item,extra):
         details=storage.format_bytes(item['bytes'])+' · '+(Path(item['name']).suffix.lstrip('.').upper() or 'Файл')
         references=item.get('references',[])
-        return ft.Container(padding=12,border_radius=16,bgcolor=color('#f3fffc'),border=ft.Border.all(1,color('#b9eee4')),
-            content=ft.Row(spacing=8,controls=[ft.Icon(ft.Icons.INSERT_DRIVE_FILE_OUTLINED,color=color('#087f8c')),
+        return ft.Container(data={'material_path':item['path']},padding=14,border_radius=22,bgcolor=color('#f3fffc'),
+            content=ft.Row(spacing=12,controls=[ft.Container(width=40,height=40,border_radius=14,bgcolor=color('#dff8f3'),
+                alignment=ft.Alignment.CENTER,content=ft.Icon(ft.Icons.INSERT_DRIVE_FILE_OUTLINED,color=color('#087f8c'),size=22)),
                 ft.Container(expand=True,ink=True,on_click=lambda e,item=item: page.run_task(view,e,item),
-                    content=ft.Column(spacing=3,controls=[ft.Text(item['name'],color=color('#123b43')),
-                        ft.Text(details,size=11,color=color('#47747a')),
-                        *([ft.Text(' · '.join(references),size=10,color=color('#47747a'))] if references else [])])),menu(item,extra)]))
+                    content=ft.Column(spacing=4,controls=[ft.Text(item['name'],color=color('#123b43'),size=14,max_lines=2,overflow=ft.TextOverflow.ELLIPSIS),
+                        ft.Text(details,size=12,color=color('#47747a')),
+                        *([ft.Text(' · '.join(references),size=11,color=color('#47747a'),max_lines=2,overflow=ft.TextOverflow.ELLIPSIS)] if references else [])])),menu(item,extra)]))
 
     async def refresh(_=None):
         async with refresh_lock:await render_inventory()
@@ -87,7 +94,9 @@ def open_storage(page, initial_mode='local'):
                 rows=[ft.Text('На этом устройстве',size=18,weight=ft.FontWeight.BOLD)]
                 labels={'db_bytes':'База и журналы','materials_bytes':'Материалы','private_bytes':'Защищённые чаты','cache_bytes':'Кэш отправки','trash_bytes':'Корзина','recovery_bytes':'Копии восстановления','models_bytes':'Модели ИИ'}
                 total=sum(inventory[key] for key in labels)
-                rows.append(ft.Text('Всего занято: '+storage.format_bytes(total),size=16,weight=ft.FontWeight.BOLD))
+                rows.append(ft.Container(padding=18,border_radius=22,bgcolor=color('#dff8f3'),content=ft.Column(spacing=6,controls=[
+                    ft.Text('Занято на устройстве',size=12,color=color('#47747a')),
+                    ft.Text(storage.format_bytes(total),size=26,weight=ft.FontWeight.W_600,color=color('#123b43'))])))
                 rows.append(ft.ExpansionTile(title=ft.Text('Использование места'),controls=[
                     ft.Row(controls=[ft.Text(label,expand=True),ft.Text(storage.format_bytes(inventory[key]))]) for key,label in labels.items()]))
                 rows += [ft.Text('В базе хранятся текст и ссылки. Материалы лежат отдельно: их локальные копии можно удалить или перенести в корзину. Корзина занимает место до очистки.',size=11,color=color('#47747a'))]
@@ -204,8 +213,9 @@ def open_storage(page, initial_mode='local'):
     tabs=ft.SegmentedButton(width=550,selected=[mode],show_selected_icon=False,on_change=switch_tab,
         segments=[ft.Segment(value='local',label='На устройстве',icon=ft.Icons.COMPUTER),
                   ft.Segment(value='cloud',label='В облаке',icon=ft.Icons.CLOUD_OUTLINED,disabled=cloud_account.state() is None)],
-        style=ft.ButtonStyle(color=color('#087f8c'),bgcolor={ft.ControlState.SELECTED:color('#b9eee4'),ft.ControlState.DEFAULT:color('#ffffff')},
-            side=ft.BorderSide(1,color('#b9eee4')),shape=ft.RoundedRectangleBorder(radius=14)))
+        style=ft.ButtonStyle(color=color('#123b43'),bgcolor={ft.ControlState.SELECTED:color('#c9f1e9'),ft.ControlState.DEFAULT:color('#f3fffc')},
+            padding=ft.Padding.symmetric(horizontal=12,vertical=10),
+            side=ft.BorderSide(1,color('#b9eee4')),shape=ft.RoundedRectangleBorder(radius=18)))
     task=None
     def close(_):
         navigation.save(storage=None)
@@ -213,7 +223,7 @@ def open_storage(page, initial_mode='local'):
         if task:task.cancel()
     search.on_change=refresh
     order.on_select=refresh
-    dialog=ft.AlertDialog(bgcolor=color('#eafffa'),title=ft.Text('Управление хранилищем'),
+    dialog=ft.AlertDialog(bgcolor=color('#eafffa'),title=ft.Text('Хранилище'),shape=ft.RoundedRectangleBorder(radius=28),
         content=ft.Column(width=550,height=560,spacing=10,controls=[tabs,
             ft.Column(spacing=8,controls=[search,order]) if compact else ft.Row(controls=[search,order]),content,status]),
         actions=[ft.TextButton(content='Закрыть',on_click=close)],

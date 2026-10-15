@@ -134,15 +134,14 @@ def build_account_page(page: ft.Page) -> ft.Column:
     avatar_size = 56 if compact else 76
     avatar = ft.Container(width=avatar_size,height=avatar_size,border_radius=avatar_size/2,clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
         gradient=ft.LinearGradient(colors=['#00d6a3','#7657ff']),alignment=ft.Alignment.CENTER,
-        border=ft.Border.all(3,ft.Colors.WHITE),ink=True,tooltip='Изменить аватарку',on_click=choose_avatar)
+        border=ft.Border.all(1,color('#a8ddd7')),ink=True,tooltip='Изменить аватарку',on_click=choose_avatar)
     def refresh_profile():
         import base64
         data=profile.read();profile_title.value=data['name']
         avatar.content=ft.Image(src=base64.b64decode(data['avatar']),width=avatar_size,height=avatar_size,fit=ft.BoxFit.COVER,exclude_from_semantics=True) if data['avatar'] else ft.Icon(ft.Icons.PERSON,color=ft.Colors.WHITE,size=38)
     refresh_profile()
     page._xopilot_profile_refresh=refresh_profile
-    profile_card = ft.Container(bgcolor=color('#ffffff'), border_radius=20, padding=12 if compact else 20,
-        border=ft.Border.all(1, color('#b9eee4')),
+    profile_card = ft.Container(bgcolor=color('#f3fffc'), border_radius=22, padding=12 if compact else 20,
         content=ft.Row(spacing=10 if compact else 16, controls=[avatar,
             ft.Column(expand=True, spacing=6, controls=[
                 ft.Row(spacing=4, controls=[ft.Container(expand=True, content=profile_title),

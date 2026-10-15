@@ -228,10 +228,10 @@ class StorageInterfaceTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(search.expand)  # A flex child inside Wrap cannot render on Flutter.
             await search.on_change(None)
             content = dialog.content.controls[2]
-            material_card = next(row for row in content.controls if isinstance(row,ft.Container))
+            material_card = next(row for row in content.controls if getattr(row,'data',None)=={'material_path':'/owned/memo.txt'})
             menu = material_card.content.controls[-1]
             menu.items[0].on_click(None)
             fn,args = tasks[-1];await fn(*args)
             show.assert_awaited_once_with(page,'/owned/memo.txt','memo.txt',references=['Чат: QA'])
             search.value = 'missing';await search.on_change(None)
-            self.assertFalse(any(isinstance(row,ft.Container) for row in content.controls))
+            self.assertFalse(any(isinstance(getattr(row,'data',None),dict) and 'material_path' in row.data for row in content.controls))

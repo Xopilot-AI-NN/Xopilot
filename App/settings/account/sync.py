@@ -176,13 +176,16 @@ def open_sync(page):
     dialog._xopilot_sync_safe=True
     page.show_dialog(dialog)
     async def monitor():
+        previous=sync.status()
         while dialog.open:
             await asyncio.sleep(1)
             if not dialog.open:return
-            before=(status.value,manual.disabled,conflicts.visible)
+            current=sync.status()
+            if current==previous:continue
+            previous=current
             try:refresh()
             except ValueError:return  # Account was signed out on another page.
-            if before!=(status.value,manual.disabled,conflicts.visible):page.update()
+            page.update()
     page.run_task(monitor)
 
 

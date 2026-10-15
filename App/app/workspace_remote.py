@@ -21,9 +21,14 @@ class WorkspaceRemote:
         self.page,self.get_chat,self.get_workspace=page,get_chat,get_workspace
         self.get_list,self.on_user,self.on_refresh,self.on_changed=get_list,on_user,on_refresh,on_changed
         self.busy=False;self.job=None
-        self.local=ft.TextButton(content='Локально',icon=ft.Icons.SMARTPHONE_ROUNDED,on_click=self.local_mode)
-        self.pc=ft.TextButton(content='На ПК',icon=ft.Icons.COMPUTER_ROUNDED,on_click=self.pc_mode)
-        self.selector=ft.Container(visible=False,padding=ft.Padding.only(bottom=6),content=ft.Row(spacing=4,controls=[self.local,self.pc]))
+        self.local=ft.Container(width=96,height=32,border_radius=12,alignment=ft.Alignment.CENTER,ink=True,
+            tooltip='Работать на этом устройстве',on_click=self.local_mode,
+            content=ft.Row(tight=True,spacing=5,controls=[ft.Icon(ft.Icons.SMARTPHONE_ROUNDED,size=15),ft.Text('Локально',size=12)]))
+        self.pc=ft.Container(width=66,height=32,border_radius=12,alignment=ft.Alignment.CENTER,ink=True,
+            tooltip='Выполнять задания на связанном ПК',on_click=self.pc_mode,
+            content=ft.Row(tight=True,spacing=5,controls=[ft.Icon(ft.Icons.COMPUTER_ROUNDED,size=15),ft.Text('ПК',size=12)]))
+        self.selector=ft.Container(visible=False,padding=3,border_radius=15,bgcolor=color('#eafffa'),
+            margin=ft.Margin.only(bottom=4),width=172,content=ft.Row(tight=True,spacing=4,controls=[self.local,self.pc]))
 
     @property
     def eligible(self):return is_android() and self.get_workspace()!='all' and isinstance(self.get_chat(),int) and self.get_chat()>0
@@ -34,8 +39,8 @@ class WorkspaceRemote:
         self.selector.visible=self.eligible
         target=self.target
         self.local.disabled=self.pc.disabled=self.busy
-        self.local.style=ft.ButtonStyle(bgcolor=color('#dff8f3') if not target else ft.Colors.TRANSPARENT)
-        self.pc.style=ft.ButtonStyle(bgcolor=color('#dff8f3') if target else ft.Colors.TRANSPARENT)
+        self.local.bgcolor=color('#c9f1e9') if not target else ft.Colors.TRANSPARENT
+        self.pc.bgcolor=color('#c9f1e9') if target else ft.Colors.TRANSPARENT
 
     def local_mode(self,_):
         remote_tasks.workspace_target(self.get_workspace(),'');self.refresh();self.page.update()

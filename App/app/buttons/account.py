@@ -23,22 +23,22 @@ def build_account_button(on_click=None, size: int = 40, icon_size: int = 20) -> 
         width=size,
         height=size,
         border_radius=size / 2,
-        border=ft.Border.all(2, color("#ffffff")),
-        bgcolor=color("#ff6666ff"),
+        border=ft.Border.all(1, color("#b9eee4")),
+        bgcolor=color("#dff8f3"),
         alignment=ft.Alignment.CENTER,
         ink=True,
         animate=ft.Animation(duration=150, curve=ft.AnimationCurve.EASE_OUT),
         tooltip="Аккаунт",
         content=ft.Icon(
             ft.Icons.PERSON,
-            color=ft.Colors.WHITE,
+            color=color('#123b43'),
             size=icon_size,
         ),
         on_click=on_click,
     )
 
     def handle_hover(e: ft.Event[ft.Container]):
-        e.control.border = ft.Border.all(2, color("#d9ffe6") if e.data else color("#ffffff"))
+        e.control.border = ft.Border.all(1, color("#087f8c") if e.data else color("#b9eee4"))
         e.control.update()
 
     button.on_hover = handle_hover

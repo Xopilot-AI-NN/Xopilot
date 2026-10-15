@@ -1044,7 +1044,8 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         stored.reverse()  # реверс один раз здесь, чтобы ниже не слайсить с конца
         older_messages = stored[MESSAGE_PAGE_SIZE:]
         page_messages = stored[:MESSAGE_PAGE_SIZE]
-        return [_build_message_control(msg) for msg in page_messages]
+        from .task_messages import group_action_controls
+        return group_action_controls([_build_message_control(msg) for msg in page_messages])
 
     # Удаляем известные старые заглушки один раз. Новая база начинает с пустого чата.
     try:
@@ -1127,6 +1128,8 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         batch, older_messages = older_messages[:MESSAGE_PAGE_SIZE], older_messages[MESSAGE_PAGE_SIZE:]
         chat_list = cast(ft.ListView, chat.content)
         chat_list.controls.extend(_build_message_control(msg) for msg in batch)
+        from .task_messages import group_action_controls
+        chat_list.controls=group_action_controls(chat_list.controls)
         chat_list.update()
         # пока Dart-сторона не перемерила выросший max_scroll_extent, события скролла
         # ещё рапортуют "почти наверху" -- короткая защита от повторной догрузки

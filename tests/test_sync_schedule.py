@@ -50,3 +50,27 @@ class SyncScheduleTests(unittest.TestCase):
         sync.request_soon();self.assertEqual(sync._auto_due['account-a'],200)
         sync._auto_due['account-a']=float('inf');sync._auto_failures.clear()
         sync.request_soon();self.assertEqual(sync._auto_due['account-a'],float('inf'))
+
+
+class SyncStatusTests(unittest.IsolatedAsyncioTestCase):
+    async def test_idle_status_does_not_rescan_ledger_but_progress_updates(self):
+        from unittest.mock import Mock
+        from App.settings.account import sync as ui
+        page=Mock();state={};ticks=0
+        page.show_dialog.side_effect=lambda dialog:setattr(dialog,'open',True)
+        async def tick(_):
+            nonlocal ticks
+            ticks+=1
+            if ticks==2:state.update(running=True,phase='Получаем изменения')
+            if ticks==4:page.show_dialog.call_args.args[0].open=False
+        with patch.object(ui.sync,'options',return_value=dict(ui.sync.DEFAULTS)),\
+             patch.object(ui.sync,'status',side_effect=lambda:dict(state)),\
+             patch.object(ui.sync,'owner',return_value='qa'),\
+             patch.object(ui.sync,'key_ready',return_value=True),\
+             patch.object(ui.sync,'conflict_items',return_value={}) as scan,\
+             patch.object(ui.cloud_traffic,'usage',return_value=0),\
+             patch.object(ui.asyncio,'sleep',side_effect=tick):
+            ui.open_sync(page)
+            await page.run_task.call_args.args[0]()
+            self.assertEqual(scan.call_count,2,'Scan once initially and once when progress changes')
+            page.update.assert_called_once()
