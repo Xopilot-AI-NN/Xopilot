@@ -947,6 +947,10 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                 request_success=True
         finally:
             is_sending = False
+            if not is_private(active_chat_id):
+                try:from ..services.cloud_sync import request_soon
+                except ImportError:from services.cloud_sync import request_soon
+                request_soon()
             request_done.set()
             pending=task_control.take_pending_instructions() if request_success else []
             if pending and not request_cancelled.is_set():

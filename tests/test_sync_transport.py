@@ -46,6 +46,16 @@ class TransportRetryTests(unittest.TestCase):
             self.assertEqual([call.args for call in self.sleep.call_args_list],
                              [(0.5,), (1.0,)])
 
+    def test_transient_server_errors_retry_same_ciphertext_but_auth_does_not(self):
+        for status in (500,502,503,504):
+            with self.subTest(status=status),patch('App.services.cloud_account.request',
+                    side_effect=[cloud.CloudError('storage_unavailable',status),{'ok':True}]) as request:
+                self.assertEqual(self.files.request('/files/id',method='PUT',raw=b'cipher'),{'ok':True})
+                self.assertEqual(request.call_args_list[0],request.call_args_list[1])
+        with patch('App.services.cloud_account.request',side_effect=cloud.CloudError('invalid_session',401)) as request:
+            with self.assertRaises(cloud.CloudError):self.files.request('/sync')
+            request.assert_called_once()
+
     def test_non_network_and_budget_errors_are_not_retried(self):
         for error in (cloud.CloudError('quota_exceeded'), RuntimeError('Traffic budget')):
             with self.subTest(error=error), patch(

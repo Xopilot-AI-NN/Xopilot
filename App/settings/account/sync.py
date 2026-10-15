@@ -1,4 +1,9 @@
-"""Synchronization controls in the existing application palette."""
+"""
+Файл: /App/settings/account/sync.py
+Разработчик: DenBroLiik
+Версия: 2.0.8
+Описание: Параметры синхронизации с живым состоянием передачи и повторов.
+"""
 import asyncio
 import base64
 from datetime import datetime
@@ -37,15 +42,17 @@ def open_sync(page):
         text='Ключ на устройстве сохранён' if sync.key_ready() else 'Задайте отдельный пароль для шифрования облачных данных'
         if result.get('last_sync'):text+='\nПоследняя синхронизация: '+datetime.fromtimestamp(result['last_sync']).strftime('%d.%m.%Y %H:%M')
         if result.get('last_sync'):text+=f"\nОтправлено изменений: {result.get('sent',0)} · получено: {result.get('received',0)}"
-        if result.get('running'):text+='\nИдёт синхронизация…'
+        if result.get('running'):text+='\n'+result.get('phase','Идёт синхронизация…')
         if result.get('error'):text+='\n'+result['error']
+        if result.get('next_retry') and result.get('error'):
+            text+='\nПовторим автоматически в '+datetime.fromtimestamp(result['next_retry']).strftime('%H:%M:%S')
         text+='\nОтправлено за 24 часа: '+format_bytes(used)
         status.value=text
         conflict_count=len(sync.conflict_items())
         conflicts.visible=bool(conflict_count)
         if conflict_count:text+=f'\nКонфликтов: {conflict_count}. Выберите версии — данные сохранены.'
         status.value=text
-        manual.disabled=not enabled.value or not sync.key_ready()
+        manual.disabled=bool(result.get('running')) or not enabled.value or not sync.key_ready()
 
     def save(key,value):
         try:
@@ -166,7 +173,17 @@ def open_sync(page):
             ft.Divider(),setup,forget,traffic,limit,
             ft.Text('Считаются исходящие запросы синхронизации и облачного хранилища, включая повторы. Вход и управление аккаунтом, курсы валют, входящий трафик и расходы TLS/TCP не входят в лимит.',size=11,color=color('#47747a')),
             status,conflicts]),actions=[ft.TextButton(content='Закрыть',on_click=close),manual])
+    dialog._xopilot_sync_safe=True
     page.show_dialog(dialog)
+    async def monitor():
+        while dialog.open:
+            await asyncio.sleep(1)
+            if not dialog.open:return
+            before=(status.value,manual.disabled,conflicts.visible)
+            try:refresh()
+            except ValueError:return  # Account was signed out on another page.
+            if before!=(status.value,manual.disabled,conflicts.visible):page.update()
+    page.run_task(monitor)
 
 
 def open_conflicts(page,on_changed=lambda:None):

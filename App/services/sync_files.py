@@ -1,4 +1,9 @@
-"""Chunked encrypted material transport. Originals and cleartext paths stay local."""
+"""
+Файл: /App/services/sync_files.py
+Разработчик: DenBroLiik
+Версия: 2.0.8
+Описание: Зашифрованная передача файлов по частям с безопасными повторами.
+"""
 import hashlib
 import hmac
 import json
@@ -33,7 +38,8 @@ class Files:
                 raise RuntimeError('Выбор данных изменился. Повторите синхронизацию')
             try:return cloud.request(path, **kwargs)
             except cloud.CloudError as exc:
-                if exc.code!='connection_failed' or attempt==2:raise
+                transient=exc.code=='connection_failed' or exc.status in (500,502,503,504)
+                if not transient or attempt==2:raise
                 # Push operation IDs and encrypted PUT bytes remain unchanged;
                 # each retry is metered and rechecks the user's current choices.
                 time.sleep(0.5*2**attempt)

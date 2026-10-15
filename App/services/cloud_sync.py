@@ -1,4 +1,9 @@
-"""Durable owner-scoped E2EE replication, CAS imports and explicit conflicts."""
+"""
+Файл: /App/services/cloud_sync.py
+Разработчик: DenBroLiik
+Версия: 2.0.8
+Описание: Сквозная синхронизация, восстановление передачи и адаптивные повторы.
+"""
 import copy
 import hashlib
 import json
@@ -45,6 +50,9 @@ def save_options(value):
         # Apply this under run's lease, never race a cursor/pending write.
         updated['materials_generation']=previous.get('materials_generation',0)+1
     get_db().set_setting(settings_key(identifier),json.dumps(updated))
+    with _lock:
+        _auto_due.pop(identifier,None)
+        _auto_failures.pop(identifier,None)
     return updated
 
 
@@ -111,7 +119,7 @@ def run():
     lease=FileLock(str(root/'cloud-sync.lock'),thread_local=False)
     try: lease.acquire(timeout=0)
     except Timeout: return {'busy':True}
-    _status[identifier]={'running':True,'error':''}
+    _status[identifier]={**status(),'running':True,'error':'','phase':'Получаем изменения','next_retry':None}
     try:
         ledger=read_ledger(identifier)
         def save(): get_db().set_setting(ledger_key(identifier),json.dumps(ledger,ensure_ascii=False))
@@ -178,6 +186,7 @@ def run():
                             continue
                         if restored:
                             stat=Path(restored).stat();entry['stamp']=[stat.st_size,stat.st_mtime_ns];save()
+            _status[identifier]['phase']='Отправляем изменения'
             for record_key, snapshot in entities.snapshots():
                 record=ledger['records'][record_key]
                 if record.get('blocked') or (record.get('hash')==snapshot['hash'] and not record.get('force_upload')): continue
@@ -186,7 +195,7 @@ def run():
                     base_revision=record.get('revision',0),deleted=snapshot['deleted'],data=packet)
                 ledger['pending']={'key':record_key,'hash':snapshot['hash'],'operation':operation};save()
                 _flush(ledger,files,save);sent+=1
-        result={'running':False,'error':'','last_sync':time.time(),'sent':sent,'received':received,
+        result={'running':False,'error':'','phase':'Готово','last_sync':time.time(),'sent':sent,'received':received,
                 'conflicts':len(ledger.get('conflicts',{}))}
         _status[identifier]=result
         get_db().set_setting('cloud_sync_status:'+identifier,json.dumps(result))
@@ -249,13 +258,42 @@ def resolve_keep_both(record_key):
 
 
 _auto_due={}
+_auto_failures={}
+def request_soon():
+    """A completed local edit wakes replication without bypassing retry/budget policy."""
+    try:identifier=owner()
+    except ValueError:return
+    with _lock:
+        if not _auto_failures.get(identifier) and _auto_due.get(identifier)!=float('inf'):
+            _auto_due[identifier]=0
+
+
 def run_auto_if_due():
     identifier=owner();opts=options(identifier)
     if not opts['enabled'] or not opts['auto']:return None
     with _lock:
         if time.monotonic()<_auto_due.get(identifier,0):return None
-        _auto_due[identifier]=time.monotonic()+60
-    return run()
+        # Reserve the attempt before releasing the lock, including other pages.
+        _auto_due[identifier]=float('inf')
+    try:
+        result=run()
+    except Exception:
+        with _lock:
+            failures=min(_auto_failures.get(identifier,0)+1,6)
+            _auto_failures[identifier]=failures
+            delay=min(300,15*2**(failures-1))
+            _auto_due[identifier]=time.monotonic()+delay
+            _status.setdefault(identifier,{})['next_retry']=time.time()+delay
+        raise
+    else:
+        with _lock:
+            _auto_failures.pop(identifier,None)
+            # Busy leases must be retried soon. Active replicas converge quickly;
+            # idle replicas reduce polling and respect metered connections.
+            delay=5 if result.get('busy') else 15 if result.get('sent') or result.get('received') else 60
+            _auto_due[identifier]=time.monotonic()+delay
+            _status.setdefault(identifier,{})['next_retry']=None
+        return result
 
 
 

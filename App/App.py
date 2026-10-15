@@ -117,13 +117,17 @@ class Init():
         start_app_session()
 
         async def persist_loop():
+            last_persist=0
             while True:
-                await asyncio.sleep(30)
+                await asyncio.sleep(5)
                 try:
-                    persist_app_session()
+                    now=asyncio.get_running_loop().time()
+                    if now-last_persist>=30:
+                        persist_app_session();last_persist=now
                     if getattr(page,'_xopilot_connected',False) and getattr(page,'_xopilot_can_sync',lambda:False)():
                         # Avoid importing beneath a form the user is editing.
-                        if not any(dialog.open for dialog in page._dialogs.controls):
+                        dialogs=[dialog for dialog in page._dialogs.controls if dialog.open]
+                        if not dialogs or getattr(dialogs[-1],'_xopilot_sync_safe',False):
                             from services import cloud_sync,cloud_account
                             if cloud_account.state():
                                 result=await asyncio.to_thread(cloud_sync.run_auto_if_due)
