@@ -31,3 +31,6 @@ key.properties
 extensions/flet_xopilot_mobile/src/flutter/flet_xopilot_mobile/android/src/main/jniLibs/
 extensions/**/build/
 extensions/**/*.egg-info/
+
+# Private server/admin code must never be published.
+/Server/
