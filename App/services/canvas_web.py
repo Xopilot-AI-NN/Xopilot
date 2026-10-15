@@ -30,6 +30,7 @@ class WebSession:
     def __init__(self):
         self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='CanvasWeb')
         self.browser = self.driver = self.page = None
+        self.cdp = None
         self.digest = None
         self.folder = Path(tempfile.mkdtemp(prefix='xopilot-canvas-preview-'))
         self.timer = None
@@ -58,6 +59,7 @@ class WebSession:
                     headers={'Content-Security-Policy': POLICY}, body=content)
                     if route.request.url == 'http://canvas.xopilot.invalid/' else route.abort())
                 self.page = context.new_page(); self.page.set_default_timeout(3500)
+                self.cdp = context.new_cdp_session(self.page)
                 self.page.on('popup', lambda popup: popup.close())
             except Exception:
                 if self.browser: self.browser.close(); self.browser=None
@@ -80,22 +82,37 @@ class WebSession:
             if target.count() != 1: raise ValueError('CSS selector должен указывать ровно на один элемент')
             if operation == 'click': target.click()
             else: target.fill(str(action.get('text', '')))
+        elif operation == 'viewport':
+            self.page.set_viewport_size({'width':max(240,min(1920,int(action['width']))),
+                                         'height':max(160,min(1600,int(action['height'])))})
+        elif operation in {'back','forward'}:
+            history=self.cdp.send('Page.getNavigationHistory')
+            index=history['currentIndex']+(-1 if operation=='back' else 1)
+            if 0 <= index < len(history['entries']) and history['entries'][index]['url'].startswith('http://canvas.xopilot.invalid/'):
+                self.cdp.send('Page.navigateToHistoryEntry',{'entryId':history['entries'][index]['id']})
+                self.page.wait_for_load_state('domcontentloaded')
         elif operation == 'point':
             x, y = float(action['x']), float(action['y'])
-            if not 0 <= x < 960 or not 0 <= y < 600: raise ValueError('Координаты вне области Canvas')
+            viewport=self.page.viewport_size
+            if not 0 <= x < viewport['width'] or not 0 <= y < viewport['height']: raise ValueError('Координаты вне области Canvas')
             self.page.mouse.click(x, y)
         elif operation == 'type': self.page.keyboard.insert_text(str(action.get('text', '')))
         elif operation == 'scroll': self.page.mouse.wheel(0, max(-600, min(600, float(action.get('dy', 300)))))
-        elif operation == 'reload': self.digest=None; return self._call(content, {})
+        elif operation == 'reload': self.page.reload(wait_until='domcontentloaded')
         elif operation: raise ValueError('Действия Canvas: click/fill/point/type/scroll/reload')
         snapshot = self.page.evaluate(DOM)
+        history=self.cdp.send('Page.getNavigationHistory')
+        index=history['currentIndex'];entries=history['entries']
+        navigation={name:0 <= i < len(entries) and entries[i]['url'].startswith('http://canvas.xopilot.invalid/')
+                    for name,i in [('can_go_back',index-1),('can_go_forward',index+1)]}
+        fragment='#'+self.page.url.split('#',1)[1] if '#' in self.page.url else ''
         path = self.folder / 'viewport.png'
         try:self.page.screenshot(path=str(path), animations='disabled')
         except Exception as exc:
             if 'Unable to capture screenshot' not in str(exc):raise
             self.page.wait_for_timeout(100)
             self.page.screenshot(path=str(path),animations='disabled')
-        return {**snapshot, 'screenshot': str(path), 'width': 960, 'height': 600,
+        return {**snapshot, **navigation, 'fragment':fragment, 'screenshot': str(path), **self.page.viewport_size,
                 'network': 'blocked', 'scripts': 'isolated'}
 
     def close(self):
@@ -119,13 +136,14 @@ def document(chat_id, workspace_id, identifier):
     return value
 
 
-def inspect(chat_id, workspace_id, identifier, action=None):
+def inspect(chat_id, workspace_id, identifier, action=None, *, presentation=None):
     value = document(chat_id, workspace_id, identifier)
     identifier = value['id']
     if is_android():
         from . import mobile_runtime
         import base64
-        result = mobile_runtime.call('canvasWeb', {'id': identifier, 'html': value['content'], **(action or {})})
+        result = mobile_runtime.call('canvasWeb', {'id': identifier, 'html': value['content'],
+            'presentation':presentation or {}, **(action or {})})
         result = json.loads(result) if isinstance(result, str) else result
         if result.get('image'):
             from .paths import app_data_dir

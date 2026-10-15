@@ -9,6 +9,26 @@ import unittest
 from pathlib import Path
 
 class CanvasWebTests(unittest.TestCase):
+    def test_responsive_point_click_and_real_back_forward(self):
+        from App.services.canvas_web import WebSession
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as driver:
+            if not Path(driver.chromium.executable_path).is_file():self.skipTest('Chromium not installed')
+        session=WebSession()
+        html='<button id="go" onclick="location.hash=\'next\';this.textContent=\'Готово\'">Открыть</button>'
+        try:
+            frame=session.call(html,{'action':'viewport','width':420,'height':700})
+            self.assertEqual((frame['width'],frame['height']),(420,700))
+            button=frame['elements'][0]
+            frame=session.call(html,{'action':'point','x':button['x']+button['width']/2,'y':button['y']+button['height']/2})
+            self.assertIn('Готово',frame['text']);self.assertEqual(frame['fragment'],'#next')
+            self.assertTrue(frame['can_go_back'])
+            frame=session.call(html,{'action':'back'})
+            self.assertEqual(frame['fragment'],'');self.assertTrue(frame['can_go_forward'])
+            frame=session.call(html,{'action':'forward'})
+            self.assertEqual(frame['fragment'],'#next')
+        finally:session.close()
+
     def test_real_canvas_javascript_click_fill_and_browser_cleanup(self):
         from App.services.canvas_web import WebSession
         from playwright.sync_api import sync_playwright

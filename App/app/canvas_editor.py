@@ -187,34 +187,13 @@ def build_canvas_dialog(page, chat_id, workspace_id='all', on_attach=None, *, do
         except ImportError: from services import canvas_web
         identifier = current['id']
         try:
-            frame = await asyncio.to_thread(canvas_web.inspect,chat_id,workspace_id,identifier)
+            from .canvas_browser import browser_theme, show_browser
+            frame = await asyncio.to_thread(canvas_web.inspect,chat_id,workspace_id,identifier,
+                                            presentation=browser_theme(current['title']))
             if is_android() and not page.web: return  # Native interactive WebView is already visible.
         except Exception as exc:
             status.value='Не удалось открыть сайт: '+str(exc);page.update();return
-        image_width=min(960,max(200,(page.width or 1000)-90))
-        image_height=image_width*600/960
-        image=ft.Image(src=Path(frame['screenshot']).read_bytes(),width=image_width,height=image_height,fit=ft.BoxFit.FILL)
-        feedback=ft.Text('Сайт работает в изолированном браузере без доступа к сети и файлам ПК.',size=12,color=color('#47747a'))
-        typed=ft.TextField(label='Ввести текст в выбранное поле сайта',expand=True,on_submit=lambda e:page.run_task(act,{'action':'type','text':e.control.value or ''}))
-        async def act(action):
-            try:
-                frame=await asyncio.to_thread(canvas_web.inspect,chat_id,workspace_id,identifier,action)
-                image.src=Path(frame['screenshot']).read_bytes();feedback.value=frame['title'] or 'Сайт Canvas'
-            except Exception as exc:feedback.value=str(exc)
-            page.update()
-        def clicked(e):
-            page.run_task(act,{'action':'point','x':e.local_position.x*960/image_width,'y':e.local_position.y*600/image_height})
-        async def end(_):
-            await asyncio.to_thread(canvas_web.close,chat_id,identifier);page.pop_dialog()
-        async def dismissed(_): await asyncio.to_thread(canvas_web.close,chat_id,identifier)
-        page.show_dialog(ft.AlertDialog(title=ft.Text('Просмотр · '+current['title']),bgcolor=color('#eafffa'),
-            content=ft.Column(width=image_width,height=min((page.height or 800)-180,image_height+140),scroll=ft.ScrollMode.AUTO,
-                controls=[ft.GestureDetector(content=image,on_tap_down=clicked),
-                    ft.Row(controls=[typed,ft.IconButton(icon=ft.Icons.KEYBOARD_RETURN,tooltip='Ввести текст',on_click=lambda _:page.run_task(act,{'action':'type','text':typed.value or ''}))]),
-                    ft.Row(controls=[ft.TextButton(content='Вверх',on_click=lambda _:page.run_task(act,{'action':'scroll','dy':-400})),
-                        ft.TextButton(content='Вниз',on_click=lambda _:page.run_task(act,{'action':'scroll','dy':400})),
-                        ft.TextButton(content='Перезапустить',on_click=lambda _:page.run_task(act,{'action':'reload'}))]),feedback]),
-            actions=[ft.TextButton(content='Закрыть',on_click=end)],on_dismiss=dismissed))
+        show_browser(page,canvas_web,chat_id,workspace_id,identifier,frame,current['title'])
 
     web_area=ft.Column(visible=current['kind']=='web',controls=[
         ft.FilledButton(content='Открыть сайт',icon=ft.Icons.WEB,on_click=preview),
