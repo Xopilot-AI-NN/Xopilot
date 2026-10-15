@@ -188,7 +188,9 @@ def open_billing(page):
             ready = account.get('enabled', False)
             if not account.get('signed_in'): detail.value = 'Войдите в аккаунт, чтобы оформлять подписку.'
             elif not ready and not account_error:
-                detail.value += '\nПодключение платных моделей и оплаты ещё готовится. Условия тарифов — ниже.'
+                detail.value += '\nПродажи ещё не открыты. Условия тарифов — ниже; существующие функции доступны в ознакомительном режиме.'
+            elif account.get('limits_enforced'):
+                detail.value += '\nДоступ к удалённым заданиям определяется действующей подпиской на сервере.'
             rows = []
             pending = account.get('pending_order')
             if pending:
@@ -247,9 +249,10 @@ def open_billing(page):
             if values.get('rate_date'): status.value += '\nОриентировочный курс Банка России от '+values['rate_date']+'.'
             elif values['currency'] != 'RUB': status.value += '\nКурс недоступен: показаны цены в RUB.'
             status.value += '\nДокументы для скидки Elite: support@xopilot.by. Пакеты токенов подключим отдельно.'
-            status.value += '\nЛокальные Gemma, свой API, Canvas, библиотека и защищённые чаты доступны без платной подписки. '
+            status.value += '\nНа всех тарифах — 128 МБ облачного хранилища. Локальные Gemma, свой API, Canvas, документы, библиотека и защищённые чаты доступны бесплатно. '
             status.value += 'Запросы по собственному API-ключу оплачиваются вашему провайдеру и не входят в тариф Zephyr. '
-            status.value += 'Объём включённых токенов Elite/Ultra будет указан перед запуском продажи; сейчас оплата отключена.'
+            status.value += 'Объём включённых токенов Elite/Ultra будет указан перед запуском продажи. '
+            status.value += 'Ограничения удалённых заданий включаются вместе с продажами. Подписка не отменяет разрешения устройств и подтверждения команд.'
             if account_error:
                 status.value = account_error
                 retry.visible = True

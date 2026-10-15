@@ -19,6 +19,8 @@ DEFAULT_ENDPOINT = os.environ.get('XOPILOT_ACCOUNT_ENDPOINT', 'https://xopilot.b
 KEY = 'cloud_account_v1'
 _lock = threading.RLock()
 ERRORS = {
+    'subscription_required':'Для удалённых заданий нужна подписка Elite или выше. Откройте «Аккаунт → Подписка Zephyr»',
+    'plan_job_limit':'Достигнут предел активных заданий вашего тарифа. Завершите задание или выберите тариф выше',
     'invalid_device_name':'Введите название устройства от 1 до 120 символов',
     'invalid_credentials': 'Неверная почта или пароль',
     'invalid_email': 'Введите действительный адрес почты',

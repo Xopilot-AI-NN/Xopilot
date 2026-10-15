@@ -1,4 +1,9 @@
-"""Plan display and server-confirmed monthly DonationAlerts orders."""
+"""
+Файл: /App/services/billing.py
+Разработчик: DenBroLiik
+Версия: 2.0.8
+Описание: Условия тарифов Zephyr и подтверждённые сервером заказы DonationAlerts.
+"""
 from decimal import Decimal, ROUND_HALF_UP
 import json
 import locale
@@ -11,13 +16,28 @@ from .db import get_db
 CURRENCIES={'auto':'Авто по региону устройства','RUB':'Российский рубль · RUB','BYN':'Белорусский рубль · BYN','USD':'Доллар США · USD','EUR':'Евро · EUR'}
 PLANS=[
     dict(id='micro',name='Zephyr Micro',rub=0,period='month',quota_bytes=128*1024*1024,available=True,
-         features=['Бесплатный доступ к Zephyr Micro после выпуска модели','Zephyr Elite — 3 сообщения в неделю после запуска облачных моделей'],top_up=False),
+         features=['Локальные модели и собственный API без ограничений Xopilot',
+                   'Canvas: текст, код, рисунки и предпросмотр сайтов',
+                   'Пространства, библиотека, документы и память обо мне',
+                   'Защищённые и временные чаты, сквозная синхронизация 128 МБ',
+                   'Zephyr Micro + 3 сообщения Elite в неделю — после запуска облачных моделей'],remote_jobs=0,top_up=False),
     dict(id='elite',name='Zephyr Elite',rub=1000,period='month',quota_bytes=None,available=False,
-         features=['Доступ к модели Zephyr Elite на календарный месяц','Дополнительные токены — отдельная покупка после подключения пакетов','Учреждениям — скидка 40% (600 RUB), программистам — 20% (800 RUB)','Скидка после проверки подтверждающих документов'],top_up=True),
+         features=['Все возможности Micro',
+                   'Удалённые задания с телефона на связанном ПК: 1 активное задание',
+                   'Доступ к модели Zephyr Elite после запуска облачных моделей',
+                   'Дополнительные токены — после подключения пакетов',
+                   'Учреждениям −40% (600 RUB), программистам −20% (800 RUB) после проверки документов'],remote_jobs=1,top_up=True),
     dict(id='ultra',name='Zephyr Ultra',rub=4000,period='month',quota_bytes=None,available=False,
-         features=['Доступ к модели Zephyr Ultra на календарный месяц','Дополнительные токены — отдельная покупка после подключения пакетов'],top_up=True),
+         features=['Все возможности Elite',
+                   'До 3 одновременных удалённых заданий на связанных ПК',
+                   'Micro, Elite и Ultra — после запуска облачных моделей',
+                   'Дополнительные токены — после подключения пакетов'],remote_jobs=3,top_up=True),
     dict(id='led',name='Zephyr Led',rub=7000,period='month',quota_bytes=None,available=False,
-         features=['Полный доступ к Micro, Elite и Ultra на календарный месяц','Без лимита сообщений и токенов; докупка не нужна'],top_up=False),
+         features=['Все возможности Ultra',
+                   'Удалённые задания на всех связанных ПК',
+                   'Полный доступ к Micro, Elite и Ultra — после запуска облачных моделей',
+                   'Без лимита облачных сообщений и токенов; докупка не нужна',
+                   'До 30 активных удалённых заданий — техническая защита очереди'],remote_jobs=30,top_up=False),
 ]
 DISCOUNTS={'institution':40,'programmer':20}
 
