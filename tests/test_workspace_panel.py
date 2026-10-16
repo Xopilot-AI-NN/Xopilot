@@ -8,6 +8,7 @@
 import unittest
 from unittest.mock import Mock,patch
 import flet as ft
+import os
 from App.services import workspaces,project_tools
 from App.app.workspace.workspace_browser import build_workspace_settings
 from App.app.workspace.library_browser import build_library_dialog
