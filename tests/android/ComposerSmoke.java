@@ -11,7 +11,7 @@ import com.android.uiautomator.core.UiSelector;
 public class ComposerSmoke extends UiAutomatorTestCase {
     private UiObject field() {
         return new UiObject(new UiSelector().className("android.widget.EditText")
-            .packageName("ru.xopilot.xopilot"));
+            .packageName("by.xopilot.app"));
     }
     public void testKeyboardPreservesDraft() throws Exception {
         String original=field().getText();

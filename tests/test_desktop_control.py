@@ -7,6 +7,7 @@
 import tempfile
 import threading
 import unittest
+import sys
 from pathlib import Path
 from unittest.mock import Mock,patch
 from App.services import desktop_control as desktop
@@ -25,8 +26,12 @@ d.native.mark.side_effect=RuntimeError('No overlay protocol')
 assert d.input({'target':'target','action':'click'})=={'performed':True}
 d.accessibility.perform.assert_called_once()
 """
-        subprocess.run(['/usr/bin/python3','-c',code],check=True,cwd=Path(__file__).resolve().parents[1])
-
+        subprocess.run(
+            [sys.executable, '-c', code],
+            check=True,
+            cwd=Path(__file__).resolve().parents[1],
+        )
+        
     def test_denial_does_not_start_helper(self):
         session=desktop.ComputerSession()
         with patch.object(desktop,'Bridge') as bridge:

@@ -30,7 +30,7 @@ dependencies = [
 # Flet cross-packaging evaluates platform_system for the target platform.
 
 [tool.flet]
-org = "ru.xopilot"
+org = "by.xopilot"
 product = "Xopilot"
 company = "Xopilot"
 copyright = "Copyright (c) 2026 Xopilot"
@@ -53,6 +53,7 @@ jni = "1.0.0"
 jni_flutter = "1.0.2"
 
 [tool.flet.android]
+bundle_id = "by.xopilot.app"
 min_sdk_version = 26
 split_per_abi = true
 adaptive_icon_background = "#b3f2ff"

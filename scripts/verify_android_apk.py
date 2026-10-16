@@ -97,7 +97,13 @@ def verify_litert_jni(apk):
                 raise RuntimeError(f'R8 removed/renamed LiteRT JNI method: {cls}.{name}')
 
 
-def verify(path, aapt=None, launcher_foreground=None):
+def verify_package(badging, expected):
+    found=re.search(r"^package: name='([^']+)'",badging,re.MULTILINE)
+    if not found or found.group(1)!=expected:
+        raise RuntimeError(f'Unexpected Android package: expected {expected}, found {found.group(1) if found else "missing"}')
+
+
+def verify(path, aapt=None, launcher_foreground=None, expected_package=None):
     with zipfile.ZipFile(path) as apk:
         if apk.testzip() is not None:
             raise RuntimeError('Corrupt APK archive')
@@ -155,6 +161,8 @@ def verify(path, aapt=None, launcher_foreground=None):
                 raise RuntimeError('Generated Xopilot launcher artwork is absent from the APK')
         if aapt:
             badging = subprocess.check_output([str(aapt), 'dump', 'badging', str(path)], text=True)
+            if expected_package:
+                verify_package(badging,expected_package)
             if "sdkVersion:'26'" not in badging:
                 raise RuntimeError('Unexpected Android minimum SDK')
             for permission in ('READ_EXTERNAL_STORAGE', 'WRITE_EXTERNAL_STORAGE'):
@@ -177,7 +185,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--aapt', type=Path, help='Also check the final binary manifest with Android SDK aapt')
     parser.add_argument('--launcher-foreground', type=Path, help='Verify generated launcher pixels reached the APK')
+    parser.add_argument('--expected-package', help='Reject an APK built with an unintended Android application ID')
     parser.add_argument('apk', nargs='+', type=Path)
     args = parser.parse_args()
     for path in args.apk:
-        verify(path, args.aapt, args.launcher_foreground)
+        verify(path, args.aapt, args.launcher_foreground, args.expected_package)

@@ -80,6 +80,18 @@ def checked_flet_version():
     return version
 
 
+def android_bundle_id(org=None, bundle_id=None):
+    """Resolve identity explicitly, including deliberate legacy test updates."""
+    settings=tomllib.loads((ROOT/'pyproject.toml').read_text())['tool']['flet']
+    if bundle_id is not None:
+        return bundle_id
+    if org is not None:
+        # Keep --org useful for updating an existing pre-migration installation.
+        return org+'.'+settings.get('project','Xopilot').lower().replace('-','_')
+    return (settings.get('android',{}).get('bundle_id') or settings.get('bundle_id')
+            or settings.get('org','by.xopilot')+'.xopilot')
+
+
 def prepare_template(jdk):
     from flet_cli.commands.build_base import DEFAULT_TEMPLATE_URL
     from flet_cli.utils.template_cache import get_cached_template_zip
@@ -164,6 +176,7 @@ def main():
     parser.add_argument('--wheel-house', type=Path, help='Use prebuilt patched Android wheels (validated before packaging)')
     parser.add_argument('--build-number', type=int, help='Positive Android versionCode, e.g. CI run number')
     parser.add_argument('--org', help='Override organization for a data-preserving test update without editing project settings')
+    parser.add_argument('--bundle-id', help='Explicit Android application ID; overrides the project default and --org')
     parser.add_argument('--build-version', help='Application version, e.g. 2.0.7')
     args = parser.parse_args()
     if args.build_number is not None and not 0 < args.build_number <= 2100000000:
@@ -171,7 +184,10 @@ def main():
     if args.build_version is not None and not re.fullmatch(r'\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?', args.build_version):
         parser.error('--build-version must be a semantic version, e.g. 2.0.7')
     if args.org is not None and not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+',args.org):
-        parser.error('--org must be a reverse domain, e.g. ru.xopilot')
+        parser.error('--org must be a reverse domain, e.g. by.xopilot')
+    bundle_id=android_bundle_id(args.org,args.bundle_id)
+    if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+',bundle_id):
+        parser.error('Android bundle ID must be a reverse domain, e.g. by.xopilot.app')
     environment = android_environment(args.jdk)
     from build_android_wheels import build as build_wheels, validate_wheelhouse
     wheelhouse = (args.wheel_house or ROOT/'build/android-wheels').resolve()
@@ -200,6 +216,7 @@ def main():
     exclude = ['--exclude', *android_exclusions()]
     numbering = ['--build-number', str(args.build_number)] if args.build_number is not None else []
     if args.org is not None:numbering += ['--org',args.org]
+    numbering += ['--bundle-id',bundle_id]
     if args.build_version is not None:
         numbering += ['--build-version', args.build_version]
     subprocess.run([str(Path(sys.executable).parent / 'flet'), 'build', 'apk', str(ROOT),
@@ -211,6 +228,7 @@ def main():
     if not tools: raise RuntimeError('Android SDK aapt required to verify the final APK manifest')
     subprocess.run([sys.executable, str(ROOT/'scripts/verify_android_apk.py'),
                     '--aapt', str(tools[-1]),
+                    '--expected-package', bundle_id,
                     '--launcher-foreground', str(ROOT/'build/flutter/android/app/src/main/res/drawable-xxxhdpi/ic_launcher_foreground.png'),
                     *(str(path) for path in artifacts)], cwd=ROOT, check=True)
 
