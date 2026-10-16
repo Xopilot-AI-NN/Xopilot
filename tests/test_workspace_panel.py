@@ -85,6 +85,6 @@ class PanelTests(unittest.TestCase):
             field=next(c for c in descendants(dialog) if isinstance(c,ft.TextField) and c.label=='Папка на этом компьютере')
             field.value=folder
             asyncio.run(dialog.actions[-1].on_click(None))
-            self.assertEqual(project_tools.settings(identifier)['root'],folder)
-            self.assertTrue(os.path.samefile(project_tools.settings(identifier)['root'],folder,))
+            # Windows can expand RUNNER~1 to runneradmin while resolving root.
+            self.assertTrue(os.path.samefile(project_tools.settings(identifier)['root'],folder))
             self.assertEqual(library.import_folder(folder),([],[]))
