@@ -19,6 +19,7 @@ class XopilotMobileService extends FletService with WidgetsBindingObserver {
   CameraController? camera;
   StreamSubscription<Uint8List>? audio;
   Timer? audioDeadline;
+  Timer? viewportDeadline;
   BytesBuilder pcm = BytesBuilder(copy: false);
   Completer<String>? utterance;
   bool paused = false;
@@ -229,7 +230,11 @@ class XopilotMobileService extends FletService with WidgetsBindingObserver {
   void didChangeMetrics() {
     // Page MediaQuery can be inside a Scaffold that removes keyboard insets.
     // Read the platform view directly, without depending on that widget tree.
-    control.triggerEvent('metrics', viewportMetrics());
+    // The native surface follows IME frames itself. Send only settled metrics
+    // to Python for dialogs/capture, avoiding bridge traffic during animation.
+    viewportDeadline?.cancel();
+    viewportDeadline=Timer(const Duration(milliseconds:120),()=>
+      control.triggerEvent('metrics', viewportMetrics()));
   }
 
   @override
@@ -253,6 +258,7 @@ class XopilotMobileService extends FletService with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    viewportDeadline?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     control.removeInvokeMethodListener(_invokeMethod);
     channel.setMethodCallHandler(null);

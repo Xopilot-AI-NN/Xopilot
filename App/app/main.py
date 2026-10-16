@@ -1668,10 +1668,25 @@ def build_app_ui(page: ft.Page) -> ft.Control:
     background = build_background_layout(chat, prompt_container, menu, menu_overlay,
                                         header=header, empty_state=empty_state, compact=compact,
                                         visual_background=live.chat_background)
+    last_layout = None
     def resize_layout(_=None):
+        nonlocal last_layout
         height = available_height(page)
         short_phone = is_android() and isinstance(height, (int, float)) and height < 440
         small = compact_layout(page.width) or short_phone
+        typing_in_short_window = is_android() and isinstance(height, (int, float)) and height < 260
+        signature=(page.width,small,typing_in_short_window)
+        if is_android() and signature==last_layout:
+            # IME frames are handled by Flutter's KeyboardViewport. Rebuilding
+            # the composer here introduces a second, delayed layout jump.
+            from .palette import open_dialogs
+            dialogs=[d for d in open_dialogs(page) if d.open]
+            for dialog in dialogs:fit_dialog(page,dialog)
+            if dialogs:page.update()
+            if live.camera_on or live.screen_on:
+                live.fit_viewport(page.width,height,keyboard=page.__dict__.get('_xopilot_keyboard_height',0))
+            return
+        last_layout=signature
         header_row.controls = [mobile_menu_button, header_title, more_actions] if small else [header_title,*desktop_actions]
         header_row.spacing = 6 if small else 10
         header.padding = ft.Padding.symmetric(horizontal=8 if small else 14, vertical=8)
@@ -1694,22 +1709,14 @@ def build_app_ui(page: ft.Page) -> ft.Control:
             if dialog.open:
                 fit_dialog(page, dialog)
         page.update()
-    layout_revision=0
-    async def settled_layout(version):
-        await asyncio.sleep(.12)
-        if version==layout_revision:resize_layout()
-    def schedule_layout(event=None):
-        nonlocal layout_revision
-        layout_revision+=1
-        page.run_task(settled_layout,layout_revision)
-    page.on_resize = schedule_layout if is_android() else resize_layout
-    page.on_media_change = schedule_layout if is_android() else resize_layout
+    page.on_resize = resize_layout
+    page.on_media_change = resize_layout
     if is_android():
         try:
             from ..services.mobile_runtime import bind_viewport
         except ImportError:
             from services.mobile_runtime import bind_viewport
-        bind_viewport(page, schedule_layout)
+        bind_viewport(page, resize_layout)
         async def recover_files():
             destination = navigation.read()
             try:
@@ -1741,4 +1748,8 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                 page.show_dialog(ft.SnackBar(ft.Text(f'Не удалось восстановить вложения: {exc}')))
         page.run_task(recover_files)
     resize_layout()
+    if is_android():
+        from .keyboard_viewport import KeyboardViewport
+        return apply_palette(ft.SafeArea(content=KeyboardViewport(content=background,expand=True),
+            expand=True,maintain_bottom_view_padding=True))
     return apply_palette(ft.SafeArea(content=background, expand=True))
