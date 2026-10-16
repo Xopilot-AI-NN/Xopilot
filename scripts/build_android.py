@@ -124,6 +124,16 @@ def prepare_template(jdk):
     browser_query = '<intent><action android:name="android.intent.action.VIEW" /><data android:scheme="https" /></intent>'
     xml = xml.replace('<queries>', '<queries>\n' + browser_query, 1)
     manifest.write_text(xml)
+    # Android can recreate the boot host during an install/lifecycle change.
+    # Reuse one preparation Future: extracting the bundle and allocating the
+    # embedded Python bridges must never run concurrently in the same engine.
+    dart = next(template.rglob('lib/main.dart'))
+    source = dart.read_text()
+    declaration = 'Future prepareApp() async {'
+    if source.count(declaration) != 1:
+        raise RuntimeError('Flet bootstrap changed; review Android preparation guard')
+    source = source.replace(declaration, 'Future? _xopilotPreparation;\nFuture prepareApp() => _xopilotPreparation ??= _prepareXopilotOnce();\n\nFuture _prepareXopilotOnce() async {')
+    dart.write_text(source)
     return template
 
 
