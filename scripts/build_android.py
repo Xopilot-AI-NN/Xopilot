@@ -123,6 +123,8 @@ def prepare_template(jdk):
     properties.write_text(properties.read_text() + f'\norg.gradle.java.installations.paths={jdk}\n')
     manifest = next(template.rglob('android/app/src/main/AndroidManifest.xml'))
     xml = manifest.read_text()
+    # Repeated launcher/update intents must reuse the same Flutter activity.
+    xml = xml.replace('android:launchMode="singleTop"','android:launchMode="singleTask"')
     if 'xmlns:tools=' not in xml:
         xml = xml.replace('<manifest ', '<manifest xmlns:tools="http://schemas.android.com/tools" ', 1)
     # Camera snapshots and picked documents use private cache/SAF. CameraX's
@@ -145,6 +147,18 @@ def prepare_template(jdk):
     if source.count(declaration) != 1:
         raise RuntimeError('Flet bootstrap changed; review Android preparation guard')
     source = source.replace(declaration, 'Future? _xopilotPreparation;\nFuture prepareApp() => _xopilotPreparation ??= _prepareXopilotOnce();\n\nFuture _prepareXopilotOnce() async {')
+    preparation='appDir = await nrt.getAppDir();'
+    if source.count(preparation)!=1:
+        raise RuntimeError('Flet bootstrap changed; review bundle preparation lease')
+    source=source.replace(preparation,'''final bootstrapLease = await File(path.join(
+        (await path_provider.getApplicationSupportDirectory()).path,
+        'xopilot-bootstrap.lock')).open(mode: FileMode.append);
+    try {
+      await bootstrapLease.lock(FileLock.exclusive);
+      appDir = await nrt.getAppDir();
+    } finally {
+      await bootstrapLease.close(); // Releases the lease even on failed extraction.
+    }''')
     dart.write_text(source)
     return template
 
