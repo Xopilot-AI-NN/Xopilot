@@ -62,7 +62,12 @@ class AsyncRecoveryTests(unittest.IsolatedAsyncioTestCase):
             card=ui.build_cloud_card(page)
             card.content.controls[3].on_click(None)
             callback,*args=page.run_task.call_args.args
-            await callback(*args)
+            # Capture and verify the deliberately injected network failure:
+            # printing its traceback creates a false GitHub error annotation.
+            with self.assertLogs(ui.__name__,level='WARNING') as captured:
+                await callback(*args)
+        self.assertIn('Google login failed',captured.output[0])
+        self.assertIsInstance(captured.records[0].exc_info[1],ui.cloud_account.CloudError)
         dialog=page.show_dialog.call_args.args[0]
         self.assertEqual(dialog.actions[0].content,'Назад')
         self.assertFalse(dialog.actions[0].disabled)
