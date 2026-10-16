@@ -38,7 +38,7 @@ class Files:
                 raise RuntimeError('Выбор данных изменился. Повторите синхронизацию')
             try:return cloud.request(path, **kwargs)
             except cloud.CloudError as exc:
-                transient=exc.code=='connection_failed' or exc.status in (500,502,503,504)
+                transient=exc.code in ('connection_failed','dns_failed','connection_timeout') or exc.status in (408,429,500,502,503,504)
                 if not transient or attempt==2:raise
                 # Push operation IDs and encrypted PUT bytes remain unchanged;
                 # each retry is metered and rechecks the user's current choices.

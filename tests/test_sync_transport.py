@@ -46,6 +46,16 @@ class TransportRetryTests(unittest.TestCase):
             self.assertEqual([call.args for call in self.sleep.call_args_list],
                              [(0.5,), (1.0,)])
 
+    def test_dns_and_timeouts_retry_but_certificate_errors_do_not(self):
+        for code in ('dns_failed','connection_timeout'):
+            with self.subTest(code=code),patch('App.services.cloud_account.request',
+                    side_effect=[cloud.CloudError(code),{'ok':True}]) as request:
+                self.assertEqual(self.files.request('/sync'),{'ok':True})
+                self.assertEqual(request.call_count,2)
+        with patch('App.services.cloud_account.request',side_effect=cloud.CloudError('tls_failed')) as request:
+            with self.assertRaises(cloud.CloudError):self.files.request('/sync')
+            request.assert_called_once()
+
     def test_transient_server_errors_retry_same_ciphertext_but_auth_does_not(self):
         for status in (500,502,503,504):
             with self.subTest(status=status),patch('App.services.cloud_account.request',

@@ -15,6 +15,7 @@ class SyncScheduleTests(unittest.TestCase):
             p=patch.object(sync,name,return_value=value);p.start();self.addCleanup(p.stop)
         for name in ('_auto_due','_auto_failures','_status'):
             p=patch.dict(getattr(sync,name),{},clear=True);p.start();self.addCleanup(p.stop)
+        p=patch.object(sync,'_auto_dirty',set());p.start();self.addCleanup(p.stop)
 
     def test_activity_is_fast_and_idle_avoids_unnecessary_traffic(self):
         with patch.object(sync.time,'monotonic',return_value=100),patch.object(sync,'run',return_value={'sent':1}) as run:
@@ -42,6 +43,15 @@ class SyncScheduleTests(unittest.TestCase):
     def test_disabled_auto_never_uses_network(self):
         with patch.object(sync,'options',return_value={'enabled':True,'auto':False}),patch.object(sync,'run') as run:
             self.assertIsNone(sync.run_auto_if_due());run.assert_not_called()
+
+    def test_edit_during_inflight_sync_is_not_lost_until_idle_interval(self):
+        def edit_during_pull():
+            sync.request_soon()
+            return {'sent':0,'received':0}
+        with patch.object(sync.time,'monotonic',return_value=100),patch.object(sync,'run',side_effect=edit_during_pull):
+            sync.run_auto_if_due()
+        self.assertEqual(sync._auto_due['account-a'],105)
+        self.assertNotIn('account-a',sync._auto_dirty)
 
     def test_local_edits_wake_idle_sync_without_bypassing_network_backoff(self):
         sync._auto_due['account-a']=200

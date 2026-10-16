@@ -259,12 +259,15 @@ def resolve_keep_both(record_key):
 
 _auto_due={}
 _auto_failures={}
+_auto_dirty=set()
 def request_soon():
     """A completed local edit wakes replication without bypassing retry/budget policy."""
     try:identifier=owner()
     except ValueError:return
     with _lock:
-        if not _auto_failures.get(identifier) and _auto_due.get(identifier)!=float('inf'):
+        if _auto_due.get(identifier)==float('inf'):
+            _auto_dirty.add(identifier)
+        elif not _auto_failures.get(identifier):
             _auto_due[identifier]=0
 
 
@@ -290,7 +293,9 @@ def run_auto_if_due():
             _auto_failures.pop(identifier,None)
             # Busy leases must be retried soon. Active replicas converge quickly;
             # idle replicas reduce polling and respect metered connections.
-            delay=5 if result.get('busy') else 15 if result.get('sent') or result.get('received') else 60
+            dirty=identifier in _auto_dirty
+            _auto_dirty.discard(identifier)
+            delay=5 if result.get('busy') or dirty else 15 if result.get('sent') or result.get('received') else 60
             _auto_due[identifier]=time.monotonic()+delay
             _status.setdefault(identifier,{})['next_retry']=None
         return result
