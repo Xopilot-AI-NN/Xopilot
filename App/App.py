@@ -114,6 +114,8 @@ class Init():
                 page.update()
                 return
             page.remove(loading)
+        from services.support import install as install_support_diagnostics
+        install_support_diagnostics()
         start_app_session()
 
         async def persist_loop():

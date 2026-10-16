@@ -104,7 +104,7 @@ def build_settings_dialog(
             "О программе",
             ft.Icons.INFO_OUTLINE,
             "Версия, описание и разработчик",
-            build_about_page,
+            lambda: build_about_page(page),
         ),
         ("Память обо мне", ft.Icons.PSYCHOLOGY_OUTLINED,
          "Сведения, которые ИИ использует в будущих разговорах",
@@ -113,7 +113,7 @@ def build_settings_dialog(
 
     page_title = ft.Text("Настройки", size=22, color=color("#123b43"), weight=ft.FontWeight.W_600,
                          max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)
-    page_host = ft.Column(spacing=0, expand=True, scroll=ft.ScrollMode.AUTO)
+    page_host = ft.AnimatedSwitcher(content=ft.Container(),expand=True, duration=150, reverse_duration=100, transition=ft.AnimatedSwitcherTransition.FADE)
     selected_page = [None]
 
     async def load_personalization(index, generation):
@@ -127,18 +127,18 @@ def build_settings_dialog(
             await mobile_runtime.refresh_capabilities()
         finally:
             if selected_page[0] == generation:
-                page_host.controls = [apply_palette(sections[index][3]())]
+                page_host.content = ft.Column(expand=True,scroll=ft.ScrollMode.AUTO,controls=[apply_palette(sections[index][3]())])
                 page.update()
 
     def select_page(index: int):
         generation = object()
         selected_page[0] = generation
         if index == 1 and platforms.is_android():
-            page_host.controls = [ft.Row(controls=[ft.ProgressRing(width=24, height=24),
-                                                  ft.Text('Проверяем установленные модели…')])]
+            page_host.content = ft.Row(controls=[ft.ProgressRing(width=24, height=24),
+                                                  ft.Text('Проверяем установленные модели…')])
             page.run_task(load_personalization, index, generation)
         else:
-            page_host.controls = [apply_palette(sections[index][3]())]
+            page_host.content = ft.Column(expand=True,scroll=ft.ScrollMode.AUTO,controls=[apply_palette(sections[index][3]())])
         page_title.value = sections[index][0]
         back_button.visible = True
         navigation.save(settings=sections[index][0], storage=None)
@@ -149,7 +149,7 @@ def build_settings_dialog(
             select_page(1)
             return
         selected_page[0] = None
-        page_host.controls = [home_page]
+        page_host.content = home_page
         page_title.value = "Настройки"
         back_button.visible = False
         navigation.save(settings='home', storage=None)
@@ -170,7 +170,7 @@ def build_settings_dialog(
             ],
         ],
     )
-    page_host.controls = [home_page]
+    page_host.content = home_page
     back_button = build_back_button(show_home)
 
     if start_section is not None:

@@ -257,7 +257,7 @@ class PaletteTests(unittest.TestCase):
             for index in (0, 2, 3, 4, 5):
                 with self.subTest(section=index):
                     dialog = build_settings_dialog(page, start_section=index)
-                    body = dialog.content.controls[1].content.controls[0].controls[0]
+                    body = dialog.content.controls[1].content.controls[0].content.controls[0]
                     # Section builders hold palette constants loaded before theme changes.
                     title = body.controls[0]
                     if isinstance(title, ft.Text):

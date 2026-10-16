@@ -170,6 +170,30 @@ public final class XopilotMobilePlugin implements FlutterPlugin, MethodChannel.M
             } catch (RuntimeException error) { result.error("screen_unavailable", error.getMessage(), null); }
             return;
         }
+        if (call.method.equals("supportEmail")) {
+            main.post(() -> {
+                try {
+                    byte[] bytes=Base64.decode(call.<String>argument("archive"),Base64.DEFAULT);
+                    if (bytes.length>524288) throw new IllegalArgumentException("Диагностика слишком большая");
+                    java.io.File dir=new java.io.File(context.getCacheDir(),"support");dir.mkdirs();
+                    // Keep at most the current attachment; next explicit support request supersedes it.
+                    java.io.File[] old=dir.listFiles();if(old!=null)for(java.io.File f:old)if(f.isFile())f.delete();
+                    String filename=java.util.UUID.randomUUID().toString()+".zip";
+                    try(java.io.FileOutputStream out=new java.io.FileOutputStream(new java.io.File(dir,filename))){out.write(bytes);}
+                    Uri uri=new Uri.Builder().scheme("content").authority(context.getPackageName()+".xopilot.support").appendPath(filename).build();
+                    Intent intent=new Intent(Intent.ACTION_SEND).setType("application/zip")
+                        .putExtra(Intent.EXTRA_EMAIL,new String[]{"support@xopilot.by"})
+                        .putExtra(Intent.EXTRA_SUBJECT,call.<String>argument("subject"))
+                        .putExtra(Intent.EXTRA_TEXT,call.<String>argument("body"))
+                        .putExtra(Intent.EXTRA_STREAM,uri)
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_ACTIVITY_NEW_TASK);
+                    intent.setClipData(android.content.ClipData.newRawUri("Диагностика Xopilot",uri));
+                    try {context.startActivity(new Intent(intent).setPackage("com.google.android.gm"));}
+                    catch(android.content.ActivityNotFoundException unavailable){context.startActivity(Intent.createChooser(intent,"Отправить в поддержку").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));}
+                    result.success(true);
+                }catch(Exception error){result.error("support_unavailable","Не удалось открыть почту. Установите Gmail или другой почтовый клиент.",null);}
+            });return;
+        }
         if (call.method.equals("openBrowser")) {
             // Launch on the UI thread, independently of a busy inference queue.
             // Google OAuth must use the system browser rather than a WebView.

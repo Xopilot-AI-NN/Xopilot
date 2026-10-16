@@ -5,10 +5,13 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <queries>
+        <package android:name="com.google.android.gm" />
+        <intent><action android:name="android.intent.action.VIEW" /><category android:name="android.intent.category.BROWSABLE" /><data android:scheme="https" /></intent>
         <intent><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent>
         <intent><action android:name="android.intent.action.TTS_SERVICE" /></intent>
     </queries>
     <application android:allowBackup="false" android:resizeableActivity="true">
+        <provider android:name="ru.xopilot.mobile.SupportAttachment" android:authorities="${applicationId}.xopilot.support" android:exported="false" android:grantUriPermissions="true" />
         <service android:name="ru.xopilot.mobile.ScreenCaptureService" android:exported="false" android:foregroundServiceType="mediaProjection" />
         <service android:name="ru.xopilot.mobile.LiveCaptureService" android:exported="false" android:foregroundServiceType="camera|microphone" />
         <uses-native-library android:name="libvndksupport.so" android:required="false" />

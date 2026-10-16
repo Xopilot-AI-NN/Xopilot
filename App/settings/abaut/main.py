@@ -10,7 +10,7 @@ from ..common import section_title
 from .info import ABOUT_WIDTH, build_about_info, build_about_row
 
 
-def build_about_page() -> ft.Column:
+def build_about_page(page=None) -> ft.Column:
     about_content = ft.Container(
         expand=True,
         alignment=ft.Alignment.CENTER,
@@ -21,6 +21,9 @@ def build_about_page() -> ft.Column:
             controls=[
                 build_about_row(),
                 build_about_info(),
+                *([ft.TextButton(content='Поддержка',icon=ft.Icons.SUPPORT_AGENT,
+                    on_click=lambda _:__import__('importlib').import_module(
+                        'App.services.support' if __package__.startswith('App.') else 'services.support').open_support(page))] if page is not None else []),
             ],
         ),
     )
