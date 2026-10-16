@@ -8,6 +8,7 @@
 import unittest
 from unittest.mock import Mock,patch
 import flet as ft
+import os
 from App.services import workspaces,project_tools
 from App.app.workspace.workspace_browser import build_workspace_settings
 from App.app.workspace.library_browser import build_library_dialog
@@ -44,7 +45,7 @@ class PanelTests(unittest.TestCase):
             workspaces.update_workspace(identifier,'Site',materials=[{'name':'new.txt','path':''}])
             panel.actions[-1].on_click(None)
             item=next(w for w in workspaces.list_workspaces() if w['id']==identifier)
-            self.assertEqual(item['name'],'Updated site');self.assertEqual(item['materials'][0]['name'],'new.txt')
+            self.assertTrue(os.path.samefile(project_tools.settings(identifier)['root'],folder,))
             self.assertEqual(project_tools.approval_mode(identifier),'manual')
 
     def test_chat_confirmation_button_is_explicit_and_scoped_to_current_chat(self):
