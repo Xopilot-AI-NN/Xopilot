@@ -30,8 +30,8 @@ class Accessibility:
     def inspect(self):
         self.targets={};rows=[]
         roots=self.call(('org.a11y.atspi.Registry','/org/a11y/atspi/accessible/root'),'Accessible','GetChildren')[0]
-        pending=[(tuple(r),'',0) for r in roots];visited=set();deadline=time.monotonic()+20
-        while pending and len(visited)<600 and time.monotonic()<deadline:
+        pending=[(tuple(r),'',0) for r in roots];visited=set();deadline=time.monotonic()+8
+        while pending and len(visited)<220 and time.monotonic()<deadline:
             reference,parent,depth=pending.pop(0)
             if reference in visited or depth>12 or reference[1].endswith('/null'):continue
             visited.add(reference)
@@ -47,7 +47,7 @@ class Accessibility:
                 protected=self.call(reference,'Accessible','GetRole')[0]==40 or 'password' in role.casefold() or 'парол' in role.casefold()
                 value='[скрыто]' if protected else None
                 if not protected and PREFIX+'Text' in interfaces:
-                    value=self.call(reference,'Text','GetText','(ii)',(0,2000))[0]
+                    value=self.call(reference,'Text','GetText','(ii)',(0,400))[0]
                 entry={'id':identifier,'parent_id':parent,'name':name[:300],'role':role,'rect':rect,
                        'actions':[a[0] for a in actions], 'editable':PREFIX+'EditableText' in interfaces and not protected}
                 if value is not None:entry['text']=value

@@ -161,14 +161,39 @@ def image_mime(raw):
 
 
 _json_unsupported=set()
+_screen_fallback_until={}
 
 
-def generate_reply(prompt_text, history=None, attachments=None, *, instructions='', cancelled=None, structured=False):
+class ProviderUnavailableError(RuntimeError):
+    pass
+
+
+def generate_reply(prompt_text, history=None, attachments=None, *, instructions='', cancelled=None, structured=False, screen_attachments=None):
+    for attempt in range(3):
+        try:
+            return _generate_reply(prompt_text,history,attachments,instructions=instructions,cancelled=cancelled,structured=structured,screen_attachments=screen_attachments)
+        except ProviderUnavailableError:
+            if attempt==2:raise
+            if cancelled is not None:
+                if cancelled.wait(1+attempt):raise CancelledError()
+            else:
+                import time
+                time.sleep(1+attempt)
+
+
+def _generate_reply(prompt_text, history=None, attachments=None, *, instructions='', cancelled=None, structured=False, screen_attachments=None):
     config = validate_configuration(configuration())
     if cancelled is not None and cancelled.is_set():
         raise CancelledError()
+    screen_key=(config['url'],config['model'])
+    if screen_attachments and _screen_fallback_until.get(screen_key,0)>time.monotonic():
+        remaining=[f for f in (attachments or []) if tuple(f) not in {tuple(x) for x in screen_attachments}]
+        return _generate_reply(prompt_text,history,remaining,instructions=instructions+'\nЭкран этой модели недоступен; используй только controls доступности.',cancelled=cancelled,structured=structured)
     notes, images = build_attachment_message_parts(attachments or [])
     if images and image_support(config) is False:
+        if screen_attachments:
+            remaining=[f for f in (attachments or []) if tuple(f) not in {tuple(x) for x in screen_attachments}]
+            return _generate_reply(prompt_text,history,remaining,instructions=instructions+'\nКадр экрана недоступен выбранной модели. Используй только наблюдаемые controls доступности; не утверждай, что видел изображение.',cancelled=cancelled,structured=structured)
         raise RuntimeError('Выбранная модель не поддерживает изображения. '
                            'Выберите модель с поддержкой изображений или выключите камеру/экран и уберите изображения из вложений.')
     if cancelled is not None and cancelled.is_set():
@@ -229,6 +254,8 @@ def generate_reply(prompt_text, history=None, attachments=None, *, instructions=
         connection.request('POST', path, body=payload, headers=headers)
         response = connection.getresponse()
         if response.status >= 400:
+            import logging
+            logging.getLogger(__name__).warning('HTTP %s',response.status)
             if response.status==400 and 'response_format' in body:
                 reason=response.read(65536).decode('utf-8',errors='replace').casefold()
                 if any(word in reason for word in ('response_format','json_object','structured')) and any(
@@ -238,7 +265,15 @@ def generate_reply(prompt_text, history=None, attachments=None, *, instructions=
             if response.status == 429:
                 raise RateLimitedError('Лимит запросов API (HTTP 429). Повторите позже или выберите другую модель.')
             if response.status >= 500:
-                raise RuntimeError(f'Сервис ИИ временно недоступен (HTTP {response.status}). Повторите запрос позже.')
+                if images and 'response_format' in body:
+                    _json_unsupported.add(format_key)
+                    return _generate_reply(prompt_text,history,attachments,instructions=instructions,cancelled=cancelled,structured=False,screen_attachments=screen_attachments)
+                if screen_attachments:
+                    remaining=[f for f in (attachments or []) if tuple(f) not in {tuple(x) for x in screen_attachments}]
+                    result = _generate_reply(prompt_text,history,remaining,instructions=instructions+'\nПровайдер отклонил кадр экрана. Продолжай по настоящим controls доступности в результатах computer_view; изображение не было просмотрено.',cancelled=cancelled,structured=False)
+                    _screen_fallback_until[screen_key]=time.monotonic()+300
+                    return result
+                raise ProviderUnavailableError(f'Провайдер ИИ вернул HTTP {response.status}. Запрос повторён без выполнения действий на ПК. Если ошибка повторяется при просмотре экрана, выберите модель с поддержкой изображений.')
             raise RuntimeError(f'API вернул HTTP {response.status}. Проверьте URL, ключ и модель.')
         data = json.loads(response.read())
         text = data['choices'][0]['message']['content']

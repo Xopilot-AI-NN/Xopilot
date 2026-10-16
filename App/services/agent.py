@@ -358,6 +358,7 @@ def _run_agent(prompt, *, chat_id, history, attachments, instructions, level, ca
     transcript = [dict(item) for item in history]
     current = prompt
     files = attachments
+    screen_files = []
     journal = []
     step = -1
     invalid_response=None
@@ -377,7 +378,9 @@ def _run_agent(prompt, *, chat_id, history, attachments, instructions, level, ca
         budget = '' if limit is None else (f'\nОсталось действий: {limit-step}. ' +
             ('Теперь верни final, инструменты больше недоступны.' if step >= limit else ''))
         kwargs=dict(history=transcript,attachments=step_files,instructions=protocol+budget)
-        if network:kwargs['structured']=True
+        if network:
+            kwargs['structured']=True
+            if screen_files:kwargs['screen_attachments']=screen_files
         def incorporate(updates, options):
             nonlocal current,attachments
             current += '\n\nУточнения пользователя к текущей задаче:\n'+'\n'.join(u['text'] for u in updates)
@@ -449,6 +452,7 @@ def _run_agent(prompt, *, chat_id, history, attachments, instructions, level, ca
             with ThreadPoolExecutor(max_workers=4,thread_name_prefix='xopilot-tools') as pool:
                 results=list(pool.map(execute,actions))
         files=[]
+        screen_files=[f for result,tool_files,_ in results if result.get('tool') in {'computer_view','computer_input'} for f in tool_files]
         for result, tool_files, line in results:
             journal.append(line);files.extend(tool_files)
         step += len(actions)-1
