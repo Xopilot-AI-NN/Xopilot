@@ -245,8 +245,8 @@ def build_workspace_settings(page, identifier, on_changed=None):
             if on_changed:on_changed()
         except Exception as exc:status.value=str(exc)
         page.update()
-    library=build_library_content(page,identifier,on_changed)
-    library.width=None;library.height=None;library.expand=True
+    library=build_library_content(page,identifier,on_changed,embedded=True)
+    library.width=None
     overview=ft.Container(padding=16,border_radius=18,bgcolor=color('#f3fffc'),
         content=ft.Column(horizontal_alignment=ft.CrossAxisAlignment.STRETCH,spacing=12,controls=[ft.Row(wrap=True,controls=[
             ft.Container(width=max(220,width-240),content=name),ft.Container(width=180,content=icon)]),instructions,
@@ -255,10 +255,13 @@ def build_workspace_settings(page, identifier, on_changed=None):
         inset_padding=ft.Padding.symmetric(horizontal=18,vertical=20),
         title=ft.Row(controls=[ft.Icon(ICON_MAP.get(item.get('icon'),ft.Icons.FOLDER_OUTLINED),color=color('#087f8c')),
             heading]),
-        content=ft.Column(width=width,height=height,spacing=14,controls=[
-            ft.Column(height=min(300,height*.5),scroll=ft.ScrollMode.AUTO,controls=[overview]),
+        content=ft.ListView(width=width,height=height,spacing=14,controls=[
+            overview,
             ft.Text('Библиотека проекта',weight=ft.FontWeight.W_600),library,status]),
         actions=[ft.TextButton(content='Закрыть',on_click=lambda _:page.pop_dialog()),
                  ft.FilledButton(content='Сохранить настройки',on_click=save)])
     apply_palette(result)
+    try:from ...services.platforms import fit_dialog
+    except ImportError:from services.platforms import fit_dialog
+    fit_dialog(page,result)
     return result

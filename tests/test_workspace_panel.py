@@ -31,6 +31,16 @@ def descendants(node):
 
 
 class PanelTests(unittest.TestCase):
+    def test_small_phone_project_has_one_scroll_viewport_for_settings_and_files(self):
+        db=Settings();page=Mock(width=360,height=720,web=True)
+        with patch.object(workspaces,'get_db',return_value=db),patch.object(project_tools,'get_db',return_value=db):
+            identifier=workspaces.create_workspace('Phone project',materials=[{'name':'visible-note.txt','path':''}])['id']
+            panel=build_workspace_settings(page,identifier)
+        self.assertIsInstance(panel.content,ft.ListView)
+        self.assertLess(panel.content.height,page.height)
+        self.assertEqual(sum(isinstance(c,ft.ListView) for c in descendants(panel.content)),1)
+        self.assertTrue(any(isinstance(c,ft.Text) and c.value=='visible-note.txt' for c in descendants(panel)))
+
     def test_library_opens_same_panel_and_settings_save_preserves_new_materials(self):
         db=Settings();page=Mock(width=393,height=851,web=True)
         with patch.object(workspaces,'get_db',return_value=db),patch.object(project_tools,'get_db',return_value=db):
