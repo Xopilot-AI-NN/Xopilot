@@ -41,7 +41,7 @@ def fit_dialog(page, dialog):
         return dialog
     edge_layout = compact_layout(getattr(page, 'width', None)) and dialog.__dict__.get('_xopilot_full_width', False)
     available = max(180, page.width - 24) if edge_layout else dialog_width(page, 10000)
-    height = getattr(page, 'height', None)
+    height = available_height(page)
     max_height = max(120, height - (48 if edge_layout else 120)) if isinstance(height, (int, float)) else None
     seen = set()
 
@@ -65,6 +65,8 @@ def fit_dialog(page, dialog):
                     for item in child: visit(item)
                 else: visit(child)
     visit(dialog.content)
+    fit_content=dialog.__dict__.get('_xopilot_fit_content')
+    if callable(fit_content):fit_content()
     if compact_layout(getattr(page, 'width', None)):
         dialog.actions_alignment = ft.MainAxisAlignment.END
         dialog.inset_padding = ft.Padding.all(12)

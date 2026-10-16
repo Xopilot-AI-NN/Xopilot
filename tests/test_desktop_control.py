@@ -21,8 +21,11 @@ class DesktopTests(unittest.TestCase):
     def test_cursor_overlay_failure_does_not_fail_or_repeat_completed_action(self):
         import subprocess
         code="""
-from App.services.linux_desktop_bridge import Desktop
 from unittest.mock import Mock
+import sys
+# The input contract uses mocked portal objects; do not require host PyGObject.
+sys.modules.update({"gi":Mock(),"gi.repository":Mock()})
+from App.services.linux_desktop_bridge import Desktop
 d=Desktop();d.accessibility=Mock();d.native=Mock();d.size=[100,100]
 d.accessibility.targets={'target':{'entry':{'rect':[10,10,20,20]}}}
 d.accessibility.perform.return_value={'performed':True}

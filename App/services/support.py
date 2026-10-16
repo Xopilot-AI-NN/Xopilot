@@ -44,7 +44,8 @@ def collect():
     folder=app_data_dir()/'diagnostics';folder.mkdir(parents=True,exist_ok=True,mode=0o700)
     target=folder/'xopilot-support.zip'
     import flet as ft
-    info={'app':'Xopilot','version':'2.0.8','system':platform.system(),'system_release':platform.release(),
+    from .updates import VERSION
+    info={'app':'Xopilot','version':VERSION,'system':platform.system(),'system_release':platform.release(),
           'python':platform.python_version(),'flet':ft.version.flet_version,
           'privacy':'No chats, databases, files, keys, account identifiers or free-form log messages included.'}
     with zipfile.ZipFile(target,'w',compression=zipfile.ZIP_DEFLATED) as archive:
@@ -65,8 +66,13 @@ async def compose(nickname,reason):
     path=await asyncio.to_thread(collect);body=template(nickname,reason);subject='Xopilot — обращение в поддержку'
     if is_android():
         from .mobile_runtime import call_async
-        await call_async('supportEmail',{'archive':base64.b64encode(path.read_bytes()).decode(),
-                                        'subject':subject,'body':body})
+        try:
+            await asyncio.wait_for(call_async('supportEmail',{'archive':base64.b64encode(path.read_bytes()).decode(),
+                                        'subject':subject,'body':body}),timeout=12)
+        except Exception as exc:
+            # A visible alternative remains available if the device has no
+            # mail client or its native bridge cannot open the attachment.
+            raise RuntimeError('Не удалось открыть почтовое приложение. Сохраните диагностику кнопкой ниже и приложите ZIP к письму на '+RECIPIENT) from exc
         return path
     if shutil.which('xdg-email'):
         process=await asyncio.create_subprocess_exec('xdg-email','--utf8','--attach',str(path),'--subject',subject,'--body',body,RECIPIENT,
@@ -89,15 +95,32 @@ def open_support(page):
     name=modern_input(ft.TextField(label='Ваш ник',max_length=80))
     reason=modern_input(ft.TextField(label='Причина обращения',multiline=True,min_lines=2,max_lines=4,max_length=2000))
     feedback=ft.Text(size=12,color=color('#47747a'));send=action_button('Подготовить письмо',icon=ft.Icons.MAIL_OUTLINE)
+    async def save_logs(_):
+        try:
+            path=await asyncio.to_thread(collect)
+            if is_android():
+                from .mobile_documents import save_document_file
+                saved=await save_document_file('xopilot-support.zip',str(path))
+                feedback.value='Диагностика сохранена' if saved else 'Сохранение отменено'
+            else:
+                feedback.value='Диагностика сохранена: '+str(path)
+        except Exception:feedback.value='Не удалось сохранить диагностику. Повторите попытку.'
+        page.update()
     async def prepare(_):
         send.disabled=True;feedback.value='Готовим диагностику…';page.update()
         try:
             path=await compose(name.value or '',reason.value or '')
             feedback.value='Письмо открыто. Проверьте текст и вложение перед отправкой. Диагностика: '+str(path)
-        except Exception as exc:feedback.value=str(exc)
+        except Exception as exc:feedback.value=str(exc) or 'Не удалось подготовить письмо. Сохраните диагностику и напишите на '+RECIPIENT
         finally:send.disabled=False;page.update()
     send.on_click=prepare
-    page.show_dialog(ft.AlertDialog(title=ft.Text('Поддержка Xopilot'),content=ft.Column(width=400,tight=True,spacing=12,
+    dialog=ft.AlertDialog(title=ft.Text('Поддержка Xopilot'),content=ft.Column(width=400,height=360,scroll=ft.ScrollMode.ALWAYS,spacing=12,
         controls=[ft.Text('Получатель: '+RECIPIENT),name,reason,
                   ft.Text('Во вложении — версия, система и технические коды ошибок. Переписка, ключи и материалы не собираются.',size=12),feedback]),
-        actions=[ft.TextButton(content='Назад',on_click=lambda _:page.pop_dialog()),send]))
+        actions=[ft.TextButton(content='Назад',on_click=lambda _:page.pop_dialog()),
+            action_button('Сохранить диагностику',secondary=True,on_click=save_logs),send])
+    try:
+        from .platforms import fit_dialog
+        fit_dialog(page,dialog)
+    except (ValueError,TypeError):pass
+    page.show_dialog(dialog)

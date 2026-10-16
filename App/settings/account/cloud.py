@@ -82,6 +82,13 @@ def build_cloud_card(page):
         launch = action_button('Открыть браузер', icon=ft.Icons.OPEN_IN_NEW, secondary=True)
         launch.disabled=True
         abort = ft.TextButton(content='Назад')
+        spinner=ft.ProgressRing(width=28,height=28)
+        retry=action_button('Повторить',secondary=True)
+        retry.visible=False
+        def retry_login(_):
+            close_dialog()
+            page.run_task(google_sign_in,link)
+        retry.on_click=retry_login
 
         def close_dialog():
             nonlocal closed
@@ -125,9 +132,9 @@ def build_cloud_card(page):
             page.show_dialog(ft.AlertDialog(modal=True, bgcolor=color('#eafffa'),
                 title=ft.Text('Привязать Google' if link else 'Вход через Google'),
                 content=ft.Column(width=380, tight=True, spacing=16, controls=[
-                    ft.ProgressRing(width=28, height=28), status,
+                    spinner, status,
                     ft.Text('Пароль Google вводится только на сайте Google. Пароль шифрования синхронизации остаётся отдельным.',
-                            size=12, color=color('#47747a'))]), actions=[abort, launch]))
+                            size=12, color=color('#47747a'))]), actions=[abort, retry, launch]))
             pending = await asyncio.to_thread(cloud_account.begin_google, link=link)
             if cancelled:
                 return
@@ -163,6 +170,8 @@ def build_cloud_card(page):
             if not closed:
                 status.value = str(exc)
                 abort.disabled=False
+                spinner.visible=False
+                retry.visible=True
         finally:
             if pending:
                 try:
@@ -242,6 +251,24 @@ def build_cloud_card(page):
                 controls=[*fields, error, busy, action_button('Продолжить с Google', secondary=True,on_click=google_from_dialog), ft.TextButton(
                     content='Уже есть аккаунт? Войти' if register else 'Создать аккаунт', on_click=switch)]),
             actions=[cancel, submit]))
+
+        if register:
+            async def registration_capabilities():
+                submit.disabled=True
+                error.value='Проверяем возможность регистрации…'
+                page.update()
+                try:
+                    info=await asyncio.to_thread(cloud_account._request,cloud_account.DEFAULT_ENDPOINT,'/health')
+                    if info.get('email_delivery')!='configured':
+                        error.value='Регистрация по почте пока недоступна: на сервере не подключена отправка кодов. Используйте Google или обратитесь к администратору.'
+                    else:
+                        error.value=''
+                        submit.disabled=False
+                except cloud_account.CloudError as exc:
+                    error.value=str(exc)
+                    submit.disabled=False
+                page.update()
+            page.run_task(registration_capabilities)
 
     def open_confirmation(pending):
         code = modern_input(ft.TextField(label='Код из письма', max_length=6, autofocus=True,

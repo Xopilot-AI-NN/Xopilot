@@ -27,6 +27,7 @@ def style_brand_button(button, role):
     button.gradient = brand_gradient(role)
     button.border = ft.Border.all(1, outline)
     button.ink_color = ft.Colors.with_opacity(.10, ink)
+    button.animate=ft.Animation(140,ft.AnimationCurve.EASE_OUT)
     def foreground(control):
         if isinstance(control, (ft.Icon, ft.Text)):
             control.color = ink

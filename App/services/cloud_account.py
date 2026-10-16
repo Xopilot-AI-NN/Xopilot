@@ -9,6 +9,8 @@ import platform
 import re
 import threading
 import time
+import socket
+import ssl
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import Request, build_opener, HTTPRedirectHandler
@@ -39,6 +41,10 @@ ERRORS = {
     'try_later': 'Слишком много попыток. Повторите через минуту',
     'storage_unavailable': 'База сервера временно недоступна',
     'connection_failed': 'Нет соединения с сервером. Проверьте адрес и сеть',
+    'connection_timeout': 'Сервер не ответил вовремя. Повторите запрос или проверьте другую сеть',
+    'dns_failed': 'Не удалось найти сервер xopilot.by. Проверьте DNS, VPN и подключение к интернету',
+    'tls_failed': 'Не удалось проверить сертификат сервера. Проверьте дату телефона и обновите Xopilot',
+    'server_error': 'Сервер временно недоступен. Повторите попытку позже',
     'invalid_response': 'Сервер вернул непонятный ответ',
     'quota_exceeded': 'Облачное хранилище заполнено. Освободите место в управлении хранилищем',
     'not_found': 'Файл отсутствует в облаке',
@@ -175,8 +181,12 @@ def _request(endpoint, path, *, method='GET', body=None, token=None, raw=None, b
         finally:
             exc.close()
         raise CloudError(code, exc.code) from None
-    except (URLError, TimeoutError, OSError):
-        raise CloudError('connection_failed') from None
+    except (URLError, TimeoutError, OSError) as exc:
+        reason=getattr(exc,'reason',exc)
+        code=('tls_failed' if isinstance(reason,ssl.SSLCertVerificationError) else
+              'dns_failed' if isinstance(reason,socket.gaierror) else
+              'connection_timeout' if isinstance(reason,TimeoutError) else 'connection_failed')
+        raise CloudError(code) from None
     except (ValueError, UnicodeError):
         raise CloudError('invalid_response') from None
 

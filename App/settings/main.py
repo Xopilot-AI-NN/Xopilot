@@ -113,8 +113,18 @@ def build_settings_dialog(
 
     page_title = ft.Text("Настройки", size=22, color=color("#123b43"), weight=ft.FontWeight.W_600,
                          max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)
-    page_host = ft.AnimatedSwitcher(content=ft.Container(),expand=True, duration=150, reverse_duration=100, transition=ft.AnimatedSwitcherTransition.FADE)
+    page_host = ft.AnimatedSwitcher(content=ft.Container(),expand=True, duration=200, reverse_duration=120,
+        switch_in_curve=ft.AnimationCurve.EASE_OUT_CUBIC,
+        switch_out_curve=ft.AnimationCurve.EASE_IN,
+        transition=ft.AnimatedSwitcherTransition.FADE)
     selected_page = [None]
+
+    def scroll_page(control):
+        # AnimatedSwitcher lays children out loosely. Give the scrolling body
+        # a finite viewport rather than letting it grow to the page's contents.
+        height=getattr(page_host,'height',None) or max(96,min(600,(platforms.available_height(page) or 800)-168))
+        return ft.ListView(height=height,spacing=10,scroll=ft.ScrollMode.ALWAYS,
+            controls=[apply_palette(control)])
 
     async def load_personalization(index, generation):
         # Reading model metadata can initialize LiteRT. Do it only in the
@@ -127,7 +137,7 @@ def build_settings_dialog(
             await mobile_runtime.refresh_capabilities()
         finally:
             if selected_page[0] == generation:
-                page_host.content = ft.Column(expand=True,scroll=ft.ScrollMode.AUTO,controls=[apply_palette(sections[index][3]())])
+                page_host.content = scroll_page(sections[index][3]())
                 page.update()
 
     def select_page(index: int):
@@ -138,7 +148,7 @@ def build_settings_dialog(
                                                   ft.Text('Проверяем установленные модели…')])
             page.run_task(load_personalization, index, generation)
         else:
-            page_host.content = ft.Column(expand=True,scroll=ft.ScrollMode.AUTO,controls=[apply_palette(sections[index][3]())])
+            page_host.content = scroll_page(sections[index][3]())
         page_title.value = sections[index][0]
         back_button.visible = True
         navigation.save(settings=sections[index][0], storage=None)
@@ -149,7 +159,7 @@ def build_settings_dialog(
             select_page(1)
             return
         selected_page[0] = None
-        page_host.content = home_page
+        page_host.content = scroll_page(home_page)
         page_title.value = "Настройки"
         back_button.visible = False
         navigation.save(settings='home', storage=None)
@@ -170,7 +180,7 @@ def build_settings_dialog(
             ],
         ],
     )
-    page_host.content = home_page
+    page_host.content = scroll_page(home_page)
     back_button = build_back_button(show_home)
 
     if start_section is not None:
@@ -229,6 +239,7 @@ def build_settings_dialog(
             ft.Container(
                 padding=ft.Padding.symmetric(horizontal=12, vertical=8),
                 expand=True,
+                clip_behavior=ft.ClipBehavior.HARD_EDGE,
                 bgcolor=color("#eafffa"),
                 content=ft.Row(expand=True,vertical_alignment=ft.CrossAxisAlignment.STRETCH,controls=[page_host]),
             ),
@@ -247,4 +258,9 @@ def build_settings_dialog(
         on_dismiss=dismissed,
     )
     dialog.__dict__['_xopilot_full_width'] = True
+    def fit_body():
+        page_host.height=max(60,content.height-120)
+        if isinstance(page_host.content,ft.ListView):page_host.content.height=page_host.height
+    dialog.__dict__['_xopilot_fit_content'] = fit_body
+    fit_body()
     return dialog
