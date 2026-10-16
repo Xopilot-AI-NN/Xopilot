@@ -223,11 +223,13 @@ class StorageInterfaceTests(unittest.IsolatedAsyncioTestCase):
             ui.open_storage(page)
             dialog = page.show_dialog.call_args.args[0];dialog.open = True;page._dialogs.controls = [dialog]
             # Search invokes the real renderer without running its periodic task.
-            self.assertIsInstance(dialog.content.controls[1], ft.Column)
-            search = dialog.content.controls[1].controls[0]
+            content=dialog.content.controls[1]
+            self.assertIsInstance(content, ft.ListView)
+            self.assertTrue(content.expand)
+            self.assertIsInstance(dialog.content.height,(int,float))
+            search = content.controls[0].controls[0]
             self.assertFalse(search.expand)  # A flex child inside Wrap cannot render on Flutter.
             await search.on_change(None)
-            content = dialog.content.controls[2]
             material_card = next(row for row in content.controls if getattr(row,'data',None)=={'material_path':'/owned/memo.txt'})
             menu = material_card.content.controls[-1]
             menu.items[0].on_click(None)

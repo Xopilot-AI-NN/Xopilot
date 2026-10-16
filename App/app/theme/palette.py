@@ -143,6 +143,7 @@ def apply_palette(root):
                 tones, ink, outline = button_tones(action_role(obj.icon, label), is_dark_theme())
                 style = obj.style or ft.ButtonStyle()
                 changes = {'shape': ft.RoundedRectangleBorder(radius=20), 'elevation': 0,
+                           'animation_duration':style.animation_duration if style.animation_duration is not None else 160,
                            'padding':ft.Padding.symmetric(horizontal=18,vertical=12),
                            'overlay_color': ft.Colors.with_opacity(.10, ink)}
                 close_action = isinstance(obj, ft.TextButton) and str(label).strip().casefold() == 'закрыть'
@@ -159,6 +160,12 @@ def apply_palette(root):
                     if isinstance(obj, ft.OutlinedButton):
                         changes['side'] = ft.BorderSide(1, outline)
                 obj.style = replace(style, **changes)
+            if isinstance(obj,ft.ExpansionTile) and obj.animation_style is None:
+                # Flutter runs expansion and tonal state transitions locally;
+                # Python does not relay animation frames across the bridge.
+                obj.animation_style=ft.AnimationStyle(duration=260,reverse_duration=180,
+                    curve=ft.AnimationCurve.EASE_IN_OUT_CUBIC_EMPHASIZED,
+                    reverse_curve=ft.AnimationCurve.EASE_OUT_CUBIC)
             if isinstance(obj, ft.TextField) and not obj.__dict__.get('_xopilot_borderless'):
                 modern_input(obj)
             elif isinstance(obj, ft.Markdown):

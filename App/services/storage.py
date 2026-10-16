@@ -157,15 +157,93 @@ def cloud_inventory():
             cursor=reply['next']
     reply['files']=files
     ledger=sync.read_ledger(identifier)
-    by_id={row['id']:row for row in files};groups=[];claimed=set()
+    by_id={row['id']:row for row in files};groups=[];claimed=set();grouped={}
     for path,asset in ledger.get('assets',{}).items():
         parts=asset['manifest'].get('chunks',[]);available=[p for p in parts if p in by_id]
         if available and not asset.get('excluded'):
-            groups.append({'name':asset['manifest']['name'],'path':path,'ids':available,'bytes':sum(by_id[p]['bytes'] for p in set(available))})
+            identity=tuple(parts)
+            if identity in grouped:
+                grouped[identity]['aliases'].append(asset['manifest']['name'])
+                continue
+            item={'name':asset['manifest']['name'],'path':path,'ids':available,
+                'bytes':sum(by_id[p]['bytes'] for p in set(available)),
+                'source_bytes':asset['manifest'].get('size',0),'complete':len(available)==len(parts),
+                'aliases':[asset['manifest']['name']]}
+            groups.append(item);grouped[identity]=item
             claimed.update(available)
     reply['excluded_materials']=[{'path':path,'name':asset['manifest']['name']} for path,asset in ledger.get('assets',{}).items() if asset.get('excluded') and Path(path).is_file()]
-    reply['materials']=groups;reply['other_file_bytes']=sum(row['bytes'] for row in files if row['id'] not in claimed)
+    # A block can be shared by multiple files. The quota breakdown must count
+    # physical cloud blocks once, even when several manifests refer to them.
+    reply['materials']=groups
+    reply['material_bytes']=sum(by_id[key]['bytes'] for key in claimed)
+    payloads=[row for row in files if row['id'] not in claimed and row.get('sync_payload')]
+    unknown=[row for row in files if row['id'] not in claimed and not row.get('sync_payload')]
+    reply['sync_payload_bytes']=sum(row['bytes'] for row in payloads)
+    reply['unmapped_files']=unknown
+    reply['unmapped_bytes']=sum(row['bytes'] for row in unknown)
+    reply['other_file_bytes']=reply['sync_payload_bytes']+reply['unmapped_bytes']
     return reply
+
+
+def recover_cloud_materials():
+    """Recover file descriptions, never transcripts or file bodies, from E2EE history."""
+    from . import cloud_sync as sync,cloud_traffic
+    from .sync_files import Files
+    from .sync_crypto import unb64
+    identifier=sync.owner();opts=sync.options(identifier)
+    if not opts['enabled'] or not opts['materials']:
+        raise ValueError('Включите синхронизацию материалов, чтобы прочитать их зашифрованные описания')
+    key=get_db().get_setting('cloud_sync_key:'+identifier)
+    if not key:raise ValueError('Введите пароль синхронизации')
+    root=app_data_dir();root.mkdir(parents=True,exist_ok=True)
+    with FileLock(str(root/'cloud-sync.lock'),thread_local=False,timeout=0):
+        ledger=sync.read_ledger(identifier)
+        scopes=[scope for scope in ('chats','workspaces') if opts.get(scope)]
+        cursor=ledger.get('storage_catalog_cursor',0) if ledger.get('storage_catalog_scopes')==scopes else 0
+        files=Files(identifier,unb64(key),ledger,lambda:None)
+        files.expected_options=opts
+        latest={};found=0
+        with cloud_traffic.metered(identifier):
+            while True:
+                reply=files.request(f'/sync/pull?after={cursor}&limit=100')
+                for change in reply['changes']:
+                    scope=change['data'].get('scope')
+                    # No private vaults, profiles or Canvas are opened by this action.
+                    if not change['deleted'] and scope in ('chats','workspaces') and opts.get(scope):
+                        latest[(change['id'],json.dumps(change['data'],sort_keys=True))]=change
+                cursor=reply['cursor']
+                if not reply['has_more']:break
+            for change in latest.values():
+                try:payload=files.decode(change['id'],change['data'])
+                except Exception as exc:
+                    from .cloud_account import CloudError
+                    if isinstance(exc,CloudError) and exc.status==404:continue
+                    raise
+                manifests=list(payload.get('materials',[]))
+                for message in payload.get('messages',[]):manifests.extend(message.get('attachments',[]))
+                for manifest in manifests:
+                    if not isinstance(manifest,dict) or manifest.get('missing'):continue
+                    name=manifest.get('name','');checksum=manifest.get('sha256','');parts=manifest.get('chunks')
+                    size=manifest.get('size')
+                    if not isinstance(name,str) or not isinstance(checksum,str) or len(checksum)!=64 or any(c not in '0123456789abcdef' for c in checksum):continue
+                    if not isinstance(size,int) or not 0<=size<=512*1024*1024 or not isinstance(parts,list) or len(parts)>128:continue
+                    try:parts=[str(uuid.UUID(part)) for part in parts]
+                    except (ValueError,TypeError,AttributeError):continue
+                    if set(parts)&set(ledger.get('excluded_blobs',[])):continue
+                    filename=Path(name.replace('\\','/')).name
+                    if filename in ('','.','..'):continue
+                    path=str(root/'materials'/checksum/filename)
+                    if path not in ledger.setdefault('assets',{}):
+                        ledger['assets'][path]={'manifest':{**manifest,'chunks':parts},'stamp':None,'recovered':True}
+                        found+=1
+            # Existing choices are never overridden. Only descriptions are added
+            # under the replication lease; the sync cursor itself is untouched.
+            if sync.owner()!=identifier or any(sync.options(identifier)[scope]!=opts[scope] for scope in ('enabled','materials','chats','workspaces')):
+                raise ValueError('Аккаунт или выбор данных изменился. Повторите поиск')
+            ledger['storage_catalog_scopes']=scopes
+            ledger['storage_catalog_cursor']=cursor
+            get_db().set_setting(sync.ledger_key(identifier),json.dumps(ledger,ensure_ascii=False))
+        return {'found':found,'cursor':cursor}
 
 
 def remove_cloud_material(path):
