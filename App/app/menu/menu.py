@@ -209,6 +209,17 @@ def build_menu_overlay(
     private_row, private_wrapper, private_text = _overlay_item(ft.Icons.LOCK_OUTLINED, "Защищённые чаты")
     materials_row,materials_wrapper,materials_text=_overlay_item(ft.Icons.LIBRARY_BOOKS_OUTLINED,'Материалы')
 
+    # На телефоне навигация не должна вытеснять список переписок.
+    compact = bool(page.width and page.width < 600)
+    if compact:
+        for item in (menu_row,new_chat_row,workspaces_row,chats_row,materials_row,
+                     private_row,settings_row,account_row):
+            item.height = 48
+            item.padding = ft.Padding.symmetric(horizontal=8,vertical=4)
+            badge = item.content.controls[0]
+            badge.width = badge.height = 32
+            badge.border_radius = 12
+
     wrappers = (
         materials_wrapper,
         private_wrapper,
@@ -284,6 +295,18 @@ def build_menu_overlay(
         controls=[ft.Text('Ваши чаты', size=12, weight=ft.FontWeight.W_600, color=color('#087f8c')),
                   chat_search, chat_feedback, recent_chats])
 
+    extra_label = ft.Text('Показать ещё',size=13,color=color('#47747a'))
+    def extras_changed(e):
+        extra_label.value = 'Скрыть' if e.control.expanded else 'Показать ещё'
+        extra_label.update()
+    extras = ft.ExpansionTile(title=extra_label,controls=[materials_row,private_row],
+        min_tile_height=48,dense=True,maintain_state=True,
+        tile_padding=ft.Padding.symmetric(horizontal=12),controls_padding=0,
+        shape=ft.RoundedRectangleBorder(radius=12),
+        collapsed_shape=ft.RoundedRectangleBorder(radius=12),
+        icon_color=color('#47747a'),collapsed_icon_color=color('#47747a'),
+        on_change=extras_changed)
+
     panel = ft.Container(
         width=PANEL_WIDTH,
         top=0,
@@ -310,13 +333,13 @@ def build_menu_overlay(
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
             controls=[
                 ft.Column(
-                    spacing=8,
+                    spacing=2 if compact else 8,
                     horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
-                    controls=[menu_row,new_chat_row,workspaces_row,chats_row,materials_row,private_row],
+                    controls=[menu_row,new_chat_row,workspaces_row,chats_row,extras],
                 ),
                 history_panel,
                 ft.Column(
-                    spacing=8,
+                    spacing=2 if compact else 8,
                     horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
                     controls=[settings_row, account_row],
                 ),

@@ -137,7 +137,7 @@ class Init():
                 except Exception:
                     pass
 
-        page.title = "Xopilot 2.0.9"
+        page.title = "Xopilot 2.0.10"
         from services.runtime import IdleMemoryCleanup
         idle_memory = IdleMemoryCleanup()
         page._xopilot_memory_activity = idle_memory.activity

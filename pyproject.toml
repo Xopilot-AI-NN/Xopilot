@@ -1,6 +1,6 @@
 [project]
 name = "Xopilot"
-version = "2.0.9"
+version = "2.0.10"
 description = "Xopilot by DenBroLiik"
 requires-python = ">=3.10"
 dependencies = [
@@ -35,7 +35,7 @@ product = "Xopilot"
 company = "Xopilot"
 copyright = "Copyright (c) 2026 Xopilot"
 build_number = 1
-build_version = "2.0.9"
+build_version = "2.0.10"
 
 [tool.flet.app]
 path = "App"
