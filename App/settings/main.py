@@ -9,12 +9,12 @@
 
 import flet as ft
 try:
-    from ..app.palette import color, apply_palette
-    from ..app.buttons.brand import style_brand_button
+    from ..app.theme.palette import color, apply_palette
+    from ..app.menu.buttons.brand import style_brand_button
     from ..services.platforms import compact_layout
 except ImportError:
-    from app.palette import color, apply_palette
-    from app.buttons.brand import style_brand_button
+    from app.theme.palette import color, apply_palette
+    from app.menu.buttons.brand import style_brand_button
     from services.platforms import compact_layout
 
 from .abaut.main import build_about_page

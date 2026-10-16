@@ -3,12 +3,12 @@ import asyncio
 import threading
 import flet as ft
 try:
-    from ...app.palette import color
+    from ...app.theme.palette import color
     from ...services.mobile_runtime import call_async
     from ...services.mobile_audio import AndroidSpeechOutput
     from ...services.external_browser import open_external
 except ImportError:
-    from app.palette import color
+    from app.theme.palette import color
     from services.mobile_runtime import call_async
     from services.mobile_audio import AndroidSpeechOutput
     from services.external_browser import open_external

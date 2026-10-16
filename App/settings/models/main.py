@@ -11,17 +11,17 @@ import asyncio
 
 import flet as ft
 try:
-    from ...app.palette import color
+    from ...app.theme.palette import color
 except ImportError:
-    from app.palette import color
+    from app.theme.palette import color
 
 from ..common import section_title
 try:
-    from ...app.model_download import ModelDownloadPanel
-    from ...app.buttons.brand import style_brand_button
+    from ...app.models.model_download import ModelDownloadPanel
+    from ...app.menu.buttons.brand import style_brand_button
 except ImportError:
-    from app.model_download import ModelDownloadPanel
-    from app.buttons.brand import style_brand_button
+    from app.models.model_download import ModelDownloadPanel
+    from app.menu.buttons.brand import style_brand_button
 try:
     from ...services.model_installer import GEMMA_4_E2B, DOWNLOADABLE_MODELS, install_model, MODELS_DIR
     from ...services.voice_catalog import VOICES
@@ -163,9 +163,9 @@ def build_models_page(page, on_status, on_models_changed=None):
                     f'{model.size_label} · Hugging Face · SHA-256 проверяется после загрузки',
                     model.installed, ModelDownloadPanel(model, on_models_changed)) for model in DOWNLOADABLE_MODELS.values()]
     try:
-        from ...app.api_settings import open_api_settings
+        from ...app.settings.api_settings import open_api_settings
     except ImportError:
-        from app.api_settings import open_api_settings
+        from app.settings.api_settings import open_api_settings
 
     voice_cards = [
         _install_card(

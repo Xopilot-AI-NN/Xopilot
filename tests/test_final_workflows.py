@@ -9,7 +9,7 @@ from App.services import chat_store
 from App.services.db import advanced_xopilot
 from App.settings.account import sync as sync_ui
 from App.settings.history import list as history_ui
-from App.app.live_conversation import LiveConversation
+from App.app.voice.live_conversation import LiveConversation
 
 
 class EmptyChatTests(unittest.TestCase):

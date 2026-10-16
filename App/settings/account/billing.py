@@ -5,13 +5,13 @@ import flet as ft
 try:
     from ...services import billing, cloud_account
     from ...services.db import get_db
-    from ...app.palette import color, modern_input
-    from ...app.buttons.actions import action_button
+    from ...app.theme.palette import color, modern_input
+    from ...app.menu.buttons.actions import action_button
 except ImportError:
     from services import billing, cloud_account
     from services.db import get_db
-    from app.palette import color, modern_input
-    from app.buttons.actions import action_button
+    from app.theme.palette import color, modern_input
+    from app.menu.buttons.actions import action_button
 
 
 def open_billing(page):

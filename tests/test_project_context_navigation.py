@@ -8,8 +8,8 @@ from unittest.mock import Mock, patch
 import flet as ft
 from App.services import workspaces, agent, project_tools, canvases, db, chat_store
 from App.app import main as main_ui
-from App.app.buttons.brand import brand_button
-from App.app import palette
+from App.app.menu.buttons.brand import brand_button
+from App.app.theme import palette
 
 class Settings:
     def __init__(self): self.data = {}

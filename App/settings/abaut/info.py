@@ -6,9 +6,9 @@
 
 import flet as ft
 try:
-    from ...app.palette import color
+    from ...app.theme.palette import color
 except ImportError:
-    from app.palette import color
+    from app.theme.palette import color
 
 
 ABOUT_WIDTH = None

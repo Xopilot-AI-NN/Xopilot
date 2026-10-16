@@ -12,8 +12,8 @@ from unittest.mock import Mock, patch
 import flet as ft
 from PIL import Image
 
-from App.app.live_conversation import LiveConversation, VisionCaptureError
-from App.app.message import build_ai_message
+from App.app.voice.live_conversation import LiveConversation, VisionCaptureError
+from App.app.chat.messages.message import build_ai_message
 from App.services import live_vision
 
 
@@ -59,7 +59,7 @@ class LiveVisionNoteTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_capture_error_prevents_reply_without_requested_image(self):
         self.live.camera_on = True
-        with patch("App.app.live_conversation.capture_camera_frame", side_effect=RuntimeError("Нет камеры.")):
+        with patch("App.app.voice.live_conversation.capture_camera_frame", side_effect=RuntimeError("Нет камеры.")):
             with self.assertRaises(VisionCaptureError):
                 await self.live._capture_vision_frame()
         self.assertIn("Нет камеры.", self.live._vision_note)
@@ -68,13 +68,13 @@ class LiveVisionNoteTests(unittest.IsolatedAsyncioTestCase):
     async def test_screen_frame_is_returned_and_note_is_cleared(self):
         self.live.screen_on = True
         self.live._vision_note = "старая ошибка"
-        with patch("App.app.live_conversation.capture_screen_frame", return_value=b"jpeg"):
+        with patch("App.app.voice.live_conversation.capture_screen_frame", return_value=b"jpeg"):
             self.assertEqual(await self.live._capture_vision_frame(), b"jpeg")
         self.assertEqual(self.live._vision_note, "")
 
     async def test_no_vision_button_means_no_capture(self):
-        with patch("App.app.live_conversation.capture_camera_frame") as camera, \
-                patch("App.app.live_conversation.capture_screen_frame") as screen:
+        with patch("App.app.voice.live_conversation.capture_camera_frame") as camera, \
+                patch("App.app.voice.live_conversation.capture_screen_frame") as screen:
             self.assertIsNone(await self.live._capture_vision_frame())
         camera.assert_not_called()
         screen.assert_not_called()

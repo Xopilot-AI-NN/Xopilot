@@ -7,11 +7,11 @@
 import asyncio
 import flet as ft
 try:
-    from ...app.palette import color, modern_input
-    from ...app.buttons.actions import action_button
+    from ...app.theme.palette import color, modern_input
+    from ...app.menu.buttons.actions import action_button
 except ImportError:
-    from app.palette import color, modern_input
-    from app.buttons.actions import action_button
+    from app.theme.palette import color, modern_input
+    from app.menu.buttons.actions import action_button
 
 from ..common import section_title
 from .cloud import build_cloud_card

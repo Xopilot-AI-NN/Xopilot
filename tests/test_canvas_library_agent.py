@@ -12,7 +12,7 @@ from PIL import Image
 from App.services import canvases, library, workspaces, material_store
 from App.services.agent import LocalTools, run_agent
 from App.services.db import advanced_xopilot
-from App.app import palette
+from App.app.theme import palette
 
 
 @unittest.skipIf(advanced_xopilot is None, 'Build native DB')
@@ -155,7 +155,7 @@ class DocumentWorkflowTests(unittest.TestCase):
 
 class ThemeRoundtripTests(unittest.TestCase):
     def test_code_blocks_follow_all_dark_and_light_palettes(self):
-        from App.app.message import build_ai_message
+        from App.app.chat.messages.message import build_ai_message
         message=build_ai_message('```python\nvalue = 42\n```')
         page=Mock(controls=[message],overlay=[])
         self.addCleanup(palette.set_theme,page,'light')

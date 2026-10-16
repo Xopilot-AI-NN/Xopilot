@@ -2,7 +2,7 @@
 import unittest
 from unittest.mock import Mock
 import flet as ft
-from App.app.menu import build_menu_overlay
+from App.app.menu.menu import build_menu_overlay
 
 
 class SidebarTests(unittest.IsolatedAsyncioTestCase):

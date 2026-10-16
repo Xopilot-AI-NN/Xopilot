@@ -6,14 +6,14 @@ import flet as ft
 
 try:
     from ...services import cloud_account
-    from ...app.palette import color, modern_input
-    from ...app.buttons.actions import action_button
-    from ...app.buttons.brand import style_brand_button
+    from ...app.theme.palette import color, modern_input
+    from ...app.menu.buttons.actions import action_button
+    from ...app.menu.buttons.brand import style_brand_button
 except ImportError:
     from services import cloud_account
-    from app.palette import color, modern_input
-    from app.buttons.actions import action_button
-    from app.buttons.brand import style_brand_button
+    from app.theme.palette import color, modern_input
+    from app.menu.buttons.actions import action_button
+    from app.menu.buttons.brand import style_brand_button
 
 
 def build_cloud_card(page):
@@ -43,8 +43,8 @@ def build_cloud_card(page):
         from .storage import open_storage
         from .billing import open_billing
         from .sync import open_sync
-        try: from ...app.remote_browser import open_remote
-        except ImportError: from app.remote_browser import open_remote
+        try: from ...app.browser.remote_browser import open_remote
+        except ImportError: from app.browser.remote_browser import open_remote
         def tile(icon,title,subtitle,callback,disabled=False):
             return ft.Container(padding=12,border_radius=16,bgcolor=color('#dff8f3'),
                 border=ft.Border.all(1,color('#b9eee4')),ink=not disabled,on_click=callback if not disabled else None,

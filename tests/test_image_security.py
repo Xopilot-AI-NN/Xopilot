@@ -13,7 +13,7 @@ from unittest.mock import Mock, patch
 
 from PIL import Image
 from App.services import attachments, image_safety, material_preview, profile
-from App.app import material
+from App.app.materials import material
 
 
 class ImageBoundaryTests(unittest.TestCase):

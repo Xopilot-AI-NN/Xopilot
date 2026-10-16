@@ -175,7 +175,7 @@ class PersonalMemoryTests(unittest.TestCase):
 
 class MemoryCaptureLifecycleTests(unittest.IsolatedAsyncioTestCase):
     async def test_private_transition_cancels_capture_and_releases_busy_state(self):
-        from App.app.memory_capture import MemoryCapture
+        from App.app.chat.memory.memory_capture import MemoryCapture
         entered, release = threading.Event(), threading.Event()
         tasks = []
         page = Mock()
@@ -186,7 +186,7 @@ class MemoryCaptureLifecycleTests(unittest.IsolatedAsyncioTestCase):
             release.wait(2)
             self.assertTrue(kwargs['cancelled'].is_set())
             return []
-        with patch('App.app.memory_capture.user_memory.capture', side_effect=extract):
+        with patch('App.app.chat.memory.memory_capture.user_memory.capture', side_effect=extract):
             capture.submit('Remember QA', Mock())
             await asyncio.to_thread(entered.wait, 2)
             self.assertTrue(capture.busy)

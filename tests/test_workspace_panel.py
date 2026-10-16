@@ -9,8 +9,8 @@ import unittest
 from unittest.mock import Mock,patch
 import flet as ft
 from App.services import workspaces,project_tools
-from App.app.workspace_browser import build_workspace_settings
-from App.app.library_browser import build_library_dialog
+from App.app.workspace.workspace_browser import build_workspace_settings
+from App.app.workspace.library_browser import build_library_dialog
 
 
 class Settings:
@@ -48,7 +48,7 @@ class PanelTests(unittest.TestCase):
             self.assertEqual(project_tools.approval_mode(identifier),'manual')
 
     def test_chat_confirmation_button_is_explicit_and_scoped_to_current_chat(self):
-        from App.app.confirmation_button import build_confirmation_button
+        from App.app.shared.components.confirmation_button import build_confirmation_button
         db=Settings();page=Mock(width=1000,height=800,web=True);current=[1]
         with patch.object(project_tools,'get_db',return_value=db):
             button,refresh=build_confirmation_button(page,lambda:current[0])
@@ -74,7 +74,7 @@ class PanelTests(unittest.TestCase):
         import tempfile
         import asyncio
         from App.services import library
-        from App.app.library_browser import build_library_content
+        from App.app.workspace.library_browser import build_library_content
         db=Settings();page=Mock(width=1000,height=800,web=True)
         with tempfile.TemporaryDirectory() as folder,patch.object(workspaces,'get_db',return_value=db),patch.object(project_tools,'get_db',return_value=db):
             identifier=workspaces.create_workspace('Empty project')['id']

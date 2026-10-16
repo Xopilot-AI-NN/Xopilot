@@ -10,9 +10,9 @@
 
 import flet as ft
 try:
-    from .palette import color
+    from .theme.palette import color
 except ImportError:
-    from app.palette import color
+    from app.theme.palette import color
 import asyncio
 import platform
 import threading
@@ -25,27 +25,27 @@ except ImportError:
 from concurrent.futures import CancelledError
 from typing import cast
 
-from .backgraund import build_background_layout
-from .chat import build_chat
-from .material import build_file_attachments, file_from_path
-from .message import build_user_message, build_ai_message
-from .prompt import build_prompt, build_prompt_container
-from .buttons.model import build_model_button
-from .buttons.brand import brand_button
-from .palette import outline_color
+from .theme.background import build_background_layout
+from .chat.chat import build_chat
+from .materials.material import build_file_attachments, file_from_path
+from .chat.messages.message import build_user_message, build_ai_message
+from .chat.composer.prompt import build_prompt, build_prompt_container
+from .chat.composer.buttons.model import build_model_button
+from .menu.buttons.brand import brand_button
+from .theme.palette import outline_color
 try:
     from ..services.chat_store import chat_is_unused
 except ImportError:
     from services.chat_store import chat_is_unused
-from .buttons.send import build_send_button
-from .voice_input import VoiceInput
-from .live_conversation import LiveConversation
-from .menu import build_menu, build_menu_overlay
-from .chats import build_chats_dialog
-from .workspace_browser import build_workspaces_dialog
-from .file_selection import pick_materials
-from .palette import install_theme, apply_palette
-from .canvas_editor import build_canvas_dialog
+from .chat.composer.buttons.send import build_send_button
+from .voice.voice_input import VoiceInput
+from .voice.live_conversation import LiveConversation
+from .menu.menu import build_menu, build_menu_overlay
+from .chat.chats import build_chats_dialog
+from .workspace.workspace_browser import build_workspaces_dialog
+from .materials.file_selection import pick_materials
+from .theme.palette import install_theme, apply_palette
+from .canvas.canvas_editor import build_canvas_dialog
 try:
     from ..services import workspaces
     from ..services.drafts import read_draft, write_draft
@@ -333,10 +333,10 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         await refresh_attachments()
 
     try:
-        from .memory_capture import MemoryCapture
+        from .chat.memory.memory_capture import MemoryCapture
         from ..services import user_memory, navigation
     except ImportError:
-        from app.memory_capture import MemoryCapture
+        from app.chat.memory.memory_capture import MemoryCapture
         from services import user_memory, navigation
     memory_capture = MemoryCapture(page)
     page._xopilot_memory_cancel = memory_capture.cancel
@@ -384,7 +384,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
     model_button, refresh_model_button = build_model_button(on_select=choose_chat_model,
         get_agent_level=lambda: agent_mode, on_agent_level=change_agent_level)
 
-    from .confirmation_button import build_confirmation_button
+    from .shared.components.confirmation_button import build_confirmation_button
     confirmation_button,refresh_confirmation = build_confirmation_button(page,lambda:active_chat_id,lambda:not is_sending)
 
     async def close_voice_modes(e):
@@ -790,7 +790,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                 tool_level=agent_mode if agent_mode in LEVELS else ('auto' if needs_tools(text) else None)
                 if tool_level and not private_request:
                     loop = asyncio.get_running_loop()
-                    from .task_messages import TaskMessages
+                    from .tasks.task_messages import TaskMessages
                     def remember_action(identifier,content):
                         if active_chat_id!=request_chat_id:return
                         existing=next((m for m in chat_context if m.get('id')==identifier),None)
@@ -991,10 +991,10 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                 reply_to=msg.reply_to,
                 message_id=msg.id,
             )
-        from .task_summaries import decode
+        from .tasks.task_summaries import decode
         record=decode(msg.content) if not is_private(active_chat_id) else None
         if record:
-            from .task_messages import TaskMessages
+            from .tasks.task_messages import TaskMessages
             journal=TaskMessages(page,active_chat_id,workspaces.chat_workspace(active_chat_id)['id'],
                 current_chat=lambda:active_chat_id,chat_list=lambda:cast(ft.ListView,chat.content),
                 save=save_ai_message,update=update_message)
@@ -1003,7 +1003,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
             workspace_id=workspaces.chat_workspace(active_chat_id)['id']
             for process in task_processes.snapshots('chat:'+str(active_chat_id),workspace_id):
                 if f"PID {process['pid']} ·" in msg.content:
-                    from .task_messages import TaskMessages
+                    from .tasks.task_messages import TaskMessages
                     journal=TaskMessages(page,active_chat_id,workspace_id,current_chat=lambda:active_chat_id,
                         chat_list=lambda:cast(ft.ListView,chat.content),save=save_ai_message,update=update_message)
                     return journal.restore(dict(id=process['id'],label='Команда проекта',tool='run_project_command',
@@ -1037,14 +1037,14 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         failed_request = ((stored[-1].content, stored[-1].attachments)
                           if stored and stored[-1].role == "user" else None)
         chat_context.clear()
-        from .task_summaries import context
+        from .tasks.task_summaries import context
         chat_context.extend({"role": msg.role, "content": context(msg.content) if msg.role=='ai' and not is_private(chat_id) else msg.content, "id": msg.id} for msg in stored)
         # Реверс-список: ленивая подгрузка истории строит только последние MESSAGE_PAGE_SIZE сообщений,
         # остальные догружаются порциями при прокрутке вверх (см. on_chat_scroll).
         stored.reverse()  # реверс один раз здесь, чтобы ниже не слайсить с конца
         older_messages = stored[MESSAGE_PAGE_SIZE:]
         page_messages = stored[:MESSAGE_PAGE_SIZE]
-        from .task_messages import group_action_controls
+        from .tasks.task_messages import group_action_controls
         return group_action_controls([_build_message_control(msg) for msg in page_messages])
 
     # Удаляем известные старые заглушки один раз. Новая база начинает с пустого чата.
@@ -1128,7 +1128,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         batch, older_messages = older_messages[:MESSAGE_PAGE_SIZE], older_messages[MESSAGE_PAGE_SIZE:]
         chat_list = cast(ft.ListView, chat.content)
         chat_list.controls.extend(_build_message_control(msg) for msg in batch)
-        from .task_messages import group_action_controls
+        from .tasks.task_messages import group_action_controls
         chat_list.controls=group_action_controls(chat_list.controls)
         chat_list.update()
         # пока Dart-сторона не перемерила выросший max_scroll_extent, события скролла
@@ -1137,7 +1137,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         _loading_older = False
 
     chat = build_chat(chat_messages, on_scroll=on_chat_scroll)
-    from .workspace_remote import WorkspaceRemote
+    from .workspace.workspace_remote import WorkspaceRemote
     remote_workspace=WorkspaceRemote(page,lambda:active_chat_id,
         lambda:'all' if is_private(active_chat_id) else workspaces.chat_workspace(active_chat_id)['id'],
         lambda:cast(ft.ListView,chat.content),add_live_user_message,
@@ -1339,7 +1339,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         if workspace_id is None:
             current = workspaces.chat_workspace(active_chat_id) if not is_private(active_chat_id) else {'id': 'all'}
             if current['id'] != workspaces.DEFAULT:
-                from .new_chat import choose_chat_scope
+                from .chat.new_chat import choose_chat_scope
                 choose_chat_scope(page, current, lambda identifier: start_new_chat(workspace_id=identifier))
                 return
             workspace_id = workspaces.DEFAULT
@@ -1568,7 +1568,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
             except ImportError:from settings.account.storage import open_storage
             open_storage(page)
         else:
-            from .library_browser import build_library_dialog
+            from .workspace.library_browser import build_library_dialog
             page.show_dialog(build_library_dialog(page,identifier))
 
     def confirm_delete_current(_):
@@ -1679,7 +1679,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         if is_android() and signature==last_layout:
             # IME frames are handled by Flutter's KeyboardViewport. Rebuilding
             # the composer here introduces a second, delayed layout jump.
-            from .palette import open_dialogs
+            from .theme.palette import open_dialogs
             dialogs=[d for d in open_dialogs(page) if d.open]
             for dialog in dialogs:fit_dialog(page,dialog)
             if dialogs:page.update()
@@ -1704,7 +1704,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         empty_state.content.controls[0].size = 32 if small else 40
         empty_state.content.controls[1].size = 19 if small else 22
         empty_state.content.controls[2].size = 12 if small else 13
-        from .palette import open_dialogs
+        from .theme.palette import open_dialogs
         for dialog in open_dialogs(page):
             if dialog.open:
                 fit_dialog(page, dialog)
@@ -1749,7 +1749,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         page.run_task(recover_files)
     resize_layout()
     if is_android():
-        from .keyboard_viewport import KeyboardViewport
+        from .shared.components.keyboard_viewport import KeyboardViewport
         return apply_palette(ft.SafeArea(content=KeyboardViewport(content=background,expand=True),
             expand=True,maintain_bottom_view_padding=True))
     return apply_palette(ft.SafeArea(content=background, expand=True))

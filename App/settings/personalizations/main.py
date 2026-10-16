@@ -10,13 +10,13 @@ import asyncio
 
 import flet as ft
 try:
-    from ...app.palette import color
-    from ...app.buttons.brand import style_brand_button
-    from ...app.button_colors import action_role
+    from ...app.theme.palette import color
+    from ...app.menu.buttons.brand import style_brand_button
+    from ...app.theme.button_colors import action_role
 except ImportError:
-    from app.palette import color
-    from app.buttons.brand import style_brand_button
-    from app.button_colors import action_role
+    from app.theme.palette import color
+    from app.menu.buttons.brand import style_brand_button
+    from app.theme.button_colors import action_role
 
 from ..common import section_title, setting_row
 from .buttons.language import build_language_select
@@ -195,11 +195,11 @@ def build_personalizations_page(
     try:
         from ...services import api_chat
         from ...services.model_installer import DOWNLOADABLE_MODELS
-        from ...app.api_settings import open_api_settings
+        from ...app.settings.api_settings import open_api_settings
     except ImportError:
         from services import api_chat
         from services.model_installer import DOWNLOADABLE_MODELS
-        from app.api_settings import open_api_settings
+        from app.settings.api_settings import open_api_settings
     chat_saved = 'api' if api_chat.is_api_selected() else get_selected_chat_model()
     live_saved = get_selected_live_model()
     voice_saved = get_selected_voice()

@@ -7,7 +7,7 @@ from unittest.mock import Mock, patch
 
 from App.services import acceleration, runtime, llm
 from App.services import material_store
-from App.app.file_selection import pick_materials
+from App.app.materials.file_selection import pick_materials
 from unittest.mock import AsyncMock
 import flet as ft
 
@@ -82,7 +82,7 @@ class AccelerationTests(unittest.TestCase):
             llm.unload_model()
 
     def test_model_button_reports_actual_backend_and_fallback_then_clears_on_unload(self):
-        from App.app.buttons import model as model_ui
+        from App.app.chat.composer.buttons import model as model_ui
         with patch.object(model_ui.api_chat, 'is_api_selected', return_value=False), \
                 patch.object(model_ui, 'get_selected_chat_model', return_value=llm.DEFAULT_FILENAME), \
                 patch.object(model_ui, 'get_loaded_model', return_value=llm.DEFAULT_FILENAME) as loaded, \

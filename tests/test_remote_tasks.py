@@ -52,15 +52,15 @@ class RemoteTests(unittest.TestCase):
             self.assertIn('"senders": []',db.set_setting.call_args.args[1])
 
     def test_pc_mode_is_only_available_in_normal_workspace_chats(self):
-        from App.app.workspace_remote import WorkspaceRemote
+        from App.app.workspace.workspace_remote import WorkspaceRemote
         page=Mock();chat=[1];workspace=['all']
         controller=WorkspaceRemote(page,lambda:chat[0],lambda:workspace[0],Mock(),Mock(),Mock(),Mock())
-        with patch('App.app.workspace_remote.is_android',return_value=True):
+        with patch('App.app.workspace.workspace_remote.is_android',return_value=True):
             self.assertFalse(controller.eligible)
             workspace[0]='project';self.assertTrue(controller.eligible)
             chat[0]=-1;self.assertFalse(controller.eligible)
         chat[0]=1
-        with patch('App.app.workspace_remote.is_android',return_value=False):self.assertFalse(controller.eligible)
+        with patch('App.app.workspace.workspace_remote.is_android',return_value=False):self.assertFalse(controller.eligible)
 
     def test_missing_server_route_is_explained_without_exposing_credentials(self):
         from App.services.cloud_account import CloudError
@@ -80,7 +80,7 @@ class RemoteTests(unittest.TestCase):
             request.assert_not_called()
 
     def test_remote_computer_approval_does_not_require_file_diff_fields(self):
-        from App.app.remote_browser import approval_content
+        from App.app.browser.remote_browser import approval_content
         for kind in ('device','computer_session'):
             title,preview=approval_content({'kind':kind,'title':'Кнопка QA','arguments':{'action':'click','target':'id'}})
             self.assertEqual(title,'Кнопка QA');self.assertIn('click',preview)

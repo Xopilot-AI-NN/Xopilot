@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import flet as ft
 
-from App.app.voice_input import VoiceInput
+from App.app.voice.voice_input import VoiceInput
 from App.services import llm, microphone
 
 
@@ -121,10 +121,10 @@ class VoiceInputTests(unittest.IsolatedAsyncioTestCase):
         self.prompt = SimpleNamespace(value="Черновик", update=Mock(), focus=AsyncMock())
         self.recorder = Mock(elapsed=0, finished=False)
         self.recorder.stop.return_value = b"wav audio"
-        self.record_patch = patch("App.app.voice_input.MicrophoneRecorder", return_value=self.recorder)
+        self.record_patch = patch("App.app.voice.voice_input.MicrophoneRecorder", return_value=self.recorder)
         self.record_patch.start()
         self.addCleanup(self.record_patch.stop)
-        self.transcribe_patch = patch("App.app.voice_input.transcribe_audio", return_value="Привет мир.")
+        self.transcribe_patch = patch("App.app.voice.voice_input.transcribe_audio", return_value="Привет мир.")
         self.transcribe = self.transcribe_patch.start()
         self.addCleanup(self.transcribe_patch.stop)
         self.voice = VoiceInput(self.page, self.prompt, lambda: False)

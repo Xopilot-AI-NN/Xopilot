@@ -180,7 +180,7 @@ class IdleUICleanupTests(unittest.IsolatedAsyncioTestCase):
             release.assert_not_called()
 
     async def test_model_release_notifies_android_and_discards_only_thumbnail_cache(self):
-        from App.app import material
+        from App.app.materials import material
         module = Mock()
         with patch('App.services.runtime.is_android', return_value=True), \
                 patch('App.services.runtime.release_unused_memory') as release, \
@@ -202,7 +202,7 @@ class IdleUICleanupTests(unittest.IsolatedAsyncioTestCase):
 class DialogRetentionTests(unittest.TestCase):
     def test_theme_registry_does_not_retain_closed_editor_or_payload(self):
         import flet as ft
-        from App.app import palette
+        from App.app.theme import palette
         class Page:
             width = 393
             height = 851

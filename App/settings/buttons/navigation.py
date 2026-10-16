@@ -7,13 +7,13 @@
 
 import flet as ft
 try:
-    from ...app.palette import color
-    from ...app.buttons.brand import style_brand_button
-    from ...app.button_colors import action_role
+    from ...app.theme.palette import color
+    from ...app.menu.buttons.brand import style_brand_button
+    from ...app.theme.button_colors import action_role
 except ImportError:
-    from app.palette import color
-    from app.buttons.brand import style_brand_button
-    from app.button_colors import action_role
+    from app.theme.palette import color
+    from app.menu.buttons.brand import style_brand_button
+    from app.theme.button_colors import action_role
 
 
 def build_navigation_button(icon, label: str, subtitle: str, on_click) -> ft.Container:

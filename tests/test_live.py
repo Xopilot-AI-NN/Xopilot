@@ -12,7 +12,7 @@ import wave
 from concurrent.futures import CancelledError
 from unittest.mock import AsyncMock, Mock, patch
 
-from App.app.live_conversation import LiveConversation
+from App.app.voice.live_conversation import LiveConversation
 from App.services import live_audio, llm
 
 
@@ -157,7 +157,7 @@ class LiveControllerTests(unittest.IsolatedAsyncioTestCase):
         self.live._overlay_requested = True
         self.live.screen_on = True
         native = AsyncMock()
-        with patch('App.app.live_conversation.mobile_call', native):
+        with patch('App.app.voice.live_conversation.mobile_call', native):
             await self.live.toggle_mute()
         self.assertTrue(self.live.microphone_muted)
         self.assertEqual(native.await_args_list[0], unittest.mock.call('audioCancel'))
@@ -169,7 +169,7 @@ class LiveControllerTests(unittest.IsolatedAsyncioTestCase):
         self.live.screen_on = True
         self.live._inline_open = True
         native = AsyncMock(return_value={'foreground': False, 'actions': ['stop']})
-        with patch('App.app.live_conversation.mobile_call', native), \
+        with patch('App.app.voice.live_conversation.mobile_call', native), \
                 patch('App.services.mobile_runtime.call_async', native), \
                 patch('App.services.platforms.is_android', return_value=True):
             await self.live._watch_overlay()
@@ -226,7 +226,7 @@ class LiveControllerTests(unittest.IsolatedAsyncioTestCase):
         }
         self.mocks = patches
         for name, replacement in patches.items():
-            patcher = patch(f"App.app.live_conversation.{name}", replacement)
+            patcher = patch(f"App.app.voice.live_conversation.{name}", replacement)
             patcher.start()
             self.addCleanup(patcher.stop)
 

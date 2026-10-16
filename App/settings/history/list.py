@@ -1,11 +1,11 @@
 """Browse persisted chats and their actual messages from settings."""
 import flet as ft
 try:
-    from ...app.palette import color
+    from ...app.theme.palette import color
     from ...services.chat_store import list_chat_items, load_chat_messages
     from ...services.workspaces import chat_workspace
 except ImportError:
-    from app.palette import color
+    from app.theme.palette import color
     from services.chat_store import list_chat_items, load_chat_messages
     from services.workspaces import chat_workspace
 

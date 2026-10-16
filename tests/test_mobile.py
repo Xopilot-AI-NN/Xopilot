@@ -7,10 +7,10 @@ import unittest
 from unittest.mock import AsyncMock, Mock, patch
 import flet as ft
 from App.services import platforms, paths, db, mobile_runtime, mobile_litert, runtime
-from App.app.file_selection import pick_materials
-from App.app.backgraund import build_background_layout
-from App.app.prompt import build_prompt, build_prompt_container
-from App.app.buttons.model import build_model_button
+from App.app.materials.file_selection import pick_materials
+from App.app.theme.background import build_background_layout
+from App.app.chat.composer.prompt import build_prompt, build_prompt_container
+from App.app.chat.composer.buttons.model import build_model_button
 
 
 class AndroidPackagingTests(unittest.TestCase):
@@ -33,7 +33,7 @@ class AndroidPackagingTests(unittest.TestCase):
 
 class MobileLayoutTests(unittest.TestCase):
     def test_android_canvas_exports_through_saf_without_writing_content_uri(self):
-        from App.app.canvas_editor import build_canvas_dialog
+        from App.app.canvas.canvas_editor import build_canvas_dialog
         page = Mock(width=360, height=720, web=False)
         store = Mock()
         document = {'id': 'canvas-test', 'title': 'Test', 'kind': 'text', 'content': 'bytes', 'strokes': []}
@@ -41,10 +41,10 @@ class MobileLayoutTests(unittest.TestCase):
         store.save_document.return_value = document
         store.export_document.return_value = ('test.txt', b'bytes')
         picker = Mock(save_file=AsyncMock(return_value='content://documents/test'))
-        with patch('App.app.canvas_editor.is_android', return_value=True), patch('flet.FilePicker', return_value=picker):
+        with patch('App.app.canvas.canvas_editor.is_android', return_value=True), patch('flet.FilePicker', return_value=picker):
             dialog = build_canvas_dialog(page, 1, document_store=store, on_attach=Mock())
         self.assertEqual(len(dialog.actions), 2)
-        with patch('App.app.canvas_editor.is_android', return_value=True), \
+        with patch('App.app.canvas.canvas_editor.is_android', return_value=True), \
              patch('App.services.mobile_documents.save_document', AsyncMock(return_value=True)) as save, \
              patch('pathlib.Path.write_bytes') as write:
             asyncio.run(dialog.actions[0].on_click(None))
@@ -96,11 +96,11 @@ class MobileLayoutTests(unittest.TestCase):
         self.assertNotIn(prompt, tools.content.controls)
 
     def test_model_name_is_short_only_on_narrow_phones_and_restores_on_desktop(self):
-        with patch('App.app.buttons.model.get_selected_chat_model', return_value='gemma-4-E2B-it.litertlm'), \
-                patch('App.app.buttons.model.model_display_name', return_value='Gemma4-e2b'), \
-                patch('App.app.buttons.model.api_chat.is_api_selected', return_value=False), \
-                patch('App.app.buttons.model.get_loaded_model', return_value=None), \
-                patch('App.app.buttons.model.execution_info', return_value={'backend': None}):
+        with patch('App.app.chat.composer.buttons.model.get_selected_chat_model', return_value='gemma-4-E2B-it.litertlm'), \
+                patch('App.app.chat.composer.buttons.model.model_display_name', return_value='Gemma4-e2b'), \
+                patch('App.app.chat.composer.buttons.model.api_chat.is_api_selected', return_value=False), \
+                patch('App.app.chat.composer.buttons.model.get_loaded_model', return_value=None), \
+                patch('App.app.chat.composer.buttons.model.execution_info', return_value={'backend': None}):
             button, refresh = build_model_button()
             button._xopilot_set_compact(True)
             button._xopilot_set_narrow(True)

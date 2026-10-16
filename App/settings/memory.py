@@ -3,10 +3,10 @@ from datetime import datetime
 import flet as ft
 try:
     from ..services import user_memory as memory
-    from ..app.palette import color, modern_input, apply_palette
+    from ..app.theme.palette import color, modern_input, apply_palette
 except ImportError:
     from services import user_memory as memory
-    from app.palette import color, modern_input, apply_palette
+    from app.theme.palette import color, modern_input, apply_palette
 
 
 def build_memory_page(page, on_status=lambda _: None):

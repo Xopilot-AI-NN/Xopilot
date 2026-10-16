@@ -11,13 +11,13 @@ from pathlib import Path
 import flet as ft
 try:
     from ...services import storage,cloud_account,profile,cloud_sync,navigation
-    from ...app.palette import color,modern_input,apply_palette
-    from ...app.material_viewer import open_material,export_material
+    from ...app.theme.palette import color, modern_input, apply_palette
+    from ...app.materials.material_viewer import open_material, export_material
     from ...services.platforms import compact_layout
 except ImportError:
     from services import storage,cloud_account,profile,cloud_sync,navigation
-    from app.palette import color,modern_input,apply_palette
-    from app.material_viewer import open_material,export_material
+    from app.theme.palette import color, modern_input, apply_palette
+    from app.materials.material_viewer import open_material, export_material
     from services.platforms import compact_layout
 
 

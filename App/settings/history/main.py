@@ -1,12 +1,12 @@
 """Persisted history, with confirmed removal of all ordinary chats."""
 import flet as ft
 try:
-    from ...app.palette import color
-    from ...app.buttons.actions import action_button
+    from ...app.theme.palette import color
+    from ...app.menu.buttons.actions import action_button
     from ...services.chat_store import clear_all_chats
 except ImportError:
-    from app.palette import color
-    from app.buttons.actions import action_button
+    from app.theme.palette import color
+    from app.menu.buttons.actions import action_button
     from services.chat_store import clear_all_chats
 from .list import build_history_list
 

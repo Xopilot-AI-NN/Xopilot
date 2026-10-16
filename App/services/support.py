@@ -81,11 +81,11 @@ async def compose(nickname,reason):
 def open_support(page):
     import flet as ft
     try:
-        from ..app.palette import color,modern_input
-        from ..app.buttons.actions import action_button
+        from ..app.theme.palette import color, modern_input
+        from ..app.menu.buttons.actions import action_button
     except ImportError:
-        from app.palette import color,modern_input
-        from app.buttons.actions import action_button
+        from app.theme.palette import color, modern_input
+        from app.menu.buttons.actions import action_button
     name=modern_input(ft.TextField(label='Ваш ник',max_length=80))
     reason=modern_input(ft.TextField(label='Причина обращения',multiline=True,min_lines=2,max_lines=4,max_length=2000))
     feedback=ft.Text(size=12,color=color('#47747a'));send=action_button('Подготовить письмо',icon=ft.Icons.MAIL_OUTLINE)

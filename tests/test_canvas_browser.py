@@ -11,7 +11,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
-from App.app.canvas_browser import show_browser
+from App.app.canvas.canvas_browser import show_browser
 
 
 class BrowserLayoutTests(unittest.IsolatedAsyncioTestCase):

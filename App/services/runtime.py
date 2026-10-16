@@ -54,7 +54,7 @@ class IdleMemoryCleanup:
         # Cached thumbnails can be recreated from originals; saved content and
         # current controls are not discarded. Keep the media module lazy.
         import sys
-        for name in ('App.app.material', 'app.material'):
+        for name in ('App.app.materials.material', 'app.materials.material'):
             module = sys.modules.get(name)
             if module is not None:
                 module._image_preview.cache_clear()

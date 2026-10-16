@@ -8,8 +8,8 @@ from unittest.mock import Mock, patch
 import flet as ft
 from App.services import workspaces, drafts, material_store, live_vision
 from App.services.db import advanced_xopilot
-from App.app.live_conversation import LiveConversation
-from App.app import palette
+from App.app.voice.live_conversation import LiveConversation
+from App.app.theme import palette
 import test_real_answers
 
 
@@ -97,7 +97,7 @@ class LivePreviewTests(unittest.IsolatedAsyncioTestCase):
         self.live._last_frame = b'old'
         self.live._last_source = 'screen'
         self.live._last_frame_time = time.monotonic() - 10
-        with patch('App.app.live_conversation.capture_screen_frame', return_value=b'fresh'):
+        with patch('App.app.voice.live_conversation.capture_screen_frame', return_value=b'fresh'):
             self.assertEqual(await self.live._capture_vision_frame(), b'fresh')
 
     async def test_controller_can_restart_after_browser_reconnect(self):

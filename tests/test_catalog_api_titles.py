@@ -9,7 +9,7 @@ from unittest.mock import patch, Mock
 import flet as ft
 from App.services import api_chat, chat_store, workspaces
 from App.services.agent import run_agent
-from App.app import palette
+from App.app.theme import palette
 import test_canvas_library_agent as native_fixture
 
 
@@ -123,7 +123,7 @@ class ApiTransportTests(unittest.TestCase):
     def test_google_ai_studio_preset_uses_compatible_endpoint_and_separates_provider_keys(self):
         import flet as ft
         from types import SimpleNamespace
-        from App.app.api_settings import open_api_settings
+        from App.app.settings.api_settings import open_api_settings
         page = Mock(width=360, height=720)
         config = {'url': 'https://openrouter.ai/api/v1', 'model': 'old-model', 'key': 'old-provider-test-key'}
         with patch.object(api_chat, 'configuration', return_value=config):

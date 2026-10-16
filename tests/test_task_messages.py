@@ -9,9 +9,9 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import Mock
-from App.app.task_messages import TaskMessages,code_block,group_action_controls
+from App.app.tasks.task_messages import TaskMessages, code_block, group_action_controls
 from App.services import task_processes
-from App.app.task_summaries import decode,summarize
+from App.app.tasks.task_summaries import decode, summarize
 
 
 class MessageTests(unittest.IsolatedAsyncioTestCase):

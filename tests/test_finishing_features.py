@@ -10,7 +10,8 @@ import unittest
 from unittest.mock import Mock,patch,AsyncMock
 import flet as ft
 from App.services import project_tools,workspaces,agent,canvases,material_store,storage,cloud_account
-from App.app import canvas_editor,material
+from App.app.canvas import canvas_editor
+from App.app.materials import material
 from App.services import user_memory as memory
 
 class Settings:
@@ -142,7 +143,7 @@ class ChatPreviewTests(unittest.IsolatedAsyncioTestCase):
     async def test_chat_material_click_uses_shared_viewer(self):
         with tempfile.TemporaryDirectory() as directory:
             path=Path(directory)/'a.txt';path.write_text('actual content')
-            with patch('App.app.material_viewer.open_material',new=AsyncMock()) as view:
+            with patch('App.app.materials.material_viewer.open_material',new=AsyncMock()) as view:
                 tile=material.build_file_tile(ft.FilePickerFile(id=1,name='a.txt',path=str(path),size=14))
                 page=Mock();await tile.on_click(SimpleNamespace(page=page))
                 view.assert_awaited_once_with(page,str(path),'a.txt')

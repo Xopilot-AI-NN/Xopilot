@@ -6,7 +6,8 @@
 """
 import unittest
 from unittest.mock import Mock,patch
-from App.app import palette,workspace_browser
+from App.app.theme import palette
+from App.app.workspace import workspace_browser
 
 
 def luminance(value):

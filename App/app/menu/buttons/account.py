@@ -1,0 +1,57 @@
+"""
+Файл: /App/app/menu/buttons/account.py
+Разработчик: DenBroLiik
+Версия: 2.0.0
+Описание: __кнопка аккаунт__
+         клеится в меню под кнопкой настройки
+"""
+
+import flet as ft
+try:
+    from ...theme.palette import color
+except ImportError:
+    from app.theme.palette import color
+
+SIZE_MIN = 44
+SIZE_MAX = 54
+ICON_MIN = 22
+ICON_MAX = 28
+
+
+def build_account_button(on_click=None, size: int = 40, icon_size: int = 20) -> ft.Container:
+    button = ft.Container(
+        width=size,
+        height=size,
+        border_radius=size / 2,
+        border=ft.Border.all(1, color("#b9eee4")),
+        bgcolor=color("#dff8f3"),
+        alignment=ft.Alignment.CENTER,
+        ink=True,
+        animate=ft.Animation(duration=150, curve=ft.AnimationCurve.EASE_OUT),
+        tooltip="Аккаунт",
+        content=ft.Icon(
+            ft.Icons.PERSON,
+            color=color('#123b43'),
+            size=icon_size,
+        ),
+        on_click=on_click,
+    )
+
+    def handle_hover(e: ft.Event[ft.Container]):
+        e.control.border = ft.Border.all(1, color("#087f8c") if e.data else color("#b9eee4"))
+        e.control.update()
+
+    button.on_hover = handle_hover
+    return button
+
+
+def resize_account_button(button: ft.Container, ratio: float) -> None:
+    ratio = max(0.0, min(1.0, ratio))
+    size = round(SIZE_MIN + (SIZE_MAX - SIZE_MIN) * ratio)
+    icon_size = round(ICON_MIN + (ICON_MAX - ICON_MIN) * ratio)
+    button.width = size
+    button.height = size
+    button.border_radius = size / 2
+    if isinstance(button.content, ft.Icon):
+        button.content.size = icon_size
+    button.update()

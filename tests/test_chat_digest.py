@@ -36,6 +36,6 @@ class DigestTests(unittest.TestCase):
         self.assertGreater(second['messages'][0]['message_id'],first['messages'][-1]['message_id'])
 
     def test_tool_payload_is_not_replayed_as_a_transcript(self):
-        from App.app.task_summaries import PREFIX
+        from App.app.tasks.task_summaries import PREFIX
         record=dict(label='Сайт',title='Проверка',state='Готово',summary='42',detail='PRIVATE_LARGE_PAYLOAD',tool='read_website',arguments_text='{}')
         self.assertNotIn('PRIVATE_LARGE_PAYLOAD',chat_search._excerpt(PREFIX+json.dumps(record)))

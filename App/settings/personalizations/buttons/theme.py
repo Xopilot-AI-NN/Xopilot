@@ -2,10 +2,10 @@
 import flet as ft
 try:
     from ....services.db import get_setting, get_db
-    from ....app.palette import set_theme, color, THEMES
+    from ....app.theme.palette import set_theme, color, THEMES
 except ImportError:
     from services.db import get_setting, get_db
-    from app.palette import set_theme, color, THEMES
+    from app.theme.palette import set_theme, color, THEMES
 
 
 def build_theme_switch(page, on_status):
