@@ -60,6 +60,23 @@ class StorageBreakdownTests(unittest.TestCase):
         self.assertEqual(inventory['materials'][0]['aliases'],['one.txt','alias.txt'])
 
 class StorageDialogTests(unittest.IsolatedAsyncioTestCase):
+    async def test_inventory_poll_does_not_erase_ongoing_operation_status(self):
+        page=Mock(width=393,height=851);page.show_dialog.side_effect=lambda dialog:setattr(dialog,'open',True)
+        inventory=dict(used_bytes=0,quota_bytes=134217728,material_bytes=0,sync_payload_bytes=0,
+            unmapped_bytes=0,metadata_bytes=0,materials=[],unmapped_files=[],excluded_materials=[])
+        ticks=0
+        async def tick(_):
+            nonlocal ticks
+            ticks+=1
+            dialog=page.show_dialog.call_args.args[0]
+            if ticks==1:dialog.content.controls[-1].value='Читаю описания…'
+            else:dialog.open=False
+        with patch.object(ui.cloud_account,'state',return_value={'account_id':'qa'}),patch.object(ui.navigation,'save'),\
+                patch.object(ui.storage,'cloud_inventory',return_value=inventory),patch.object(ui.asyncio,'sleep',side_effect=tick):
+            ui.open_storage(page,'cloud');dialog=page.show_dialog.call_args.args[0];page._dialogs.controls=[dialog]
+            await page.run_task.call_args.args[0]()
+        self.assertEqual(dialog.content.controls[-1].value,'Читаю описания…')
+
     async def test_cloud_summary_renders_finite_viewport_and_visible_close_action(self):
         page=Mock(width=393,height=851);page.show_dialog.side_effect=lambda dialog:setattr(dialog,'open',True)
         inventory=dict(used_bytes=35000000,quota_bytes=134217728,material_bytes=3000,sync_payload_bytes=2000,

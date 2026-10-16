@@ -120,7 +120,6 @@ def open_storage(page, initial_mode='local'):
                 private_versions=await asyncio.to_thread(storage.private_recoveries)
                 profile_versions=profile.recoveries()
             else:inventory=await asyncio.to_thread(storage.cloud_inventory);private_versions=[];profile_versions=[]
-            status.value=''
             snapshot=json.dumps([mode,search.value,order.value,inventory,private_versions,profile_versions,block_limit],sort_keys=True,ensure_ascii=False)
             if snapshot==last_snapshot:return
             if mode=='local':
@@ -265,7 +264,9 @@ def open_storage(page, initial_mode='local'):
                         ft.Container(padding=ft.Padding.symmetric(horizontal=12,vertical=8),border_radius=16,bgcolor=color('#dff8f3'),
                             content=ft.Text(labels.get(key,key)+': '+str(count),size=12,color=color('#123b43'))) for key,count in counts.items() if count]))
 
-            content.controls=[filters,*rows];apply_palette(content);status.value='';last_snapshot=snapshot
+            content.controls=[filters,*rows];apply_palette(content)
+            if not recovery_button.disabled:status.value=''
+            last_snapshot=snapshot
         except Exception as exc:status.value=str(exc)
         finally:
             if dialog.open:page.update()
