@@ -1,4 +1,9 @@
-"""Android uses the user's system synthesizer, not the desktop Piper profiles."""
+"""
+Файл: /App/settings/voice/android.py
+Разработчик: DenBroLiik
+Версия: 2.0.9
+Описание: Проверка системных офлайн-голосов по каждому языку без ложного общего отказа.
+"""
 import asyncio
 import threading
 import flet as ft
@@ -56,14 +61,18 @@ def build_android_voice_controls(page, on_status):
             state = await call_async('speechEngines')
             if not state.get('engines'):
                 raise RuntimeError('Сначала установите движок синтеза речи и скачайте голоса.')
-            await asyncio.to_thread(AndroidSpeechOutput().speak,
-                'Привет! Это голос Xopilot. Hello! This is the Xopilot voice.', threading.Event())
+            results=[];ready=0
+            for label,text in [('Русский','Привет! Это голос Xopilot.'),('English','Hello! This is the Xopilot voice.')]:
+                try:
+                    await asyncio.to_thread(AndroidSpeechOutput().speak,text,threading.Event())
+                    results.append(label+': озвучено');ready+=1
+                except Exception as error:
+                    results.append(label+': '+str(error).removeprefix('Bad state: '))
+            feedback.value='\n'.join(results)
+            on_status('Озвучивание проверено' if ready==2 else 'Озвучивание проверено частично' if ready else 'Озвучивание не готово')
         except Exception as error:
             feedback.value = str(error)
             on_status('Озвучивание не готово')
-        else:
-            feedback.value = 'Русская и английская фразы озвучены. Голос меняется в настройках Android.'
-            on_status('Озвучивание проверено')
         finally:
             preview_button.disabled = False
             page.update()

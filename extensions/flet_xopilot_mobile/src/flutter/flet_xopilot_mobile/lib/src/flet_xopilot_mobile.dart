@@ -1,4 +1,9 @@
+// Файл: /extensions/flet_xopilot_mobile/lib/src/flet_xopilot_mobile.dart
+// Разработчик: DenBroLiik
+// Версия: 2.0.9
+// Описание: Нативные службы Android, запись и офлайн-озвучивание Live.
 import 'dart:async';
+import 'speech_voices.dart';
 import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
@@ -179,9 +184,7 @@ class XopilotMobileService extends FletService with WidgetsBindingObserver {
     }
     final locale = args['language'] == 'en' ? 'en' : 'ru';
     final voices = await tts.getVoices;
-    final local = (voices as List).where((voice) =>
-      voice['locale'].toString().startsWith(locale) &&
-      (voice['network_required'] == false || voice['network_required'] == 'false')).toList();
+    final local = offlineVoices(voices, locale);
     if (local.isEmpty) throw StateError('Установите офлайн-голос $locale в настройках синтеза речи Android');
     await tts.setVoice({'name': local.first['name'].toString(), 'locale': local.first['locale'].toString()});
     await tts.awaitSpeakCompletion(true);
