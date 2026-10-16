@@ -78,9 +78,10 @@ def build_cloud_card(page):
         pending = None
         cancelled = False
         closed = False
-        status = ft.Text('Открываем вход через Google…', size=13, color=color('#47747a'))
+        status = ft.Text('Подключаемся к серверу входа…', size=13, color=color('#47747a'))
         launch = action_button('Открыть браузер', icon=ft.Icons.OPEN_IN_NEW, secondary=True)
-        abort = ft.TextButton(content='Отмена')
+        launch.disabled=True
+        abort = ft.TextButton(content='Назад')
 
         def close_dialog():
             nonlocal closed
@@ -94,7 +95,7 @@ def build_cloud_card(page):
                     from ...services.external_browser import open_external
                 except ImportError:
                     from services.external_browser import open_external
-                await open_external(pending['browser_url'])
+                await asyncio.wait_for(open_external(pending['browser_url']),timeout=12)
                 status.value = 'Выберите аккаунт Google в браузере, затем вернитесь в Xopilot.'
             except Exception:
                 status.value = 'Не удалось открыть браузер. Нажмите «Открыть браузер» для повторной попытки.'
@@ -119,7 +120,6 @@ def build_cloud_card(page):
         try:
             feedback.value = 'Подготавливаем вход Google…'
             page.update()
-            pending = await asyncio.to_thread(cloud_account.begin_google, link=link)
             launch.on_click = open_browser
             abort.on_click = stop
             page.show_dialog(ft.AlertDialog(modal=True, bgcolor=color('#eafffa'),
@@ -128,6 +128,11 @@ def build_cloud_card(page):
                     ft.ProgressRing(width=28, height=28), status,
                     ft.Text('Пароль Google вводится только на сайте Google. Пароль шифрования синхронизации остаётся отдельным.',
                             size=12, color=color('#47747a'))]), actions=[abort, launch]))
+            pending = await asyncio.to_thread(cloud_account.begin_google, link=link)
+            if cancelled:
+                return
+            launch.disabled=False
+            page.update()
             await open_browser(None)
             started = time.monotonic()
             while not cancelled and time.monotonic() - started < 600:
@@ -152,9 +157,12 @@ def build_cloud_card(page):
                 if not cancelled:
                     raise cloud_account.CloudError('google_expired')
         except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning('Google login failed',exc_info=True)
             feedback.value = str(exc)
-            if pending and not closed:
-                close_dialog()
+            if not closed:
+                status.value = str(exc)
+                abort.disabled=False
         finally:
             if pending:
                 try:

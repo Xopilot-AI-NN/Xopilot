@@ -11,7 +11,14 @@ async def open_external(url):
         if parts.scheme != 'https':
             raise ValueError('Для Android-входа требуется HTTPS')
         from .mobile_runtime import call_async
-        await call_async('openBrowser', {'url': url})
+        import asyncio
+        try:
+            result=await asyncio.wait_for(call_async('openBrowser', {'url': url}),timeout=5)
+            if result is False:raise RuntimeError('Браузер не открылся')
+        except Exception:
+            import flet as ft
+            if not await ft.UrlLauncher().launch_url(url,mode=ft.LaunchMode.EXTERNAL_APPLICATION):
+                raise RuntimeError('Не удалось открыть браузер. Проверьте, установлен ли браузер по умолчанию.')
     else:
         import flet as ft
         await ft.UrlLauncher().launch_url(url, mode=ft.LaunchMode.EXTERNAL_APPLICATION,

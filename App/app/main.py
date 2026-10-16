@@ -1694,14 +1694,22 @@ def build_app_ui(page: ft.Page) -> ft.Control:
             if dialog.open:
                 fit_dialog(page, dialog)
         page.update()
-    page.on_resize = resize_layout
-    page.on_media_change = resize_layout
+    layout_revision=0
+    async def settled_layout(version):
+        await asyncio.sleep(.12)
+        if version==layout_revision:resize_layout()
+    def schedule_layout(event=None):
+        nonlocal layout_revision
+        layout_revision+=1
+        page.run_task(settled_layout,layout_revision)
+    page.on_resize = schedule_layout if is_android() else resize_layout
+    page.on_media_change = schedule_layout if is_android() else resize_layout
     if is_android():
         try:
             from ..services.mobile_runtime import bind_viewport
         except ImportError:
             from services.mobile_runtime import bind_viewport
-        bind_viewport(page, resize_layout)
+        bind_viewport(page, schedule_layout)
         async def recover_files():
             destination = navigation.read()
             try:

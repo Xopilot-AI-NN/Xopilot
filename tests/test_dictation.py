@@ -110,7 +110,7 @@ class MicrophoneTests(unittest.TestCase):
             self.recorder.stop()
 
     def test_missing_portaudio_is_a_recoverable_error(self):
-        with patch.object(microphone, "sd", None):
+        with patch.object(microphone, "sd", None), patch.object(microphone,"_import_attempted",True):
             with self.assertRaisesRegex(RuntimeError, "PortAudio"):
                 self.recorder.start()
 

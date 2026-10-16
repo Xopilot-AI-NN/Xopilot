@@ -246,6 +246,12 @@ class MobilePageTests(unittest.IsolatedAsyncioTestCase):
         from App.app import main as main_ui
         from App.services import chat_store
         page = Mock(width=393, height=851, web=True, services=[], _dialogs=Mock(controls=[]))
+        async def settle_layout():
+            # Android delivers intermediate metrics before the final keyboard frame.
+            for _ in range(2):
+                call=page.run_task.call_args
+                if call and getattr(call.args[0],'__name__','') in ('settled','settled_layout'):
+                    await call.args[0](*call.args[1:])
         with TemporaryDirectory() as folder, db.advanced_xopilot.PyDatabase(str(Path(folder)/'phone.db'),key='d4'*32) as native:
             with patch.object(db, '_db', native), patch.object(chat_store, '_active_chat_id', None), \
                     patch.object(main_ui, 'install_theme'), patch.object(main_ui, 'get_selected_chat_model', return_value=None):
@@ -290,12 +296,14 @@ class MobilePageTests(unittest.IsolatedAsyncioTestCase):
                         page.width, page.height = 720, 360
                         page.media = SimpleNamespace(view_insets=ft.Padding.only(bottom=190))
                         page.on_media_change(page.media)
+                        await settle_layout()
                         self.assertEqual(header.height, 0)
                         self.assertEqual(prompt.max_lines, 1)
                         self.assertEqual(prompt.value, 'Первое сообщение с телефона')
                         self.assertTrue(send.visible)
                         page.media.view_insets = ft.Padding.all(0)
                         page.on_media_change(page.media)
+                        await settle_layout()
                         self.assertIsNone(header.height)
                         self.assertEqual(prompt.max_lines, 4)
                         self.assertEqual(prompt.value, 'Первое сообщение с телефона')
@@ -305,12 +313,14 @@ class MobilePageTests(unittest.IsolatedAsyncioTestCase):
                         with patch.object(mobile_runtime, '_service', service):
                             mobile_runtime.bind_viewport(page, page.on_resize)
                             service.on_metrics(SimpleNamespace(data={'height': 97, 'keyboard': 263}))
+                            await settle_layout()
                             self.assertEqual(header.height, 0)
                             self.assertEqual(prompt.max_lines, 1)
                             self.assertTrue(card.content.controls[-2].visible)
                             self.assertEqual(prompt.height, 28)
                             self.assertNotIn(prompt, card.content.controls[-1].content.controls)
                             service.on_metrics(SimpleNamespace(data={'height': 360, 'keyboard': 0}))
+                            await settle_layout()
                             self.assertIsNone(header.height)
                             self.assertTrue(card.content.controls[-2].visible)
                             self.assertNotIn(prompt, card.content.controls[-1].content.controls)

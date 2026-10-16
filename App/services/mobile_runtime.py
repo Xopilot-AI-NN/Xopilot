@@ -85,7 +85,12 @@ async def call_async(method, arguments=None):
 
 
 def bind_viewport(page, changed):
+    revision=0
+    async def settled(version):
+        await asyncio.sleep(.12)
+        if version==revision:changed()
     def apply(data):
+        nonlocal revision
         height = data.get('height') if isinstance(data, dict) else None
         keyboard = data.get('keyboard', 0) if isinstance(data, dict) else 0
         keyboard = keyboard if isinstance(keyboard, (int, float)) and keyboard >= 0 else 0
@@ -94,7 +99,8 @@ def bind_viewport(page, changed):
             page.__dict__.get('_xopilot_keyboard_height') != keyboard):
             page.__dict__['_xopilot_available_height'] = height
             page.__dict__['_xopilot_keyboard_height'] = keyboard
-            changed()
+            revision+=1
+            page.run_task(settled,revision)
 
     _service.on_metrics = lambda event: apply(event.data)
     _service.update()

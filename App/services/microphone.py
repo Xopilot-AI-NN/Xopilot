@@ -12,13 +12,18 @@ import time
 import wave
 from array import array
 
-try:
-    import sounddevice as sd
+sd = None
+_IMPORT_ERROR = None
+_import_attempted = False
 
-    _IMPORT_ERROR = None
-except Exception as exc:
-    sd = None
-    _IMPORT_ERROR = exc
+def _load_audio():
+    global sd, _IMPORT_ERROR, _import_attempted
+    if sd is not None or _import_attempted:return
+    _import_attempted=True
+    try:
+        import sounddevice
+        sd=sounddevice
+    except Exception as exc:_IMPORT_ERROR=exc
 
 
 # Один аудиосегмент Gemma 4 поддерживает до 30 секунд.
@@ -58,6 +63,7 @@ class MicrophoneRecorder:
         with self._lock:
             if self._stream is not None:
                 raise RuntimeError("Микрофон уже записывает звук.")
+            _load_audio()
             if sd is None:
                 raise RuntimeError(
                     "Микрофон недоступен: нужны sounddevice и PortAudio. "
