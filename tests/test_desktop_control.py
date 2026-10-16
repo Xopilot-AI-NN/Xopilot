@@ -14,6 +14,10 @@ from App.services import desktop_control as desktop
 
 
 class DesktopTests(unittest.TestCase):
+    @unittest.skipUnless(
+        sys.platform.startswith("linux"),
+        "Requires Linux desktop environment",
+    )
     def test_cursor_overlay_failure_does_not_fail_or_repeat_completed_action(self):
         import subprocess
         code="""
