@@ -8,6 +8,8 @@
 import sys
 import tempfile
 import unittest
+import asyncio
+import threading
 from unittest.mock import Mock
 from App.app.tasks.task_messages import TaskMessages, code_block, group_action_controls
 from App.services import task_processes
@@ -15,6 +17,32 @@ from App.app.tasks.task_summaries import decode, summarize
 
 
 class MessageTests(unittest.IsolatedAsyncioTestCase):
+    async def test_slow_journal_write_keeps_ui_running_and_drain_waits_for_save(self):
+        page=Mock();view=Mock(controls=[])
+        loop=asyncio.get_running_loop()
+        page.run_task=lambda function,*args:asyncio.run_coroutine_threadsafe(function(*args),loop)
+        entered=threading.Event();release=threading.Event();ui_thread=threading.get_ident()
+        def save(*args):
+            self.assertNotEqual(threading.get_ident(),ui_thread)
+            entered.set()
+            if not release.wait(2):raise AssertionError('write was never released')
+            return 42
+        recorded=[]
+        journal=TaskMessages(page,1,'project',current_chat=lambda:1,chat_list=view,
+            save=save,update=Mock(),on_record=lambda *args:recorded.append(threading.get_ident()))
+        journal.dispatch(dict(id='screen',tool='computer_view',label='Просмотр экрана',
+                              arguments={},phase='result',result={'captured':True,'controls':[]}))
+        try:
+            self.assertTrue(await asyncio.to_thread(entered.wait,1))
+            drain=asyncio.create_task(journal.drain())
+            await asyncio.sleep(.03)
+            self.assertFalse(drain.done())
+            self.assertEqual(recorded,[])
+        finally:release.set()
+        await drain
+        self.assertEqual(journal.items['screen']['message_id'],42)
+        self.assertEqual(recorded,[ui_thread])
+
     async def test_multiple_tools_share_one_collapsed_turn_and_keep_individual_records(self):
         page=Mock();chat=Mock(controls=[]);save=Mock(side_effect=[11,12])
         journal=TaskMessages(page,1,'project',current_chat=lambda:1,chat_list=chat,save=save,update=Mock())

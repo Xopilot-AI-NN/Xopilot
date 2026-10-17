@@ -804,7 +804,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                         else:chat_context.append({'role':'ai','content':content,'id':identifier})
                     async def append_comment(content):
                         if request_cancelled.is_set():return
-                        identifier=save_ai_message(request_chat_id,content)
+                        identifier=await asyncio.to_thread(save_ai_message,request_chat_id,content)
                         remember_action(identifier,content)
                         if active_chat_id==request_chat_id:
                             chat_list.controls.insert(0,build_ai_message(content,on_action=handle_message_action,message_id=identifier,animate=True))
@@ -817,7 +817,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                         def refresh():
                             if is_sending:
                                 composer_label.value = value
-                                page.update()
+                                composer_status.update()
                         loop.call_soon_threadsafe(refresh)
                     def approve_action(request):
                         done=threading.Event();answer=[False]
@@ -871,11 +871,14 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                         while not done.wait(0.2):
                             if request_cancelled.is_set():return False
                         return answer[0]
-                    reply_text = await asyncio.to_thread(run_agent, text, chat_id=request_chat_id,
-                        history=request_history, attachments=[*shared_files, *sent_attachments],
-                        instructions=instructions,level=tool_level,cancelled=request_cancelled,approve=approve_action,
-                        on_progress=progress, generate=reply_generator,task=task_control,network=use_api, request_id=new_id if new_id is not None else chat_context[-1].get('id'),
-                        on_action=task_messages.dispatch,on_message=task_messages.comment)
+                    try:
+                        reply_text = await asyncio.to_thread(run_agent, text, chat_id=request_chat_id,
+                            history=request_history, attachments=[*shared_files, *sent_attachments],
+                            instructions=instructions,level=tool_level,cancelled=request_cancelled,approve=approve_action,
+                            on_progress=progress, generate=reply_generator,task=task_control,network=use_api, request_id=new_id if new_id is not None else chat_context[-1].get('id'),
+                            on_action=task_messages.dispatch,on_message=task_messages.comment)
+                    finally:
+                        await task_messages.drain()
                 else:
                     reply_text = await asyncio.to_thread(
                         task_control.generate, reply_generator, text, network=use_api,

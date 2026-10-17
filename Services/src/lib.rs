@@ -62,7 +62,7 @@ impl From<StoredMessage> for PyMessage {
 }
 
 /// Python-обёртка над db::Database. Mutex — потому что PyO3-объекты должны быть Sync,
-/// а rusqlite::Connection — нет (в десктопном клиенте конкурентного доступа и так не будет, накладные расходы минимальны).
+/// а rusqlite::Connection — нет. SQL и ожидание Mutex выполняются без GIL; UI вызывает запись через worker.
 #[pyclass]
 struct PyDatabase {
     inner: Mutex<Option<Database>>,
@@ -74,67 +74,79 @@ impl PyDatabase {
     /// callers may keep using the existing system key resolver.
     #[new]
     #[pyo3(signature = (path, key=None))]
-    fn new(path: String, key: Option<String>) -> PyResult<Self> {
-        let db_path = std::path::PathBuf::from(&path);
-        let fallback_dir = db_path
-            .parent()
-            .map(|p| p.to_path_buf())
-            .unwrap_or_else(|| std::path::PathBuf::from("."));
+    fn new(py: Python<'_>, path: String, key: Option<String>) -> PyResult<Self> {
+        py.detach(|| {
+            let db_path = std::path::PathBuf::from(&path);
+            let fallback_dir = db_path
+                .parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| std::path::PathBuf::from("."));
 
-        let existing = db_path.metadata().map(|m| m.len() > 0).unwrap_or(false);
-        let keys = if let Some(key) = key {
-            if key.len() != 64 || !key.bytes().all(|c| c.is_ascii_hexdigit()) {
-                return Err(PyRuntimeError::new_err("Ключ БД должен содержать 32 байта в hex-формате."));
+            let existing = db_path.metadata().map(|m| m.len() > 0).unwrap_or(false);
+            let keys = if let Some(key) = key {
+                if key.len() != 64 || !key.bytes().all(|c| c.is_ascii_hexdigit()) {
+                    return Err(PyRuntimeError::new_err("Ключ БД должен содержать 32 байта в hex-формате."));
+                }
+                vec![key]
+            } else {
+                security::get_db_keys(&fallback_dir, existing).map_err(PyRuntimeError::new_err)?
+            };
+            let mut last_error = None;
+            for key in keys {
+                match Database::open(&path, &key) {
+                    Ok(db) => return Ok(PyDatabase { inner: Mutex::new(Some(db)) }),
+                    Err(error) => last_error = Some(error),
+                }
             }
-            vec![key]
-        } else {
-            security::get_db_keys(&fallback_dir, existing).map_err(PyRuntimeError::new_err)?
-        };
-        let mut last_error = None;
-        for key in keys {
-            match Database::open(&path, &key) {
-                Ok(db) => return Ok(PyDatabase { inner: Mutex::new(Some(db)) }),
-                Err(error) => last_error = Some(error),
-            }
-        }
-        Err(to_py_err(last_error.expect("key resolver returned no keys")))
+            Err(to_py_err(last_error.expect("key resolver returned no keys")))
+        })
     }
 
     /// Close deterministically even when UI callbacks still retain this object.
-    fn close(&self) {
-        self.inner.lock().unwrap().take();
+    fn close(&self, py: Python<'_>) {
+        py.detach(|| {
+            self.inner.lock().unwrap().take();
+        })
     }
 
     fn __enter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
         slf
     }
 
-    fn __exit__(&self, _ty: &Bound<'_, PyAny>, _value: &Bound<'_, PyAny>, _trace: &Bound<'_, PyAny>) {
-        self.close();
+    fn __exit__(&self, py: Python<'_>, _ty: &Bound<'_, PyAny>, _value: &Bound<'_, PyAny>, _trace: &Bound<'_, PyAny>) {
+        self.close(py);
     }
 
-    fn set_setting(&self, key: String, value: String) -> PyResult<()> {
-        self.inner.lock().unwrap().as_ref().ok_or_else(|| PyRuntimeError::new_err("База данных закрыта"))?
-            .set_setting(&key, &value)
-            .map_err(to_py_err)
+    fn set_setting(&self, py: Python<'_>, key: String, value: String) -> PyResult<()> {
+        py.detach(|| {
+            self.inner.lock().unwrap().as_ref().ok_or_else(|| PyRuntimeError::new_err("База данных закрыта"))?
+                .set_setting(&key, &value)
+                .map_err(to_py_err)
+        })
     }
 
-    fn get_setting(&self, key: String) -> PyResult<Option<String>> {
-        self.inner.lock().unwrap().as_ref().ok_or_else(|| PyRuntimeError::new_err("База данных закрыта"))?.get_setting(&key).map_err(to_py_err)
+    fn get_setting(&self, py: Python<'_>, key: String) -> PyResult<Option<String>> {
+        py.detach(|| {
+            self.inner.lock().unwrap().as_ref().ok_or_else(|| PyRuntimeError::new_err("База данных закрыта"))?.get_setting(&key).map_err(to_py_err)
+        })
     }
 
-    fn all_settings(&self) -> PyResult<Vec<(String, String, i64)>> {
-        self.inner.lock().unwrap().as_ref().ok_or_else(|| PyRuntimeError::new_err("База данных закрыта"))?.all_settings().map_err(to_py_err)
+    fn all_settings(&self, py: Python<'_>) -> PyResult<Vec<(String, String, i64)>> {
+        py.detach(|| {
+            self.inner.lock().unwrap().as_ref().ok_or_else(|| PyRuntimeError::new_err("База данных закрыта"))?.all_settings().map_err(to_py_err)
+        })
     }
 
-    fn create_chat(&self, title: String) -> PyResult<i64> {
-        self.inner.lock().unwrap().as_ref().ok_or_else(|| PyRuntimeError::new_err("База данных закрыта"))?.create_chat(&title).map_err(to_py_err)
+    fn create_chat(&self, py: Python<'_>, title: String) -> PyResult<i64> {
+        py.detach(|| {
+            self.inner.lock().unwrap().as_ref().ok_or_else(|| PyRuntimeError::new_err("База данных закрыта"))?.create_chat(&title).map_err(to_py_err)
+        })
     }
 
     /// quote/reply_to — произвольный текст или None. attachments — список (имя, путь), по умолчанию пустой.
     #[pyo3(signature = (chat_id, role, content, quote=None, reply_to=None, attachments=vec![]))]
     fn add_message(
-        &self,
+        &self, py: Python<'_>,
         chat_id: i64,
         role: String,
         content: String,
@@ -142,77 +154,105 @@ impl PyDatabase {
         reply_to: Option<String>,
         attachments: Vec<(String, String)>,
     ) -> PyResult<i64> {
-        self.inner.lock().unwrap().as_ref().ok_or_else(|| PyRuntimeError::new_err("База данных закрыта"))?
-            .add_message_full(
-                chat_id,
-                &role,
-                &content,
-                quote.as_deref(),
-                reply_to.as_deref(),
-                &attachments,
-            )
-            .map_err(to_py_err)
+        py.detach(|| {
+            self.inner.lock().unwrap().as_ref().ok_or_else(|| PyRuntimeError::new_err("База данных закрыта"))?
+                .add_message_full(
+                    chat_id,
+                    &role,
+                    &content,
+                    quote.as_deref(),
+                    reply_to.as_deref(),
+                    &attachments,
+                )
+                .map_err(to_py_err)
+        })
     }
 
     #[pyo3(signature = (message_id, content, attachments=None))]
-    fn update_message(&self, message_id: i64, content: String, attachments: Option<Vec<(String, String)>>) -> PyResult<bool> {
-        let guard = self.inner.lock().unwrap();
-        let database = guard.as_ref().ok_or_else(|| PyRuntimeError::new_err("База данных закрыта"))?;
-        match attachments {
-            Some(items) => database.update_message_full(message_id, &content, &items),
-            None => database.update_message(message_id, &content),
-        }.map_err(to_py_err)
+    fn update_message(&self, py: Python<'_>, message_id: i64, content: String, attachments: Option<Vec<(String, String)>>) -> PyResult<bool> {
+        py.detach(|| {
+            let guard = self.inner.lock().unwrap();
+            let database = guard.as_ref().ok_or_else(|| PyRuntimeError::new_err("База данных закрыта"))?;
+            match attachments {
+                Some(items) => database.update_message_full(message_id, &content, &items),
+                None => database.update_message(message_id, &content),
+            }.map_err(to_py_err)
+        })
     }
 
-    fn delete_message(&self, message_id: i64) -> PyResult<bool> {
-        self.inner.lock().unwrap().as_ref().ok_or_else(|| PyRuntimeError::new_err("База данных закрыта"))?.delete_message(message_id).map_err(to_py_err)
+    fn delete_message(&self, py: Python<'_>, message_id: i64) -> PyResult<bool> {
+        py.detach(|| {
+            self.inner.lock().unwrap().as_ref().ok_or_else(|| PyRuntimeError::new_err("База данных закрыта"))?.delete_message(message_id).map_err(to_py_err)
+        })
     }
 
     /// Удаляет чат целиком (сообщения и вложения — каскадно через FK на стороне SQLite).
-    fn delete_chat(&self, chat_id: i64) -> PyResult<bool> {
-        self.inner.lock().unwrap().as_ref().ok_or_else(|| PyRuntimeError::new_err("База данных закрыта"))?.delete_chat(chat_id).map_err(to_py_err)
+    fn delete_chat(&self, py: Python<'_>, chat_id: i64) -> PyResult<bool> {
+        py.detach(|| {
+            self.inner.lock().unwrap().as_ref().ok_or_else(|| PyRuntimeError::new_err("База данных закрыта"))?.delete_chat(chat_id).map_err(to_py_err)
+        })
     }
 
-    fn get_messages(&self, chat_id: i64) -> PyResult<Vec<PyMessage>> {
-        self.inner.lock().unwrap().as_ref().ok_or_else(|| PyRuntimeError::new_err("База данных закрыта"))?
-            .get_messages(chat_id)
-            .map(|messages| messages.into_iter().map(PyMessage::from).collect())
-            .map_err(to_py_err)
+    fn get_messages(&self, py: Python<'_>, chat_id: i64) -> PyResult<Vec<PyMessage>> {
+        py.detach(|| {
+            self.inner.lock().unwrap().as_ref().ok_or_else(|| PyRuntimeError::new_err("База данных закрыта"))?
+                .get_messages(chat_id)
+                .map(|messages| messages.into_iter().map(PyMessage::from).collect())
+                .map_err(to_py_err)
+        })
     }
 
-    fn list_chats(&self) -> PyResult<Vec<(i64, String, i64)>> {
-        self.inner.lock().unwrap().as_ref().ok_or_else(|| PyRuntimeError::new_err("База данных закрыта"))?.list_chats().map_err(to_py_err)
+    fn list_chats(&self, py: Python<'_>) -> PyResult<Vec<(i64, String, i64)>> {
+        py.detach(|| {
+            self.inner.lock().unwrap().as_ref().ok_or_else(|| PyRuntimeError::new_err("База данных закрыта"))?.list_chats().map_err(to_py_err)
+        })
     }
 
-    fn rename_chat(&self, chat_id: i64, title: String) -> PyResult<bool> {
-        self.inner.lock().unwrap().as_ref().ok_or_else(|| PyRuntimeError::new_err("База данных закрыта"))?.rename_chat(chat_id, &title).map_err(to_py_err)
+    fn rename_chat(&self, py: Python<'_>, chat_id: i64, title: String) -> PyResult<bool> {
+        py.detach(|| {
+            self.inner.lock().unwrap().as_ref().ok_or_else(|| PyRuntimeError::new_err("База данных закрыта"))?.rename_chat(chat_id, &title).map_err(to_py_err)
+        })
     }
 
-    fn list_chat_summaries(&self) -> PyResult<Vec<(i64, String, i64)>> {
-        self.inner.lock().unwrap().as_ref().ok_or_else(|| PyRuntimeError::new_err("База данных закрыта"))?.list_chat_summaries().map_err(to_py_err)
+    fn list_chat_summaries(&self, py: Python<'_>) -> PyResult<Vec<(i64, String, i64)>> {
+        py.detach(|| {
+            self.inner.lock().unwrap().as_ref().ok_or_else(|| PyRuntimeError::new_err("База данных закрыта"))?.list_chat_summaries().map_err(to_py_err)
+        })
     }
 
-    fn sync_chat_snapshot(&self, chat_id: i64) -> PyResult<Option<String>> {
-        self.inner.lock().unwrap().as_ref().ok_or_else(|| PyRuntimeError::new_err("База данных закрыта"))?.sync_chat_snapshot(chat_id).map_err(to_py_err)
+    fn sync_chat_snapshot(&self, py: Python<'_>, chat_id: i64) -> PyResult<Option<String>> {
+        py.detach(|| {
+            self.inner.lock().unwrap().as_ref().ok_or_else(|| PyRuntimeError::new_err("База данных закрыта"))?.sync_chat_snapshot(chat_id).map_err(to_py_err)
+        })
     }
     #[pyo3(signature=(chat_id, expected, payload, ledger_key, ledger))]
-    fn apply_sync_chat(&self, chat_id: Option<i64>, expected: Option<String>, payload: Option<String>, ledger_key: String, ledger: String) -> PyResult<Option<i64>> {
-        self.inner.lock().unwrap().as_ref().ok_or_else(|| PyRuntimeError::new_err("База данных закрыта"))?.apply_sync_chat(chat_id,expected.as_deref(),payload.as_deref(),&ledger_key,&ledger).map_err(to_py_err)
+    fn apply_sync_chat(&self, py: Python<'_>, chat_id: Option<i64>, expected: Option<String>, payload: Option<String>, ledger_key: String, ledger: String) -> PyResult<Option<i64>> {
+        py.detach(|| {
+            self.inner.lock().unwrap().as_ref().ok_or_else(|| PyRuntimeError::new_err("База данных закрыта"))?.apply_sync_chat(chat_id,expected.as_deref(),payload.as_deref(),&ledger_key,&ledger).map_err(to_py_err)
+        })
     }
-    fn apply_sync_settings(&self, expected: Vec<(String,Option<String>)>, updates: Vec<(String,String)>) -> PyResult<bool> {
-        self.inner.lock().unwrap().as_ref().ok_or_else(|| PyRuntimeError::new_err("База данных закрыта"))?.apply_sync_settings(&expected,&updates).map_err(to_py_err)
-    }
-
-    fn schema_version(&self) -> PyResult<i32> {
-        self.inner.lock().unwrap().as_ref().ok_or_else(|| PyRuntimeError::new_err("База данных закрыта"))?.schema_version().map_err(to_py_err)
-    }
-
-    fn total_message_count(&self) -> PyResult<i64> {
-        self.inner.lock().unwrap().as_ref().ok_or_else(|| PyRuntimeError::new_err("База данных закрыта"))?.total_message_count().map_err(to_py_err)
+    fn apply_sync_settings(&self, py: Python<'_>, expected: Vec<(String,Option<String>)>, updates: Vec<(String,String)>) -> PyResult<bool> {
+        py.detach(|| {
+            self.inner.lock().unwrap().as_ref().ok_or_else(|| PyRuntimeError::new_err("База данных закрыта"))?.apply_sync_settings(&expected,&updates).map_err(to_py_err)
+        })
     }
 
-    fn clear_chat_messages(&self, chat_id: i64) -> PyResult<()> {
-        self.inner.lock().unwrap().as_ref().ok_or_else(|| PyRuntimeError::new_err("База данных закрыта"))?.clear_chat_messages(chat_id).map_err(to_py_err)
+    fn schema_version(&self, py: Python<'_>) -> PyResult<i32> {
+        py.detach(|| {
+            self.inner.lock().unwrap().as_ref().ok_or_else(|| PyRuntimeError::new_err("База данных закрыта"))?.schema_version().map_err(to_py_err)
+        })
+    }
+
+    fn total_message_count(&self, py: Python<'_>) -> PyResult<i64> {
+        py.detach(|| {
+            self.inner.lock().unwrap().as_ref().ok_or_else(|| PyRuntimeError::new_err("База данных закрыта"))?.total_message_count().map_err(to_py_err)
+        })
+    }
+
+    fn clear_chat_messages(&self, py: Python<'_>, chat_id: i64) -> PyResult<()> {
+        py.detach(|| {
+            self.inner.lock().unwrap().as_ref().ok_or_else(|| PyRuntimeError::new_err("База данных закрыта"))?.clear_chat_messages(chat_id).map_err(to_py_err)
+        })
     }
 }
 

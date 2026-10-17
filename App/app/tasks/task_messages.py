@@ -9,6 +9,8 @@ import json
 import re
 import shlex
 import uuid
+import threading
+from concurrent.futures import Future
 import flet as ft
 from ..theme.palette import color, apply_palette
 from .task_summaries import PREFIX, describe, summarize, context
@@ -78,17 +80,34 @@ class TaskMessages:
         self.items={}
         self.turn=uuid.uuid4().hex
         self.group=None
+        self._pending=set()
+        self._pending_lock=threading.Lock()
+
+    def _track(self,future):
+        if not isinstance(future,(Future,asyncio.Future)):return
+        with self._pending_lock:self._pending.add(future)
+        def finished(_):
+            with self._pending_lock:self._pending.discard(future)
+        future.add_done_callback(finished)
+
+    async def drain(self):
+        """Persist emitted steps/comments before saving the final answer."""
+        while True:
+            with self._pending_lock:pending=list(self._pending)
+            if not pending:return
+            await asyncio.gather(*(asyncio.wrap_future(f) if isinstance(f,Future) else f
+                                   for f in pending),return_exceptions=True)
 
     @property
     def chat_list(self):
         return self._chat_list if hasattr(self._chat_list,"controls") else self._chat_list()
 
     def dispatch(self,event):
-        try:self.page.run_task(self.receive,event)
+        try:self._track(self.page.run_task(self.receive,event))
         except RuntimeError:pass  # The page has disconnected; no new UI task can be scheduled.
 
     def comment(self,text):
-        if self.on_comment:self.on_comment(text)
+        if self.on_comment:self._track(self.on_comment(text))
 
     async def open_link(self,url):
         try:
@@ -146,7 +165,11 @@ class TaskMessages:
         self.refresh_group()
         return state,detail
 
-    def persist(self,item):
+    async def persist(self,item):
+        async with item['persist_lock']:
+            await self._persist(item)
+
+    async def _persist(self,item):
         state,detail=self.refresh(item)
         event=item['event'];result=event.get('result')
         record=dict(turn=getattr(item['card'],'_xopilot_action_turn',None) or self.turn,tool=event['tool'],label=event['label'],title=item['title'],state=state,
@@ -155,9 +178,9 @@ class TaskMessages:
         text=PREFIX+json.dumps(record,ensure_ascii=False)
         try:
             if item['message_id'] is None:
-                item['message_id']=self.save(self.chat_id,text)
+                item['message_id']=await asyncio.to_thread(self.save,self.chat_id,text)
                 item['card'].data=item['message_id']
-            else:self.update(item['message_id'],text)
+            else:await asyncio.to_thread(self.update,item['message_id'],text)
             if self.on_record:self.on_record(item['message_id'],context(text))
         except Exception as exc:
             self.page.show_dialog(ft.SnackBar(ft.Text('Действие выполнено, но журнал не сохранён: '+str(exc))))
@@ -168,7 +191,7 @@ class TaskMessages:
             process=task_processes.get(result.get('id'),'chat:'+str(self.chat_id),self.workspace_id)
             snapshot=await asyncio.to_thread(process.stop)
             item['event'].update(phase='result',result=snapshot)
-            self.persist(item)
+            await self.persist(item)
             if self.mounted(item):(getattr(item['card'],'_xopilot_action_parent',None) or item['card']).update()
         except Exception as exc:self.page.show_dialog(ft.SnackBar(ft.Text(str(exc))))
 
@@ -183,7 +206,7 @@ class TaskMessages:
                 if self.mounted(item):(getattr(item['card'],'_xopilot_action_parent',None) or item['card']).update()
                 previous=result
             if not result['running']:
-                if item['message_id'] is not None:self.persist(item)
+                if item['message_id'] is not None:await self.persist(item)
                 return
             await asyncio.sleep(1)
 
@@ -207,7 +230,7 @@ class TaskMessages:
         card=ft.Container(padding=ft.Padding.symmetric(horizontal=10,vertical=0),border_radius=8,
             bgcolor=None,content=ft.Column(spacing=0,controls=[tile,links,stop]))
         item=dict(card=card,indicator=indicator,label=label,state=state,detail=detail,stop=stop,arguments=arguments,event=event,title=title,links=links,
-                  message_id=None,watching=False)
+                  message_id=None,watching=False,persist_lock=asyncio.Lock())
         card._xopilot_action_record=True
         card._xopilot_action_turn=stored.get('turn') if stored else self.turn
         stop.on_click=lambda _:self.page.run_task(self.stop,item)
@@ -246,7 +269,7 @@ class TaskMessages:
         result=event.get('result')
         if isinstance(result,dict) and result.get('running') and not item['watching']:
             item['watching']=True;self.page.run_task(self.watch,item,result['id'])
-        if event['phase'] in {'result','error'}:self.persist(item)
+        if event['phase'] in {'result','error'}:await self.persist(item)
         if self.mounted(item):
             # Attach new controls through the page; partial list patches can leave
             # dynamically inserted tiles invisible until the next user event.

@@ -8,6 +8,7 @@
 """
 
 import os
+import threading
 from typing import Optional
 
 try:
@@ -45,6 +46,7 @@ def _app_data_dir() -> str:
 
 _db = None  # единственный экземпляр PyDatabase на процесс приложения
 _mobile_key = None
+_db_lock = threading.RLock()
 
 
 def configure_mobile_key(key):
@@ -66,6 +68,13 @@ def get_db():
     Поднимает RuntimeError, если advanced_xopilot не собран — вызывающий код должен 'reшать,
     что делать дальше (используйте get_setting/set_setting ниже — они это гасят сами).
     """
+    global _db
+    if _db is not None:return _db
+    with _db_lock:
+        return _open_db()
+
+
+def _open_db():
     global _db
     if _db is None:
         if advanced_xopilot is None:
