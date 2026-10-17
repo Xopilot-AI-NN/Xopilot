@@ -241,7 +241,7 @@ class LiveConversation:
 
     async def open_call(self, _=None):
         self._inline_open = True
-        hint = 'Говорите, пишите, прикрепляйте файлы. Камеру и экран можно включить по желанию.'
+        hint = 'Говорите свободно. Камера и экран — по желанию.'
         self._render(self.status_text.value or hint)
 
     async def end_call(self, _=None):
@@ -404,6 +404,8 @@ class LiveConversation:
         self.screen_button.content = ft.Icon(ft.Icons.STOP_SCREEN_SHARE_OUTLINED if self.screen_on else ft.Icons.SCREEN_SHARE_OUTLINED,
                                              color=color("#087f8c"), size=20)
         self.screen_button.tooltip = "Live — экран включён" if self.screen_on else "Live — трансляция экрана"
+        style_brand_button(self.camera_button, 'ai' if self.camera_on else 'navigate')
+        style_brand_button(self.screen_button, 'ai' if self.screen_on else 'navigate')
         if not self._closed and update:
             self.page.update()
 
