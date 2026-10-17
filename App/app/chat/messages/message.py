@@ -27,6 +27,7 @@
 
 
 
+import asyncio
 import flet as ft
 try:
     from ...theme.palette import color, apply_palette
@@ -180,7 +181,24 @@ def _ai_markdown_value(text: str) -> str:
     return text
 
 
-def build_ai_message(text: str, on_action=None, message_id: int | None = None, files=None) -> ft.Container:
+class MessageEntrance(ft.Container):
+    """Reveal newly received text once; history remains static while scrolling."""
+    def did_mount(self):
+        self._entrance_mounted=True
+        self.page.run_task(self.reveal)
+
+    def will_unmount(self):
+        self._entrance_mounted=False
+
+    async def reveal(self):
+        await asyncio.sleep(.016)
+        if not self._entrance_mounted:return
+        self.opacity=1
+        self.offset=ft.Offset(0,0)
+        self.update()
+
+
+def build_ai_message(text: str, on_action=None, message_id: int | None = None, files=None, animate=False) -> ft.Container:
     """Пузырь сообщения ИИ (слева). Ответ рендерится как Markdown (GitHub Flavored):
     **жирный**, *курсив*, заголовки, списки, таблицы, код с подсветкой, ссылки.
     Кнопка «Копировать» и цитаты работают с исходным Markdown-текстом."""
@@ -225,12 +243,17 @@ def build_ai_message(text: str, on_action=None, message_id: int | None = None, f
             )
         ],
     )
-    message = ft.Container(
+    message = (MessageEntrance if animate else ft.Container)(
         alignment=ft.Alignment.CENTER_LEFT,
         padding=ft.Padding.only(right=40),
         content=ft.Column(tight=True, spacing=0, controls=[bubble, footer]),
     )
     message.data = message_id if message_id is not None else text
+    if animate:
+        message.opacity=0
+        message.offset=ft.Offset(0,.025)
+        message.animate_opacity=ft.Animation(220,ft.AnimationCurve.EASE_OUT)
+        message.animate_offset=ft.Animation(220,ft.AnimationCurve.EASE_OUT_CUBIC)
 
     def handle_hover(e: ft.Event[ft.Container]):
         actions.opacity = 1 if e.data == "true" or e.data is True else 0.65

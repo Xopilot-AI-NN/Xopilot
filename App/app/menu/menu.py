@@ -187,14 +187,11 @@ def build_menu_overlay(
 ):
     is_open = False
 
-    menu_row, menu_wrapper, menu_text = _overlay_item(
-        ft.Icons.MENU, "Меню"
-    )
     new_chat_row, new_chat_wrapper, new_chat_text = _overlay_item(
         ft.Icons.ADD_COMMENT, "Новый чат"
     )
     workspaces_row, workspaces_wrapper, workspaces_text = _overlay_item(
-        ft.Icons.WORKSPACES, "Пространства"
+        ft.Icons.WORKSPACES, "Рабочие пространства"
     )
     chats_row, chats_wrapper, chats_text = _overlay_item(
         ft.Icons.CHAT_BUBBLE_OUTLINE, "Чаты"
@@ -212,7 +209,7 @@ def build_menu_overlay(
     # На телефоне навигация не должна вытеснять список переписок.
     compact = bool(page.width and page.width < 600)
     if compact:
-        for item in (menu_row,new_chat_row,workspaces_row,chats_row,materials_row,
+        for item in (new_chat_row,workspaces_row,chats_row,materials_row,
                      private_row,settings_row,account_row):
             item.height = 48
             item.padding = ft.Padding.symmetric(horizontal=8,vertical=4)
@@ -223,14 +220,13 @@ def build_menu_overlay(
     wrappers = (
         materials_wrapper,
         private_wrapper,
-        menu_wrapper,
         new_chat_wrapper,
         workspaces_wrapper,
         chats_wrapper,
         settings_wrapper,
         account_wrapper,
     )
-    texts = (materials_text,private_text,menu_text,new_chat_text,workspaces_text,chats_text,settings_text,account_text)
+    texts = (materials_text,private_text,new_chat_text,workspaces_text,chats_text,settings_text,account_text)
 
     chat_search = ft.TextField(label="Найти чат", prefix_icon=ft.Icons.SEARCH,
                               text_size=12, dense=True)
@@ -295,17 +291,6 @@ def build_menu_overlay(
         controls=[ft.Text('Ваши чаты', size=12, weight=ft.FontWeight.W_600, color=color('#087f8c')),
                   chat_search, chat_feedback, recent_chats])
 
-    extra_label = ft.Text('Показать ещё',size=13,color=color('#47747a'))
-    def extras_changed(e):
-        extra_label.value = 'Скрыть' if e.control.expanded else 'Показать ещё'
-        extra_label.update()
-    extras = ft.ExpansionTile(title=extra_label,controls=[materials_row,private_row],
-        min_tile_height=48,dense=True,maintain_state=True,
-        tile_padding=ft.Padding.symmetric(horizontal=12),controls_padding=0,
-        shape=ft.RoundedRectangleBorder(radius=12),
-        collapsed_shape=ft.RoundedRectangleBorder(radius=12),
-        icon_color=color('#47747a'),collapsed_icon_color=color('#47747a'),
-        on_change=extras_changed)
 
     panel = ft.Container(
         width=PANEL_WIDTH,
@@ -335,7 +320,7 @@ def build_menu_overlay(
                 ft.Column(
                     spacing=2 if compact else 8,
                     horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
-                    controls=[menu_row,new_chat_row,workspaces_row,chats_row,extras],
+                    controls=[new_chat_row,chats_row,workspaces_row,materials_row,private_row],
                 ),
                 history_panel,
                 ft.Column(
@@ -404,7 +389,6 @@ def build_menu_overlay(
         else:
             await handle_panel_click(on_new_chat_click, event)
 
-    menu_row.on_click = handle_scrim_click
     new_chat_row.on_click = handle_new_chat_click
 
     async def handle_settings_click(event):

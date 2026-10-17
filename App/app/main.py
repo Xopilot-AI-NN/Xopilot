@@ -801,7 +801,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                         identifier=save_ai_message(request_chat_id,content)
                         remember_action(identifier,content)
                         if active_chat_id==request_chat_id:
-                            chat_list.controls.insert(0,build_ai_message(content,on_action=handle_message_action,message_id=identifier))
+                            chat_list.controls.insert(0,build_ai_message(content,on_action=handle_message_action,message_id=identifier,animate=True))
                             chat_list.update()
                     task_messages=TaskMessages(page,request_chat_id,workspaces.chat_workspace(request_chat_id)['id'],
                         current_chat=lambda:active_chat_id,chat_list=lambda:cast(ft.ListView,chat.content),
@@ -940,7 +940,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                     return
                 # Реверс-список: ответ ИИ тоже вставляется в начало (низ визуала).
                 chat_list.controls.insert(0, build_ai_message(reply_text, on_action=handle_message_action, message_id=ai_id,
-                    files=_rebuild_files(getattr(reply_text, 'files', []))))
+                    files=_rebuild_files(getattr(reply_text, 'files', [])),animate=True))
                 chat_context.append({"role": "ai", "content": reply_text, "id": ai_id})
                 chat_list.update()
                 memory_capture.submit(text, reply_generator, private=private_request)
@@ -1610,6 +1610,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
 
     page._xopilot_connected=True
     page._xopilot_can_sync=lambda: not (remote_workspace and remote_workspace.busy) and not remote_tasks.running() and not is_sending and not live.busy and not voice_input.busy and editing_message is None and not is_private(active_chat_id)
+    page._xopilot_can_upload=lambda:not is_private(active_chat_id)
     def refresh_after_sync():
         profile_refresh=getattr(page,'_xopilot_profile_refresh',None)
         if profile_refresh:profile_refresh()
