@@ -1,4 +1,9 @@
-"""Learned voice routing, signal preprocessing, cancellation and installer integrity."""
+"""
+Файл: /tests/test_miku_voice.py
+Разработчик: DenBroLiik
+Версия: 2.0.10
+Описание: Голоса, подготовка Miku, прогресс и отмена установки. Исполнитель: Codex.
+"""
 
 from concurrent.futures import CancelledError
 import hashlib
@@ -8,6 +13,7 @@ from pathlib import Path
 import tempfile
 import threading
 import unittest
+import sys
 from unittest.mock import Mock, patch
 
 import numpy as np
@@ -84,16 +90,74 @@ class MikuSignalTests(unittest.TestCase):
 
 
 class MikuInstallationTests(unittest.TestCase):
+    def test_export_component_download_progress_is_forwarded_from_pip(self):
+        with tempfile.TemporaryDirectory() as directory:
+            events=[]
+            miku_installer._command([sys.executable,'-c',
+                'import time; print("Progress 0 of 100",flush=True); time.sleep(.2); print("Progress 50 of 100",flush=True); time.sleep(.2)'],
+                Path(directory)/'install.log',directory,on_download=events.append)
+            self.assertIn(50,[event.downloaded for event in events])
+            self.assertTrue(all(event.total==100 for event in events))
+
+    def test_export_command_cancellation_stops_child(self):
+        import time
+        with tempfile.TemporaryDirectory() as directory:
+            cancelled=threading.Event();timer=threading.Timer(.1,cancelled.set)
+            timer.start();start=time.monotonic()
+            try:
+                with self.assertRaises(CancelledError):
+                    miku_installer._command([sys.executable,'-c','import time; time.sleep(30)'],
+                        Path(directory)/'install.log',directory,cancelled=cancelled)
+            finally:timer.join()
+            self.assertLess(time.monotonic()-start,3)
+
     def test_embedded_launcher_is_not_executed_as_a_python_venv(self):
         import os
+        from App.services import voice_runtime
         with tempfile.TemporaryDirectory() as directory, \
                 patch.object(miku_installer, "app_data_dir", return_value=Path(directory)), \
                 patch.dict(os.environ, {}, clear=True), \
                 patch.object(miku_installer.sys, "executable", str(Path(directory) / "Xopilot")), \
-                patch.object(miku_installer.venv, "EnvBuilder") as builder:
-            with self.assertRaisesRegex(RuntimeError, "Python 3.14"):
-                miku_installer._export_python(Mock())
+                patch.object(miku_installer.venv, "EnvBuilder") as builder, \
+                patch.object(voice_runtime,'export_runtime',return_value=Path(directory)/'portable-python') as runtime, \
+                patch.object(miku_installer,'_command',side_effect=lambda *a,**k:(Path(directory)/'runtime/miku-export').mkdir(exist_ok=True)) as command:
+            result=miku_installer._export_python(Mock())
+            self.assertTrue(str(result).endswith('python.exe' if os.name=='nt' else 'bin/python'))
+            runtime.assert_called_once()
+            self.assertEqual(command.call_args_list[0].args[0][0],str(Path(directory)/'portable-python'))
             builder.assert_not_called()
+
+    def test_download_reports_bytes_verifies_and_cancels_without_replacing_model(self):
+        payload=b'x'*(1024*1024+5)
+        class Response(io.BytesIO):
+            headers={'Content-Length':str(len(payload))}
+        with tempfile.TemporaryDirectory() as directory:
+            target=Path(directory)/'model.onnx';events=[]
+            with patch.object(voice_installer.urllib.request,'urlopen',return_value=Response(payload)):
+                voice_installer.download_verified('https://example.invalid/model',target,
+                    hashlib.sha256(payload).hexdigest(),on_download=events.append)
+            downloaded=[event for event in events if event.phase=='download']
+            self.assertEqual([e.downloaded for e in downloaded],[0,*range(65536,len(payload),65536),len(payload)])
+            self.assertEqual(events[-1].phase,'ready')
+            self.assertTrue(all(e.total==len(payload) for e in downloaded))
+            cancelled=threading.Event()
+            def cancel(event):
+                if event.phase=='download' and event.downloaded:cancelled.set()
+            with patch.object(voice_installer.urllib.request,'urlopen',return_value=Response(payload)):
+                with self.assertRaises(CancelledError):
+                    voice_installer.download_verified('https://example.invalid/model',target,'0'*64,
+                                                     on_download=cancel,cancelled=cancelled)
+            self.assertEqual(target.read_bytes(),payload)
+            self.assertEqual(list(Path(directory).iterdir()),[target])
+
+    def test_packaged_export_sources_match_sources_and_do_not_depend_on_app_pyc(self):
+        from App.services.voice_runtime import stage_export_sources
+        with tempfile.TemporaryDirectory() as directory:
+            root=stage_export_sources(Path(directory)/'source')
+            original=Path(miku_installer.__file__).parent/'_rvc_export'
+            for path in original.iterdir():
+                if path.suffix=='.py':self.assertEqual((root/'_rvc_export'/path.name).read_bytes(),path.read_bytes())
+            self.assertTrue((root/'_rvc_export/LICENSE.rvc').is_file())
 
     def test_invalid_metadata_and_corrupted_encoder_are_rejected(self):
         with tempfile.TemporaryDirectory() as directory, \
@@ -155,6 +219,37 @@ class MikuInstallationTests(unittest.TestCase):
                 voice_installer.download_verified("https://example.invalid/model", target,
                                                   hashlib.sha256(b"valid").hexdigest())
                 request.assert_not_called()
+
+
+class VoiceInstallUITests(unittest.IsolatedAsyncioTestCase):
+    async def test_progress_is_visible_in_selected_voice_card_and_cancel_works(self):
+        import asyncio
+        import flet as ft
+        from App.settings.models import main as settings
+        page=Mock()
+        page.run_task=lambda function,*args:asyncio.create_task(function(*args))
+        started=threading.Event()
+        def install(identifier,on_progress,*,on_download,cancelled):
+            on_download(voice_installer.DownloadProgress('voice.onnx',50,100))
+            started.set()
+            if not cancelled.wait(2):raise AssertionError('UI cancellation was not delivered')
+            raise CancelledError()
+        root=settings.build_models_page(page,Mock())
+        cards=[c for c in root.controls if isinstance(c,ft.Column) and len(c.controls)==5
+               and isinstance(c.controls[1],ft.ProgressBar)]
+        self.assertEqual(len(cards),3)
+        card,bar,label,cancel,feedback=cards[1].controls
+        with patch.object(settings,'install_voice',side_effect=install):
+            pending=asyncio.create_task(card.content.controls[-1].on_click(None))
+            self.assertTrue(await asyncio.to_thread(started.wait,1))
+            await asyncio.sleep(.01)
+            self.assertTrue(bar.visible)
+            self.assertEqual(bar.value,.5)
+            self.assertIn('50%',label.value)
+            cancel.on_click(None)
+            await pending
+        self.assertFalse(bar.visible)
+        self.assertIn('отменена',feedback.value)
 
 
 if __name__ == "__main__":

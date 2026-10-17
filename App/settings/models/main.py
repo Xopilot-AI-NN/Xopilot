@@ -1,5 +1,7 @@
 """
 Файл: App/settings/models/main.py
+Разработчик: DenBroLiik
+Версия: 2.0.10
 Описание: Загрузка локальной Gemma 4 E2B и Piper-моделей голосов Live.
 
 Выбор активной модели и голоса находится в «Персонализация».
@@ -8,6 +10,9 @@
 from __future__ import annotations
 
 import asyncio
+import threading
+import time
+from concurrent.futures import CancelledError
 
 import flet as ft
 try:
@@ -98,6 +103,19 @@ def build_models_page(page, on_status, on_models_changed=None):
         color=_MUTED,
     )
     busy = False
+    cancelled=threading.Event()
+    def request_cancel(_):
+        cancelled.set()
+        for state in voice_progress.values():
+            state['cancel'].disabled=True
+            state['cancel'].content='Отменяю…'
+        page.update()
+    voice_progress={identifier:{
+        'bar':ft.ProgressBar(value=None,visible=False,color=color('#087f8c'),height=4,border_radius=2),
+        'label':ft.Text('',size=11,color=_MUTED,visible=False,max_lines=2,overflow=ft.TextOverflow.ELLIPSIS),
+        'cancel':ft.TextButton(content='Отменить загрузку',visible=False,on_click=request_cancel),
+        'feedback':ft.Text('',size=11,color=_MUTED,visible=False),
+    } for identifier in VOICES}
 
     voice_buttons: dict[str, ft.FilledButton] = {
         voice_id: ft.FilledButton(
@@ -123,35 +141,68 @@ def build_models_page(page, on_status, on_models_changed=None):
         page.update()
 
     def make_voice_installer(voice_id: str):
+        state=voice_progress[voice_id]
+        progress,progress_label,cancel,feedback=(state[key] for key in ('bar','label','cancel','feedback'))
         async def handle(_):
             if busy:
                 return
             profile = VOICES[voice_id]
+            feedback.visible=True
+            cancelled.clear()
+            cancel.disabled=False;cancel.content='Отменить загрузку'
             set_busy(True)
             voice_buttons[voice_id].content = "Загрузка…"
             feedback.value = f"Скачиваю модели голоса {profile.name} (ru + en)…"
-            feedback.color = _MUTED
+            feedback.color = color('#47747a')
             on_status(f"Загрузка {profile.name}…")
+            progress.visible=progress_label.visible=cancel.visible=True
+            progress.value=None;progress_label.value='Подготовка загрузки…'
             page.update()
             try:
                 async def show_progress(message):
+                    if not busy:return
                     feedback.value = message
+                    progress.value=None
+                    progress_label.value='Подготовка · ожидайте завершения этапа'
                     page.update()
-
+                last_update=0.0
+                loop=asyncio.get_running_loop()
+                def download_update(event):
+                    nonlocal last_update
+                    now=time.monotonic()
+                    if event.phase=='download' and event.downloaded and now-last_update<.15:return
+                    last_update=now
+                    def render():
+                        if not busy:return
+                        progress.value=(min(1,max(0,event.downloaded/event.total)) if event.total else None) if event.phase=='download' else (1 if event.phase in {'ready','cached'} else None)
+                        size=f'{event.downloaded/1048576:.1f} МБ'
+                        if event.total:size+=f' из {event.total/1048576:.1f} МБ · {min(100,event.downloaded*100/event.total):.0f}%'
+                        progress_label.value=event.name+' · '+('Проверка SHA-256…' if event.phase=='verify' else 'Уже загружено' if event.phase=='cached' else size)
+                        page.update()
+                    loop.call_soon_threadsafe(render)
                 await asyncio.to_thread(install_voice, voice_id,
-                                        lambda message: page.run_task(show_progress, message))
+                                        lambda message: page.run_task(show_progress, message),
+                                        on_download=download_update,cancelled=cancelled)
+            except (CancelledError,asyncio.CancelledError):
+                if not cancelled.is_set():
+                    cancelled.set()
+                    raise
+                feedback.value='Установка отменена. Проверенные файлы сохранены; можно повторить загрузку.'
+                feedback.color=color('#47747a')
+                on_status('Загрузка отменена')
             except Exception as exc:
                 feedback.value = f"Не удалось установить {profile.name}: {exc}"
-                feedback.color = _ERROR
+                feedback.color = color('#c94b4b')
                 on_status("Ошибка загрузки голоса")
             else:
                 feedback.value = f"Голос {profile.name} установлен. Его можно выбрать в Персонализации."
-                feedback.color = _MUTED
+                feedback.color = color('#47747a')
                 voice_buttons[voice_id].content = "Переустановить"
                 on_status(f"{profile.name} установлен")
                 if on_models_changed is not None:
                     on_models_changed()
             finally:
+                progress.visible=progress_label.visible=cancel.visible=False
                 set_busy(False)
 
         return handle
@@ -185,15 +236,15 @@ def build_models_page(page, on_status, on_models_changed=None):
         from app.settings.api_settings import open_api_settings
 
     voice_cards = [
-        _install_card(
+        ft.Column(spacing=6,controls=[_install_card(
             ft.Icons.RECORD_VOICE_OVER,
             profile.name,
             f"{profile.gender} · {profile.description}",
-            ("Piper + RVC ONNX · русский + английский · ≈ 980 МБ моделей · первый экспорт занимает несколько минут"
+            ("Piper + RVC ONNX · русский + английский · ≈ 980 МБ моделей · первая подготовка автоматически загрузит дополнительные компоненты"
              if profile.id == "miku" else "Piper ONNX · русский + английский · полностью локальная озвучка"),
             profile.installed,
             voice_buttons[voice_id],
-        )
+        ),*voice_progress[voice_id].values()])
         for voice_id, profile in VOICES.items()
     ]
     try:
