@@ -162,6 +162,23 @@ def build_models_page(page, on_status, on_models_changed=None):
     model_cards = [_install_card(ft.Icons.SMART_TOY_OUTLINED, model.name, model.description,
                     f'{model.size_label} · Hugging Face · SHA-256 проверяется после загрузки',
                     model.installed, ModelDownloadPanel(model, on_models_changed)) for model in DOWNLOADABLE_MODELS.values()]
+    async def import_file(_):
+        if busy:return
+        try:
+            from ...app.materials.file_selection import pick_materials
+            from ...services.model_installer import import_model
+        except ImportError:
+            from app.materials.file_selection import pick_materials
+            from services.model_installer import import_model
+        import_button.disabled=True;feedback.value='Выберите .litertlm файл. Проверка большой модели может занять некоторое время.';page.update()
+        try:
+            imported=await pick_materials(page,ft.FilePicker(),store=import_model)
+            if imported:
+                feedback.value='Модель импортирована, SHA-256 подтверждён'
+                if on_models_changed:on_models_changed()
+        except Exception as exc:feedback.value=str(exc)
+        finally:import_button.disabled=False;page.update()
+    import_button=ft.OutlinedButton(content='Импортировать модель из файла',icon=ft.Icons.FILE_OPEN_OUTLINED,on_click=import_file)
     try:
         from ...app.settings.api_settings import open_api_settings
     except ImportError:
@@ -201,6 +218,7 @@ def build_models_page(page, on_status, on_models_changed=None):
             section_title("ИИ"),
             ft.Text('Zephyr Micro · в разработке', color=_MUTED),
             *model_cards,
+            import_button,
             ft.OutlinedButton(content='API · настроить подключение', icon=ft.Icons.API,
                 on_click=lambda _: open_api_settings(page, on_saved=on_models_changed)),
             section_title("Голоса Live"),

@@ -75,6 +75,29 @@ def _digest_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def import_model(name, *, path=None, data=None):
+    """Import a catalog model from SAF/USB without buffering it in memory."""
+    import shutil
+    from filelock import FileLock
+    model=next((m for m in DOWNLOADABLE_MODELS.values() if m.filename==name),None)
+    if model is None or not path or data is not None:
+        raise ValueError('Выберите оригинальный .litertlm файл Gemma из каталога')
+    source=Path(path)
+    if not source.is_file():raise ValueError('Исходный файл недоступен')
+    model.path.parent.mkdir(parents=True,exist_ok=True)
+    if shutil.disk_usage(model.path.parent).free<source.stat().st_size+64*1024**2:
+        raise ValueError('Недостаточно места для импорта модели')
+    with FileLock(str(partial_path(model))+'.lock',timeout=0):
+        temporary=model.path.with_suffix('.importing')
+        try:
+            shutil.copyfile(source,temporary)
+            if _digest_file(temporary)!=model.sha256:
+                raise ValueError('SHA-256 не совпадает: файл повреждён или это другая модель')
+            os.replace(temporary,model.path)
+        finally:temporary.unlink(missing_ok=True)
+    return str(model.path)
+
+
 class DownloadPaused(Exception):
     """The verified partial download is retained for continuation."""
 

@@ -32,6 +32,11 @@ class ModelDownloadPanel(ft.Column):
         state = self.job.state
         running = state in {'downloading', 'waiting', 'verifying'}
         installed = self.model.installed and state in {'idle', 'installed'}
+        chip=getattr(self,'_xopilot_status_chip',None)
+        if chip is not None:
+            chip.content.value='Установлено' if installed else 'Не установлено'
+            chip.bgcolor=color('#d8f5e7' if installed else '#fff0d8')
+            chip.content.color=color('#08734d' if installed else '#8a5a00')
         self.bar.visible = running or state == 'paused'
         self.bar.value = min(1, self.job.downloaded / self.job.total) if self.job.total else (None if running else 0)
         size = f'{self.job.downloaded / 1024**2:.1f} МБ'

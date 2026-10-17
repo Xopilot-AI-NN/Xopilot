@@ -137,3 +137,19 @@ class ModelDownloadTests(unittest.TestCase):
         self.assertEqual(job.state, 'installed', job.error)
         self.assertEqual(self.requests[1]['Range'], 'bytes=524288-')
         self.assertEqual(self.model.path.read_bytes(), self.payload)
+
+class ModelImportTests(unittest.TestCase):
+    def test_corrupt_import_preserves_installed_model_and_valid_import_is_atomic(self):
+        with TemporaryDirectory() as tmp:
+            root=Path(tmp);source=root/'usb.litertlm';source.write_bytes(b'valid model')
+            dest=root/'models';dest.mkdir();target=dest/installer.GEMMA_4_E2B.filename
+            target.write_bytes(b'previous installed model')
+            model=replace(installer.GEMMA_4_E2B,sha256=hashlib.sha256(b'valid model').hexdigest())
+            with patch.object(installer,'MODELS_DIR',str(dest)),patch.dict(installer.DOWNLOADABLE_MODELS,{model.id:model},clear=True):
+                source.write_bytes(b'corrupted')
+                with self.assertRaisesRegex(ValueError,'SHA-256'):installer.import_model(model.filename,path=str(source))
+                self.assertEqual(target.read_bytes(),b'previous installed model')
+                source.write_bytes(b'valid model')
+                self.assertEqual(installer.import_model(model.filename,path=str(source)),str(target))
+                self.assertEqual(target.read_bytes(),b'valid model')
+                self.assertEqual(source.read_bytes(),b'valid model')
