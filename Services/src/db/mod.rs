@@ -18,7 +18,7 @@ use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Текущая версия схемы. Повышать при каждом изменении схемы и добавлять ветку в migrate().
-const CURRENT_SCHEMA_VERSION: i32 = 2;
+const CURRENT_SCHEMA_VERSION: i32 = 3;
 
 /// Одно сообщение со всеми полями: цитата/ответ — произвольный текст (не ссылка на другое сообщение по id),
 /// вложения — список (имя_файла, путь_к_файлу).
@@ -32,6 +32,8 @@ pub struct StoredMessage {
     pub reply_to: Option<String>,
     pub attachments: Vec<(String, String)>,
     pub created_at: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub elapsed_seconds: Option<f64>,
 }
 
 pub struct Database {
@@ -139,8 +141,9 @@ impl Database {
             )?;
         }
 
-        // Следующий шаг схемы для этого файла — когда будет готов согласованный дизайн синхронизации:
-        // if from_version < 3 { ... }
+        if from_version < 3 {
+            self.conn.execute_batch("ALTER TABLE messages ADD COLUMN elapsed_seconds REAL CHECK(elapsed_seconds >= 0);")?;
+        }
 
         Ok(())
     }
@@ -193,11 +196,13 @@ impl Database {
         quote: Option<&str>,
         reply_to: Option<&str>,
         attachments: &[(String, String)],
+        elapsed_seconds: Option<f64>,
     ) -> Result<i64> {
+        if elapsed_seconds.is_some_and(|v| !v.is_finite() || v < 0.0) { return Err(rusqlite::Error::InvalidQuery); }
         let transaction = self.conn.unchecked_transaction()?;
         transaction.execute(
-            "INSERT INTO messages (chat_id, role, content, quote, reply_to, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![chat_id, role, content, quote, reply_to, now()],
+            "INSERT INTO messages (chat_id, role, content, quote, reply_to, created_at, elapsed_seconds) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![chat_id, role, content, quote, reply_to, now(), elapsed_seconds],
         )?;
         let message_id = transaction.last_insert_rowid();
 
@@ -241,9 +246,14 @@ impl Database {
         Ok(true)
     }
 
+    pub fn set_message_elapsed(&self, message_id: i64, seconds: f64) -> Result<bool> {
+        if !seconds.is_finite() || seconds < 0.0 { return Err(rusqlite::Error::InvalidQuery); }
+        Ok(self.conn.execute("UPDATE messages SET elapsed_seconds=?1 WHERE id=?2", params![seconds,message_id])? > 0)
+    }
+
     pub fn get_messages(&self, chat_id: i64) -> Result<Vec<StoredMessage>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, role, content, quote, reply_to, created_at FROM messages WHERE chat_id = ?1 ORDER BY id ASC",
+            "SELECT id, role, content, quote, reply_to, created_at, elapsed_seconds FROM messages WHERE chat_id = ?1 ORDER BY id ASC",
         )?;
         let rows = stmt.query_map(params![chat_id], |row| {
             Ok(StoredMessage {
@@ -254,6 +264,7 @@ impl Database {
                 reply_to: row.get(4)?,
                 attachments: Vec::new(),
                 created_at: row.get(5)?,
+                elapsed_seconds: row.get(6)?,
             })
         })?;
         let mut messages = rows.collect::<Result<Vec<_>>>()?;
@@ -343,7 +354,8 @@ impl Database {
                 tx.last_insert_rowid()
             };
             for m in messages {
-                tx.execute("INSERT INTO messages(chat_id,role,content,quote,reply_to,created_at) VALUES(?1,?2,?3,?4,?5,?6)",params![id,m.role,m.content,m.quote,m.reply_to,m.created_at])?;
+                if m.elapsed_seconds.is_some_and(|v| !v.is_finite() || v < 0.0) { return Err(rusqlite::Error::InvalidQuery); }
+                tx.execute("INSERT INTO messages(chat_id,role,content,quote,reply_to,created_at,elapsed_seconds) VALUES(?1,?2,?3,?4,?5,?6,?7)",params![id,m.role,m.content,m.quote,m.reply_to,m.created_at,m.elapsed_seconds])?;
                 let mid=tx.last_insert_rowid();
                 for (name,path) in m.attachments {tx.execute("INSERT INTO message_attachments(message_id,name,path) VALUES(?1,?2,?3)",params![mid,name,path])?;}
             }

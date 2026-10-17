@@ -99,8 +99,9 @@ def save_user_message(
     return message_id
 
 
-def save_ai_message(chat_id: int, text: str, attachments=None) -> int:
-    return get_db().add_message(chat_id, "ai", str(text), attachments=attachments or [])
+def save_ai_message(chat_id: int, text: str, attachments=None, elapsed_seconds=None) -> int:
+    return get_db().add_message(chat_id, "ai", str(text), attachments=attachments or [],
+                                elapsed_seconds=elapsed_seconds)
 
 
 def update_message(message_id: int, text: str, attachments=None) -> bool:

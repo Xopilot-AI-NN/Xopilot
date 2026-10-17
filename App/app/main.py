@@ -119,7 +119,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
     refresh_menu_chats = lambda: None
     load_chat_messages = lambda cid: private_chats.messages(cid) if is_private(cid) else globals()['load_chat_messages'](cid)
     save_user_message = lambda cid, text, **kw: private_chats.add_message(cid, 'user', text, **kw) if is_private(cid) else globals()['save_user_message'](cid, text, **kw)
-    save_ai_message = lambda cid, text, attachments=None: private_chats.add_message(cid, 'ai', text) if is_private(cid) else globals()['save_ai_message'](cid, text, **({'attachments': attachments} if attachments else {}))
+    save_ai_message = lambda cid, text, attachments=None, elapsed_seconds=None: private_chats.add_message(cid, 'ai', text, elapsed_seconds=elapsed_seconds) if is_private(cid) else globals()['save_ai_message'](cid, text, attachments=attachments, elapsed_seconds=elapsed_seconds)
     list_chat_items = lambda: globals()['list_chat_items']() + private_chats.items()
     rename_chat = lambda cid, title: private_chats.rename(cid, title) if is_private(cid) else globals()['rename_chat'](cid, title)
     clear_chat_messages = lambda cid: private_chats.clear(cid) if is_private(cid) else globals()['clear_chat_messages'](cid)
@@ -763,6 +763,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                 page.run_task(refresh_attachments)
                 return
 
+            reply_started = time.monotonic()
             # Только реальная локальная модель. Выбор хранится отдельно для чата и Live.
             try:
                 private_request = is_private(request_chat_id)
@@ -909,9 +910,10 @@ def build_app_ui(page: ft.Page) -> ft.Control:
             failed_reason = ""
 
             if reply_text:
+                reply_elapsed = max(0.0, time.monotonic() - reply_started)
                 ai_id = None
                 try:
-                    ai_id = save_ai_message(request_chat_id, reply_text, attachments=getattr(reply_text, 'files', None))
+                    ai_id = await asyncio.to_thread(save_ai_message, request_chat_id, reply_text, attachments=getattr(reply_text, 'files', None), elapsed_seconds=reply_elapsed)
                 except Exception as exc:
                     recovery_done = False
 
@@ -920,7 +922,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                         if recovery_done:
                             return
                         try:
-                            recovered_id = save_ai_message(request_chat_id, reply_text, attachments=getattr(reply_text, 'files', None))
+                            recovered_id = await asyncio.to_thread(save_ai_message, request_chat_id, reply_text, attachments=getattr(reply_text, 'files', None), elapsed_seconds=reply_elapsed)
                         except Exception as retry_error:
                             page.show_dialog(ft.SnackBar(ft.Text(f"Запись не удалась: {retry_error}")))
                             return
@@ -928,7 +930,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                         if active_chat_id == request_chat_id:
                             chat_list.controls.insert(0, build_ai_message(
                                 reply_text, on_action=handle_message_action, message_id=recovered_id,
-                                files=_rebuild_files(getattr(reply_text, 'files', [])),
+                                files=_rebuild_files(getattr(reply_text, 'files', [])), elapsed_seconds=reply_elapsed,
                             ))
                             chat_context.append({"role": "ai", "content": reply_text, "id": recovered_id})
                             chat_list.update()
@@ -949,7 +951,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                     return
                 # Реверс-список: ответ ИИ тоже вставляется в начало (низ визуала).
                 chat_list.controls.insert(0, build_ai_message(reply_text, on_action=handle_message_action, message_id=ai_id,
-                    files=_rebuild_files(getattr(reply_text, 'files', [])),animate=True))
+                    files=_rebuild_files(getattr(reply_text, 'files', [])), elapsed_seconds=reply_elapsed,animate=True))
                 chat_context.append({"role": "ai", "content": reply_text, "id": ai_id})
                 chat_list.update()
                 memory_capture.submit(text, reply_generator, private=private_request)
@@ -1017,7 +1019,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                         chat_list=lambda:cast(ft.ListView,chat.content),save=save_ai_message,update=update_message)
                     return journal.restore(dict(id=process['id'],label='Команда проекта',tool='run_project_command',
                         arguments={'argv':process['argv']},phase='result',result=process),msg.id)
-        return build_ai_message(msg.content, on_action=handle_message_action, message_id=msg.id, files=_rebuild_files(msg.attachments))
+        return build_ai_message(msg.content, on_action=handle_message_action, message_id=msg.id, files=_rebuild_files(msg.attachments), elapsed_seconds=getattr(msg, "elapsed_seconds", None))
 
     def _prepare_chat_view(chat_id: int, stored=None):
         """Загружает историю указанного чата, готовит контекст/пагинацию и возвращает

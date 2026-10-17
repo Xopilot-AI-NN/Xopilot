@@ -45,6 +45,8 @@ struct PyMessage {
     attachments: Vec<(String, String)>,
     #[pyo3(get)]
     created_at: i64,
+    #[pyo3(get)]
+    elapsed_seconds: Option<f64>,
 }
 
 impl From<StoredMessage> for PyMessage {
@@ -57,6 +59,7 @@ impl From<StoredMessage> for PyMessage {
             reply_to: m.reply_to,
             attachments: m.attachments,
             created_at: m.created_at,
+            elapsed_seconds: m.elapsed_seconds,
         }
     }
 }
@@ -144,7 +147,7 @@ impl PyDatabase {
     }
 
     /// quote/reply_to — произвольный текст или None. attachments — список (имя, путь), по умолчанию пустой.
-    #[pyo3(signature = (chat_id, role, content, quote=None, reply_to=None, attachments=vec![]))]
+    #[pyo3(signature = (chat_id, role, content, quote=None, reply_to=None, attachments=vec![], elapsed_seconds=None))]
     fn add_message(
         &self, py: Python<'_>,
         chat_id: i64,
@@ -153,6 +156,7 @@ impl PyDatabase {
         quote: Option<String>,
         reply_to: Option<String>,
         attachments: Vec<(String, String)>,
+        elapsed_seconds: Option<f64>,
     ) -> PyResult<i64> {
         py.detach(|| {
             self.inner.lock().unwrap().as_ref().ok_or_else(|| PyRuntimeError::new_err("База данных закрыта"))?
@@ -163,6 +167,7 @@ impl PyDatabase {
                     quote.as_deref(),
                     reply_to.as_deref(),
                     &attachments,
+                    elapsed_seconds,
                 )
                 .map_err(to_py_err)
         })
@@ -190,6 +195,13 @@ impl PyDatabase {
     fn delete_chat(&self, py: Python<'_>, chat_id: i64) -> PyResult<bool> {
         py.detach(|| {
             self.inner.lock().unwrap().as_ref().ok_or_else(|| PyRuntimeError::new_err("База данных закрыта"))?.delete_chat(chat_id).map_err(to_py_err)
+        })
+    }
+
+    fn set_message_elapsed(&self, py: Python<'_>, message_id: i64, seconds: f64) -> PyResult<bool> {
+        py.detach(|| {
+            self.inner.lock().unwrap().as_ref().ok_or_else(|| PyRuntimeError::new_err("База данных закрыта"))?
+                .set_message_elapsed(message_id, seconds).map_err(to_py_err)
         })
     }
 

@@ -28,6 +28,7 @@
 
 
 import asyncio
+import math
 import flet as ft
 try:
     from ...theme.palette import color, apply_palette
@@ -198,7 +199,7 @@ class MessageEntrance(ft.Container):
         self.update()
 
 
-def build_ai_message(text: str, on_action=None, message_id: int | None = None, files=None, animate=False) -> ft.Container:
+def build_ai_message(text: str, on_action=None, message_id: int | None = None, files=None, animate=False, elapsed_seconds=None) -> ft.Container:
     """Пузырь сообщения ИИ (слева). Ответ рендерится как Markdown (GitHub Flavored):
     **жирный**, *курсив*, заголовки, списки, таблицы, код с подсветкой, ссылки.
     Кнопка «Копировать» и цитаты работают с исходным Markdown-текстом."""
@@ -243,6 +244,11 @@ def build_ai_message(text: str, on_action=None, message_id: int | None = None, f
             )
         ],
     )
+    if elapsed_seconds is not None and math.isfinite(elapsed_seconds) and elapsed_seconds >= 0:
+        seconds = float(elapsed_seconds)
+        duration = f"{seconds:.1f} с" if seconds < 60 else f"{int(seconds // 60)} мин {int(seconds % 60)} с"
+        footer.controls.append(ft.Text("Время ответа · " + duration, size=10,
+            color=color("#47747a"), tooltip="От начала подготовки до готового ответа, включая ожидание подтверждений и паузы"))
     message = (MessageEntrance if animate else ft.Container)(
         alignment=ft.Alignment.CENTER_LEFT,
         padding=ft.Padding.only(right=40),

@@ -16,6 +16,16 @@ class PrivateChatTests(unittest.TestCase):
         self.addCleanup(self.session.close_all)
         self.password = 'local-test-password'
 
+    def test_reply_duration_survives_encrypted_reopen_and_temporary_session(self):
+        for temporary in (False, True):
+            cid=self.session.create(self.password,temporary=temporary)
+            self.session.add_message(cid,'ai','Ответ',elapsed_seconds=3.25)
+            self.assertEqual(self.session.messages(cid)[0].elapsed_seconds,3.25)
+            self.session.close(cid)
+            if not temporary:
+                self.session.unlock(cid,self.password)
+                self.assertEqual(self.session.messages(cid)[0].elapsed_seconds,3.25)
+
     def test_password_isolates_transcript_draft_canvas_and_attachment(self):
         cid = self.session.create(self.password)
         original = Path(self.temp.name) / 'source.txt'

@@ -143,7 +143,9 @@ class RetryUITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.save.call_count,2)
         self.assertEqual(self.save.call_args.args[1],'Уточнение: ответь 42')
         self.assertIn('Уточнение: ответь 42',calls[-1])
-        self.save_ai.assert_called_once_with(1,'Обновлённый ответ')
+        self.save_ai.assert_called_once()
+        self.assertEqual(self.save_ai.call_args.args,(1,'Обновлённый ответ'))
+        self.assertGreaterEqual(self.save_ai.call_args.kwargs['elapsed_seconds'],0)
         self.assertEqual(self.prompt.value,'')
 
     async def test_busy_messages_wait_for_completion_and_preserve_draft(self):

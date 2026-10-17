@@ -280,7 +280,9 @@ class PersistenceUITests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(attachment[0].startswith('Камера-'))
         self.assertEqual(Path(attachment[1]).read_bytes(), b'\xff\xd8test-frame')
         self.assertEqual(generate.call_args.kwargs['attachments'], [attachment])
-        self.save_ai.assert_called_once_with(1, 'API answer')
+        self.save_ai.assert_called_once()
+        self.assertEqual(self.save_ai.call_args.args, (1, 'API answer'))
+        self.assertGreaterEqual(self.save_ai.call_args.kwargs['elapsed_seconds'], 0)
         self.assertEqual(self.prompt.value, '')
 
     async def test_api_screen_capture_failure_preserves_question_without_sending_blindly(self):
@@ -309,7 +311,9 @@ class PersistenceUITests(unittest.IsolatedAsyncioTestCase):
         self.live._capture_vision_frame.assert_awaited_once_with(update_state=False)
         self.save.assert_called_once()
         self.assertEqual(generate.call_args_list[0].kwargs['attachments'], generate.call_args_list[1].kwargs['attachments'])
-        self.save_ai.assert_called_once_with(1, 'API answer')
+        self.save_ai.assert_called_once()
+        self.assertEqual(self.save_ai.call_args.args, (1, 'API answer'))
+        self.assertGreaterEqual(self.save_ai.call_args.kwargs['elapsed_seconds'], 0)
 
     async def test_failed_save_preserves_draft_and_does_not_generate(self):
         self.save.side_effect = RuntimeError("disk full")
@@ -362,7 +366,9 @@ class PersistenceUITests(unittest.IsolatedAsyncioTestCase):
         finally:
             release.set()
             await job
-        self.save_ai.assert_called_once_with(1, "Ответ")
+        self.save_ai.assert_called_once()
+        self.assertEqual(self.save_ai.call_args.args, (1, "Ответ"))
+        self.assertGreaterEqual(self.save_ai.call_args.kwargs["elapsed_seconds"], 0)
 
     async def test_unsaved_reply_can_be_retried_without_duplicate_generation(self):
         self.save_ai.side_effect = [RuntimeError("disk full"), 12]

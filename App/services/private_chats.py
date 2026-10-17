@@ -66,6 +66,7 @@ class PrivateMessage:
     quote: str | None = None
     reply_to: str | None = None
     created_at: str = ""
+    elapsed_seconds: float | None = None
 
 
 class PrivateChatSession:
@@ -321,13 +322,29 @@ class PrivateChatSession:
                 (name, str(self._asset_path(cid, asset))) for name, asset in message["attachments"]]})
                 for message in self._state(cid)["data"]["messages"]]
 
-    def add_message(self, cid, role, text, quote=None, reply_to=None, attachments=None):
+    def set_message_elapsed(self, mid, seconds):
+        import math
+        if not math.isfinite(seconds) or seconds < 0:
+            raise ValueError('Неверное время выполнения')
+        with self._mutex:
+            for cid in self._opened:
+                for message in self._state(cid)['data']['messages']:
+                    if message['id'] == mid:
+                        message['elapsed_seconds'] = seconds
+                        self._save(cid)
+                        return True
+        return False
+
+    def add_message(self, cid, role, text, quote=None, reply_to=None, attachments=None, elapsed_seconds=None):
+        import math
+        if elapsed_seconds is not None and (not math.isfinite(elapsed_seconds) or elapsed_seconds < 0):
+            raise ValueError("Неверное время выполнения")
         with self._mutex:
             mid = -secrets.randbelow(2**62) - 1
             state = self._state(cid)["data"]
             state["messages"].append(dict(id=mid, role=role, content=text, quote=quote, reply_to=reply_to,
                 attachments=[(name, self._asset_id(cid, path)) for name, path in attachments or []],
-                created_at=str(time.time())))
+                created_at=str(time.time()), elapsed_seconds=elapsed_seconds))
             self._save(cid)
             return mid
 
