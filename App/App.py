@@ -19,7 +19,9 @@ from pathlib import Path
 # Lazy imports during inference must not create __pycache__ inside watched App/.
 sys.dont_write_bytecode = True
 from services.runtime import configure_runtime
+from services.account_deletion import perform_pending_erasure
 
+perform_pending_erasure()
 configure_runtime()
 
 import flet as ft
@@ -121,18 +123,19 @@ class Init():
         async def persist_loop():
             last_persist=0
             while True:
-                await asyncio.sleep(5)
+                await asyncio.sleep(1)
                 try:
                     now=asyncio.get_running_loop().time()
                     if now-last_persist>=30:
                         persist_app_session();last_persist=now
-                    if getattr(page,'_xopilot_connected',False) and getattr(page,'_xopilot_can_sync',lambda:False)():
+                    if getattr(page,'_xopilot_connected',False) and getattr(page,'_xopilot_can_upload',lambda:False)():
                         # Avoid importing beneath a form the user is editing.
                         dialogs=[dialog for dialog in page._dialogs.controls if dialog.open]
                         if not dialogs or getattr(dialogs[-1],'_xopilot_sync_safe',False):
                             from services import cloud_sync,cloud_account
                             if cloud_account.state():
-                                result=await asyncio.to_thread(cloud_sync.run_auto_if_due)
+                                result=await asyncio.to_thread(cloud_sync.run_auto_if_due,
+                                    upload_only=not page._xopilot_can_sync())
                                 if result and result.get('received'):page._xopilot_sync_refresh()
                 except Exception:
                     pass

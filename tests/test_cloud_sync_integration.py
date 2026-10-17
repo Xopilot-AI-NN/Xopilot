@@ -51,6 +51,32 @@ class SyncIntegration(unittest.TestCase):
         sync.setup('Synthetic sync password 2026!')
         sync.save_options({'enabled':True,'auto':False})
 
+    def test_busy_replica_uploads_completed_messages_without_importing_remote_context(self):
+        self.new_account()
+        ar,a=self.profile('busy-a');br,b=self.profile('busy-b');cr,c=self.profile('busy-c')
+        title='Busy replica '+uuid.uuid4().hex
+        outbound='Outgoing replica '+uuid.uuid4().hex
+        with self.bind(ar,a):
+            self.login();cid=a.create_chat(title);a.add_message(cid,'user','original context');sync.run()
+        with self.bind(br,b):
+            self.login();sync.run();bid=next(cid for cid,t,_ in b.list_chats() if t==title)
+        with self.bind(ar,a):
+            a.add_message(cid,'ai','remote addition');sync.run()
+        with self.bind(br,b):
+            local=b.create_chat(outbound);b.add_message(local,'user','completed during Live')
+            result=sync.run(upload_only=True)
+            self.assertEqual(result['received'],0)
+            self.assertEqual([m.content for m in b.get_messages(bid)],['original context'])
+            self.assertTrue(sync.read_ledger(sync.owner())['deferred'])
+        with self.bind(cr,c):
+            self.login();sync.run()
+            imported=next(cid for cid,t,_ in c.list_chats() if t==outbound)
+            self.assertEqual(c.get_messages(imported)[0].content,'completed during Live')
+        with self.bind(br,b):
+            sync.run()
+            self.assertEqual([m.content for m in b.get_messages(bid)],['original context','remote addition'])
+        for db in (a,b,c):db.close()
+
     def test_two_profiles_files_projects_edits_deletes_and_retry_budget(self):
         ar,a=self.profile('a');br,b=self.profile('b')
         material=ar/'attachment.txt';material.write_bytes(b'private attachment\n'*25000)

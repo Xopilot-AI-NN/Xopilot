@@ -17,12 +17,12 @@ class SyncScheduleTests(unittest.TestCase):
             p=patch.dict(getattr(sync,name),{},clear=True);p.start();self.addCleanup(p.stop)
         p=patch.object(sync,'_auto_dirty',set());p.start();self.addCleanup(p.stop)
 
-    def test_activity_is_fast_and_idle_avoids_unnecessary_traffic(self):
+    def test_one_second_polling_targets_two_replica_delivery(self):
         with patch.object(sync.time,'monotonic',return_value=100),patch.object(sync,'run',return_value={'sent':1}) as run:
-            sync.run_auto_if_due();self.assertEqual(sync._auto_due['account-a'],115)
+            sync.run_auto_if_due();self.assertEqual(sync._auto_due['account-a'],101)
             self.assertIsNone(sync.run_auto_if_due());run.assert_called_once()
-        with patch.object(sync.time,'monotonic',return_value=115),patch.object(sync,'run',return_value={}):
-            sync.run_auto_if_due();self.assertEqual(sync._auto_due['account-a'],175)
+        with patch.object(sync.time,'monotonic',return_value=101),patch.object(sync,'run',return_value={}):
+            sync.run_auto_if_due();self.assertEqual(sync._auto_due['account-a'],102)
 
     def test_network_failure_backoff_and_successful_recovery(self):
         for now,delay in [(100,15),(115,30),(145,60),(205,120),(325,240),(565,300)]:
@@ -36,7 +36,7 @@ class SyncScheduleTests(unittest.TestCase):
 
     def test_busy_lease_and_other_accounts_do_not_wait_a_minute(self):
         with patch.object(sync.time,'monotonic',return_value=100),patch.object(sync,'run',return_value={'busy':True}) as run:
-            sync.run_auto_if_due();self.assertEqual(sync._auto_due['account-a'],105)
+            sync.run_auto_if_due();self.assertEqual(sync._auto_due['account-a'],101)
             with patch.object(sync,'owner',return_value='account-b'):sync.run_auto_if_due()
             self.assertEqual(run.call_count,2)
 
@@ -50,7 +50,7 @@ class SyncScheduleTests(unittest.TestCase):
             return {'sent':0,'received':0}
         with patch.object(sync.time,'monotonic',return_value=100),patch.object(sync,'run',side_effect=edit_during_pull):
             sync.run_auto_if_due()
-        self.assertEqual(sync._auto_due['account-a'],105)
+        self.assertEqual(sync._auto_due['account-a'],101)
         self.assertNotIn('account-a',sync._auto_dirty)
 
     def test_local_edits_wake_idle_sync_without_bypassing_network_backoff(self):

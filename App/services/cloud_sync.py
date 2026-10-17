@@ -110,7 +110,7 @@ def enabled_scope(scope, opts):
     return opts.get(scope,False)
 
 
-def run():
+def run(*, upload_only=False):
     identifier=owner();opts=options(identifier)
     if not opts['enabled']: raise ValueError('Синхронизация выключена')
     secret=get_db().get_setting('cloud_sync_key:'+identifier)
@@ -164,6 +164,7 @@ def run():
                 cursor=reply['cursor']
                 if not reply['has_more']:break
             for record_key,change in sorted(list(ledger.get('deferred',{}).items()),key=lambda pair:({'chat':0,'workspace':1,'canvas':2}.get(pair[1]['kind'],3),pair[0])):
+                if upload_only:break
                 existing=ledger['records'].get(record_key,{})
                 scope=(existing.get('scope') or ledger.get('known_scopes',{}).get(record_key)) if change['deleted'] else change['data'].get('scope')
                 if scope and enabled_scope(scope,opts):
@@ -171,9 +172,10 @@ def run():
                         payload=None if change['deleted'] else files.decode(change['id'],change['data'])
                         entities.receive(record_key,change,payload);received+=1
                     del ledger['deferred'][record_key];save()
-            entities.reconcile_links()
-            entities.recover_deleted_chat_conflicts()
-            if opts['materials']:
+            if not upload_only:
+                entities.reconcile_links()
+                entities.recover_deleted_chat_conflicts()
+            if opts['materials'] and not upload_only:
                 from .storage import material_references
                 referenced=material_references(get_db())
                 trash=json.loads(get_db().get_setting('material_trash_v1') or '{}')
@@ -260,6 +262,7 @@ def resolve_keep_both(record_key):
 _auto_due={}
 _auto_failures={}
 _auto_dirty=set()
+AUTO_INTERVAL = 1
 def request_soon():
     """A completed local edit wakes replication without bypassing retry/budget policy."""
     try:identifier=owner()
@@ -271,7 +274,7 @@ def request_soon():
             _auto_due[identifier]=0
 
 
-def run_auto_if_due():
+def run_auto_if_due(*, upload_only=False):
     identifier=owner();opts=options(identifier)
     if not opts['enabled'] or not opts['auto']:return None
     with _lock:
@@ -279,7 +282,7 @@ def run_auto_if_due():
         # Reserve the attempt before releasing the lock, including other pages.
         _auto_due[identifier]=float('inf')
     try:
-        result=run()
+        result=run(upload_only=True) if upload_only else run()
     except Exception:
         with _lock:
             failures=min(_auto_failures.get(identifier,0)+1,6)
@@ -291,11 +294,10 @@ def run_auto_if_due():
     else:
         with _lock:
             _auto_failures.pop(identifier,None)
-            # Busy leases must be retried soon. Active replicas converge quickly;
-            # idle replicas reduce polling and respect metered connections.
-            dirty=identifier in _auto_dirty
+            # Foreground replicas poll once per second for a two-hop target of two seconds. The byte budget and
+            # failure backoff still take precedence over this target interval.
             _auto_dirty.discard(identifier)
-            delay=5 if result.get('busy') or dirty else 15 if result.get('sent') or result.get('received') else 60
+            delay=AUTO_INTERVAL
             _auto_due[identifier]=time.monotonic()+delay
             _status.setdefault(identifier,{})['next_retry']=None
         return result

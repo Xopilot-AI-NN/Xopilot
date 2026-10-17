@@ -17,11 +17,15 @@ from ..common import section_title
 from .cloud import build_cloud_card
 
 try:
-    from ...services import profile
+    from ...services import profile, cloud_account, cloud_sync
+    from ...services.account_deletion import delete_account
+    from ...services.platforms import fit_dialog
     from ...services.stats import get_stats
     from ...services.db import get_setting, get_db
 except ImportError:
-    from services import profile
+    from services import profile, cloud_account, cloud_sync
+    from services.account_deletion import delete_account
+    from services.platforms import fit_dialog
     from services.stats import get_stats
     from services.db import get_setting, get_db
 
@@ -158,8 +162,43 @@ def build_account_page(page: ft.Page) -> ft.Column:
     ]
     cards = ft.Row(wrap=True, spacing=12, run_spacing=12, alignment=ft.MainAxisAlignment.CENTER,
                   controls=[_stat_card(*value) for value in values])
+    async def erase_account(_):
+        if not getattr(page,'_xopilot_can_sync',lambda:True)():
+            feedback.value='Сначала завершите текущую задачу, Live и синхронизацию';page.update();return
+        account=cloud_account.state()
+        if not account:return
+        confirmation=modern_input(ft.TextField(label='Почта аккаунта',hint_text=account['email']))
+        password=modern_input(ft.TextField(label='Пароль аккаунта, если задавали',password=True,can_reveal_password=True))
+        warning=ft.Text('',size=12,color=color('#c94b4b'))
+        async def remove(_):
+            if confirmation.value!=account['email']:
+                warning.value='Введите точную почту аккаунта';page.update();return
+            submit.disabled=True;warning.value='Удаляем аккаунт…';page.update()
+            try:
+                await asyncio.to_thread(delete_account,confirmation.value,password.value or '')
+                page._xopilot_connected=False
+                page.pop_dialog()
+                page.show_dialog(ft.AlertDialog(modal=True,title=ft.Text('Аккаунт удалён'),
+                    content=ft.Text('Закройте и снова откройте Xopilot. При следующем запуске будут стёрты данные приложения на этом устройстве. '
+                        'На других устройствах локальные копии нужно удалить отдельно.'),
+                    actions=[action_button('Понятно',on_click=lambda _:page.pop_dialog())]))
+            except Exception as exc:
+                warning.value=str(exc);submit.disabled=False;page.update()
+            finally:password.value=''
+        submit=action_button('Удалить навсегда',icon=ft.Icons.DELETE_FOREVER,on_click=remove)
+        dialog=ft.AlertDialog(modal=True,title=ft.Text('Удалить аккаунт и мои данные?'),
+            content=ft.Column(width=440,tight=True,spacing=12,controls=[
+                ft.Text('Будут удалены облачные чаты, материалы, профиль и связи устройств. Восстановить аккаунт нельзя. '
+                    'Данные приложения на этом устройстве стираются при следующем запуске. '
+                    'Копии на других устройствах, исходные файлы вне приложения и резервные копии сервера этим действием не стираются.'),
+                ft.Text('Для аккаунта Google без пароля нужен повторный вход не более 15 минут назад.',size=12),
+                confirmation,password,warning]),
+            actions=[ft.TextButton(content='Отмена',on_click=lambda _:page.pop_dialog()),submit])
+        fit_dialog(page,dialog);page.show_dialog(dialog)
+    deletion=action_button('Удалить аккаунт и стереть мои данные',icon=ft.Icons.DELETE_FOREVER,on_click=erase_account,secondary=True)
+    deletion.visible=cloud_account.state() is not None
     return ft.Column(spacing=16, horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
         controls=[profile_card, feedback, build_cloud_card(page), section_title('Статистика использования'), cards,
             ft.Text('Размер базы включает журналы WAL и SHM. Материалы и модели хранятся отдельно. '
                     'Токены оцениваются по тексту ответов.', size=11, color=color('#47747a'),
-                    text_align=ft.TextAlign.CENTER)])
+                    text_align=ft.TextAlign.CENTER),deletion])
