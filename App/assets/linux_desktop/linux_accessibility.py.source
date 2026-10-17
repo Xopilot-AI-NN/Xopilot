@@ -18,20 +18,34 @@ class Accessibility:
         self.bus=Gio.DBusConnection.new_for_address_sync(address,
             Gio.DBusConnectionFlags.AUTHENTICATION_CLIENT|Gio.DBusConnectionFlags.MESSAGE_BUS_CONNECTION,None,None)
         self.targets={}
+        self._inspect_deadline=None
+
+    def timeout(self):
+        if self._inspect_deadline is None:return 1500
+        remaining=int((self._inspect_deadline-time.monotonic())*1000)
+        if remaining<=0:raise TimeoutError('Завершено время чтения элементов экрана')
+        return min(250,remaining)
 
     def call(self,reference,interface,method,signature=None,arguments=()):
         return self.bus.call_sync(reference[0],reference[1],PREFIX+interface,method,
-            GLib.Variant(signature,arguments) if signature else None,None,0,1500,None).unpack()
+            GLib.Variant(signature,arguments) if signature else None,None,0,self.timeout(),None).unpack()
 
     def prop(self,reference,name):
         return self.bus.call_sync(reference[0],reference[1],'org.freedesktop.DBus.Properties','Get',
-            GLib.Variant('(ss)',(PREFIX+'Accessible',name)),None,0,1500,None).unpack()[0]
+            GLib.Variant('(ss)',(PREFIX+'Accessible',name)),None,0,self.timeout(),None).unpack()[0]
 
     def inspect(self):
+        # One deadline covers all RPCs, including a slow registry/root node.
+        # Never multiply the old 1.5 s timeout by every property of every node.
+        self._inspect_deadline=time.monotonic()+3
+        try:return self._inspect()
+        finally:self._inspect_deadline=None
+
+    def _inspect(self):
         self.targets={};rows=[]
         roots=self.call(('org.a11y.atspi.Registry','/org/a11y/atspi/accessible/root'),'Accessible','GetChildren')[0]
-        pending=[(tuple(r),'',0) for r in roots];visited=set();deadline=time.monotonic()+8
-        while pending and len(visited)<220 and time.monotonic()<deadline:
+        pending=[(tuple(r),'',0) for r in roots];visited=set()
+        while pending and len(visited)<220 and time.monotonic()<self._inspect_deadline:
             reference,parent,depth=pending.pop(0)
             if reference in visited or depth>12 or reference[1].endswith('/null'):continue
             visited.add(reference)

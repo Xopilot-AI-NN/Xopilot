@@ -190,7 +190,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                              overflow=ft.TextOverflow.ELLIPSIS)
     composer_label = ft.Text("", size=11, color=color("#47747a"),
                              max_lines=3, overflow=ft.TextOverflow.ELLIPSIS)
-    reply_activity = ft.ProgressRing(width=14, height=14, stroke_width=2,
+    reply_activity = ft.ProgressBar(width=48, height=3, border_radius=2,
                                      color=color("#087f8c"), visible=False)
     composer_actions = ft.Row(wrap=True, spacing=4)
     composer_status = ft.Container(visible=False, content=ft.Column(

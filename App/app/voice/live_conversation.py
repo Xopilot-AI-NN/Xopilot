@@ -122,7 +122,7 @@ class LiveConversation:
         self.floating_button = brand_button(ft.Icons.OPEN_IN_NEW, "Плавающее окно", self.minimize, size=48)
         self._inline_open = False
         self._viewport_collapsed = False
-        self.activity = ft.ProgressRing(width=176, height=176, stroke_width=3,
+        self.activity = ft.ProgressBar(width=120, height=4, border_radius=2,
                                         color=color('#087f8c'), visible=False)
         self.state_icon = ft.Icon(ft.Icons.GRAPHIC_EQ, color=color('#087f8c'), size=54)
         self.orb = ft.Container(width=120, height=120, border_radius=60,
@@ -147,8 +147,10 @@ class LiveConversation:
             content=ft.Column(tight=True, spacing=20,
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER, controls=[
                     ft.Container(width=300, height=192, alignment=ft.Alignment.CENTER,
-                        content=ft.Stack(alignment=ft.Alignment.CENTER,
-                                         controls=[self.orb, self.activity, self.preview])),
+                        content=ft.Stack(width=300, height=192, alignment=ft.Alignment.CENTER,
+                                         controls=[self.orb, self.preview,
+                                             ft.Container(left=90, right=90, bottom=0,
+                                                          content=self.activity)])),
                     self.state_title, self.status_text, self.engine_text]))
         self.call_screen = ft.Container(left=0, right=0, top=0, bottom=0, visible=False,
             bgcolor=color('#eafffa'), padding=ft.Padding.symmetric(horizontal=20, vertical=16),

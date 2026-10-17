@@ -123,6 +123,30 @@ class DocumentWorkflowTests(unittest.TestCase):
         self.assertIn('137', generate.call_args_list[1].args[0])
         self.assertIn('"saved": true', generate.call_args_list[2].args[0])
 
+    def test_format_repair_keeps_actual_question_in_latest_turn(self):
+        question='Что умеешь и как меня зовут?'
+        generate=Mock(side_effect=['Не JSON', json.dumps({'final':'Денис, я могу помогать с файлами и проектами.'})])
+        reply=run_agent(question,chat_id=self.chat,
+            history=[{'role':'user','content':'Меня зовут Денис'}],attachments=[],
+            instructions='',level='medium',cancelled=threading.Event(),generate=generate)
+        repair=generate.call_args_list[1].args[0]
+        self.assertTrue(repair.endswith(question))
+        self.assertIn('не запрос пользователя',repair)
+        self.assertIn('Меня зовут Денис',str(generate.call_args_list[1].kwargs['history']))
+        self.assertIn('Денис',reply)
+        self.assertNotIn('JSON',reply)
+
+    def test_screen_and_goal_survive_format_repair_after_tool_result(self):
+        screen=('Экран.png','/test/screen.png')
+        generate=Mock(side_effect=[json.dumps({'tool':'computer_view','arguments':{}}),
+                                  'ошибка формата',json.dumps({'final':'На экране тестовое окно'})])
+        with patch.object(LocalTools,'call',return_value=({'captured':True},[screen])):
+            run_agent('Что видно на экране?',chat_id=self.chat,history=[],attachments=[],
+                instructions='',level='medium',cancelled=threading.Event(),generate=generate)
+        for call in generate.call_args_list[1:]:
+            self.assertIn(screen,call.kwargs['attachments'])
+            self.assertTrue(call.args[0].endswith('Что видно на экране?'))
+
     def test_cancelled_agent_cannot_write_canvas(self):
         cancel = threading.Event()
         tools = LocalTools(self.chat, cancel)

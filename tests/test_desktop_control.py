@@ -8,6 +8,7 @@ import tempfile
 import threading
 import unittest
 import sys
+import subprocess
 from pathlib import Path
 from unittest.mock import Mock,patch
 from App.services import desktop_control as desktop
@@ -44,6 +45,31 @@ d.accessibility.perform.assert_called_once()
         with patch.object(desktop,'Bridge') as bridge:
             with self.assertRaisesRegex(ValueError,'не разрешён'):session.start(threading.Event(),lambda _:False)
             bridge.assert_not_called()
+
+    def test_accessibility_rpc_deadline_is_shared_and_restored(self):
+        code='''
+import sys
+from unittest.mock import Mock,patch
+sys.modules.update({'gi':Mock(),'gi.repository':Mock()})
+from App.services.linux_accessibility import Accessibility
+a=Accessibility.__new__(Accessibility)
+a._inspect_deadline=None
+assert a.timeout()==1500
+with patch('App.services.linux_accessibility.time.monotonic',return_value=10):
+    a._inspect_deadline=10.1
+    assert 90<=a.timeout()<=100
+    a._inspect_deadline=9
+    try:a.timeout()
+    except TimeoutError:pass
+    else:raise AssertionError('expired RPC must not start')
+with patch.object(a,'_inspect',side_effect=RuntimeError('unresponsive app')):
+    try:a.inspect()
+    except RuntimeError:pass
+assert a._inspect_deadline is None
+assert a.timeout()==1500
+'''
+        subprocess.run([sys.executable,'-c',code],check=True,
+                       cwd=Path(__file__).resolve().parents[1])
 
     def test_input_requires_screen_and_approval(self):
         session=desktop.ComputerSession();cancelled=threading.Event()
