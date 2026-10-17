@@ -25,7 +25,7 @@ class ModelLimitsTests(unittest.TestCase):
             self.assertEqual(llm.generate_reply("Расскажи подробно"), answer.strip())
         conversation.send_message.assert_called_once_with("Расскажи подробно")
 
-    def test_history_keeps_more_than_twelve_messages_and_six_thousand_characters(self):
+    def test_history_keeps_more_than_twelve_messages_and_six_thousand_characters_when_window_fits(self):
         history = [{"role": "user", "content": "Длинная реплика " * 1000}]
         history += [{"role": "ai", "content": f"Ответ {i}"} for i in range(20)]
         context = Mock()
@@ -33,6 +33,7 @@ class ModelLimitsTests(unittest.TestCase):
         context.__exit__ = Mock(return_value=False)
         conversation.return_value.send_message.return_value = {"content": [{"text": "Ответ"}]}
         engine = Mock()
+        engine.max_num_tokens = 65536
         engine.create_conversation.return_value = context
         with patch.multiple(llm, _engine=engine, _conversation=Mock()), patch.object(llm, "record_generation"):
             llm.generate_reply("Следующий вопрос", history=history)

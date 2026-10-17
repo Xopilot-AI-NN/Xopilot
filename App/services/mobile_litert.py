@@ -1,3 +1,8 @@
+"""Файл: /App/services/mobile_litert.py
+Разработчик: DenBroLiik
+Версия: 2.0.10
+Описание: Мост Android LiteRT-LM с явным окном контекста и отменой генерации.
+"""
 """The subset of the LiteRT Python API used by Xopilot, backed by Android JNI.
 
 No desktop ctypes library is loaded. The official Kotlin SDK owns all engines
@@ -60,16 +65,18 @@ class ThinkingConfig:
 
 
 class Engine:
-    def __init__(self, path, *, backend, cache_dir, vision_backend=None, audio_backend=None):
+    def __init__(self, path, *, backend, cache_dir, vision_backend=None, audio_backend=None, max_num_tokens=4096):
         self.closed = False
-        runtime.call('load', dict(path=str(path), backend=backend, cache=cache_dir,
+        self.max_num_tokens = max_num_tokens
+        runtime.call('load', dict(path=str(path), backend=backend, cache=cache_dir, context=max_num_tokens,
                                  vision=vision_backend is not None, audio=audio_backend is not None))
 
-    def create_conversation(self, *, system_message, messages=None, sampler_config=None, thinking_config=None):
+    def create_conversation(self, *, system_message, messages=None, sampler_config=None, thinking_config=None, max_output_tokens=None):
         if self.closed: raise RuntimeError('Модель закрыта')
         args = dict(system=system_message, messages=messages or [])
         if sampler_config is not None: args['temperature'] = sampler_config.temperature
         if thinking_config is not None: args['thinking'] = thinking_config.enable_thinking
+        if max_output_tokens is not None: args['max_output_tokens'] = max_output_tokens
         return Conversation(runtime.call('openConversation', args))
 
     def close(self):

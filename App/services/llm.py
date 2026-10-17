@@ -47,7 +47,7 @@ except Exception as exc:  # noqa: BLE001
 
 MODELS_DIR = str(models_dir())
 DEFAULT_FILENAME = "gemma-4-E2B-it.litertlm"
-DEFAULT_SYSTEM_PROMPT = "Ты — Zephyr, полезный ассистент в Xopilot. Отвечай по делу и с подробностью, необходимой для запроса."
+DEFAULT_SYSTEM_PROMPT = "Ты — Zephyr, полезный ассистент в Xopilot. Пользователь — твой собеседник: не путай его имя, проекты и ограничения со своей личностью. В вопросе пользователя «как меня зовут» нужно назвать имя пользователя из истории, а не своё имя Zephyr. Отвечай по делу и с подробностью, необходимой для запроса."
 
 
 def response_language_instruction():
@@ -234,6 +234,7 @@ def _load_model(filename, system_prompt, *, vision=False, audio=False, device_pl
                 path,
                 backend=litert_lm.Backend.GPU() if backend == "gpu" else litert_lm.Backend.CPU(),
                 cache_dir=str(backend_cache),
+                max_num_tokens=4096,
                 vision_backend=litert_lm.Backend.CPU() if vision else None,
                 audio_backend=litert_lm.Backend.CPU() if audio else None,
             )
@@ -327,9 +328,13 @@ def generate_reply(prompt_text, history=None, attachments=None, *, instructions=
             raise RuntimeError("Модель не загружена — вызовите load_model()")
         message = _build_message(prompt_text, attachments, retain_modalities=history is None)
         if history is None:
+            fitted = _fit_context(_engine, _loaded_system_prompt, _stateful_history, message, cancelled, private)
+            if _conversation is not None and fitted != _stateful_history:
+                _conversation.close()
+                _conversation = None
             if _conversation is None:
                 _conversation = _engine.create_conversation(system_message=_loaded_system_prompt,
-                                                             messages=_stateful_history)
+                                                             messages=fitted)
             result = _conversation.send_message(message)
             text = _extract_text(result).strip()
             if text:
@@ -341,9 +346,11 @@ def generate_reply(prompt_text, history=None, attachments=None, *, instructions=
             engine = _engine
             if engine is None:
                 raise RuntimeError("Модель не загружена — вызовите load_model()")
+            system = DEFAULT_SYSTEM_PROMPT + ("\nОтвечай на языке запроса." if private else response_language_instruction()) + ("\n\nИнструкции рабочего пространства:\n" + instructions if instructions else "")
+            messages = _fit_context(engine, system, _recent_messages(history), message, cancelled, private)
             with engine.create_conversation(
-                system_message=DEFAULT_SYSTEM_PROMPT + ("\nОтвечай на языке запроса." if private else response_language_instruction()) + ("\n\nИнструкции рабочего пространства:\n" + instructions if instructions else ""),
-                messages=_recent_messages(history),
+                system_message=system,
+                messages=messages,
             ) as conversation:
                 result = (_send_cancellable(conversation, message, cancelled)
                           if cancelled is not None else conversation.send_message(message))
@@ -457,6 +464,19 @@ def _recent_messages(history):
     return messages
 
 
+def _fit_context(engine, system, messages, current, cancelled=None, private=False):
+    from . import context_budget
+    event = cancelled if cancelled is not None else threading.Event()
+    def summarize(instruction, source, target):
+        with engine.create_conversation(system_message=instruction,
+                max_output_tokens=target,
+                **_conversation_kwargs(litert_lm, temperature=.1, thinking_disabled=True)) as session:
+            return _extract_text(_send_cancellable(session, source, event)).strip()
+    raw = current.to_json() if hasattr(current, 'to_json') else current
+    return context_budget.prepare(engine, system, messages, raw, summarize,
+        cancelled=event, private=private)
+
+
 def _conversation_kwargs(lm, *, temperature=None, thinking_disabled=False):
     """Поддержка разных API-версий litert_lm: в старых сборках ThinkingConfig может отсутствовать."""
     kwargs = {}
@@ -509,8 +529,7 @@ def generate_live_reply(
             content.append(lm.Content.ImageBytes(image_bytes).to_json())
             current = {**current, "content": content}
         engine = _engine
-        with engine.create_conversation(
-            system_message=(
+        system = (
                 "Ты — Zephyr, голосовой собеседник в Xopilot. Веди естественный разговор, "
                 "учитывай предыдущие реплики. Если к реплике приложено изображение с камеры или экрана — "
                 "опирайся на то, что на нём видно. Отвечай на языке собеседника с подробностью, "
@@ -518,8 +537,10 @@ def generate_live_reply(
                 "без Markdown. Если вопрос непонятен, попроси уточнить."
                 + ("\nОтвечай на языке запроса." if private else response_language_instruction())
                 + ("\n\nИнструкции рабочего пространства:\n" + instructions if instructions else "")
-            ),
-            messages=messages,
+            )
+        messages = _fit_context(engine, system, messages, current, cancelled, private)
+        with engine.create_conversation(
+            system_message=system, messages=messages,
             **_conversation_kwargs(lm, thinking_disabled=True),
         ) as conversation:
             result = _send_cancellable(conversation, current, cancelled)

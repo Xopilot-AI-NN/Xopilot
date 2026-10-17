@@ -181,8 +181,8 @@ def generate_reply(prompt_text, history=None, attachments=None, *, instructions=
                 time.sleep(1+attempt)
 
 
-def _generate_reply(prompt_text, history=None, attachments=None, *, instructions='', cancelled=None, structured=False, screen_attachments=None):
-    config = validate_configuration(configuration())
+def _generate_reply(prompt_text, history=None, attachments=None, *, instructions='', cancelled=None, structured=False, screen_attachments=None, _summary_budget=None, _config=None, _context_retry=False):
+    config = _config if _config is not None else validate_configuration(configuration())
     if cancelled is not None and cancelled.is_set():
         raise CancelledError()
     screen_key=(config['url'],config['model'])
@@ -201,10 +201,23 @@ def _generate_reply(prompt_text, history=None, attachments=None, *, instructions
     text = '\n\n'.join([prompt_text, *notes])
     content = [{'type': 'text', 'text': text}]
     content.extend({'type': 'image_url', 'image_url': {'url': 'data:' + image_mime(raw) + ';base64,' + base64.b64encode(raw).decode('ascii')}} for raw in images)
-    messages = [{'role': 'system', 'content': DEFAULT_SYSTEM_PROMPT + response_language_instruction() + '\n' + instructions}]
-    messages.extend({'role': 'assistant' if item['role'] in {'ai', 'assistant'} else 'user', 'content': item['content']} for item in (history or []))
-    messages.append({'role': 'user', 'content': content if images else text})
+    system = instructions if _summary_budget is not None else DEFAULT_SYSTEM_PROMPT + response_language_instruction() + '\n' + instructions
+    recent = [{'role': 'assistant' if item['role'] in {'ai', 'assistant', 'model'} else 'user',
+               'content': item['content']} for item in (history or [])]
+    current = {'role': 'user', 'content': content if images else text}
+    if _summary_budget is None and recent:
+        from . import model_context, context_budget
+        context_engine = model_context.engine(config)
+        if context_engine is not None:
+            def summarize(instruction, source, target):
+                return _generate_reply(source, instructions=instruction, cancelled=cancelled,
+                                       _summary_budget=target, _config=config)
+            recent = context_budget.prepare(context_engine, system, recent, current, summarize,
+                                             cancelled=cancelled)
+    messages = [{'role': 'system', 'content': system}, *recent, current]
     body={'model': config['model'], 'messages': messages, 'stream': False}
+    if _summary_budget is not None:
+        body['max_tokens'] = _summary_budget
     format_key=(config['url'],config['model'])
     if structured and format_key not in _json_unsupported:body['response_format']={'type':'json_object'}
     payload = json.dumps(body, ensure_ascii=False).encode('utf-8')
@@ -256,8 +269,21 @@ def _generate_reply(prompt_text, history=None, attachments=None, *, instructions
         if response.status >= 400:
             import logging
             logging.getLogger(__name__).warning('HTTP %s',response.status)
+            error_body = response.read(65536) if response.status in {400, 413} else b''
+            if response.status in {400, 413} and not _context_retry and _summary_budget is None and history:
+                from . import model_context
+                raw_error = error_body
+                try:
+                    error = json.loads(raw_error).get('error', {})
+                    message = error.get('message', '') if isinstance(error, dict) else str(error)
+                except (ValueError, AttributeError):
+                    message = ''
+                if model_context.learn_error(config, message):
+                    return _generate_reply(prompt_text, history, attachments, instructions=instructions,
+                        cancelled=cancelled, structured=structured, screen_attachments=screen_attachments,
+                        _config=config, _context_retry=True)
             if response.status==400 and 'response_format' in body:
-                reason=response.read(65536).decode('utf-8',errors='replace').casefold()
+                reason=error_body.decode('utf-8',errors='replace').casefold()
                 if any(word in reason for word in ('response_format','json_object','structured')) and any(
                         word in reason for word in ('unsupported','not supported','unknown','unrecognized')):
                     _json_unsupported.add(format_key)
@@ -283,7 +309,8 @@ def _generate_reply(prompt_text, history=None, attachments=None, *, instructions
             raise EmptyModelReplyError('API не вернул текст ответа')
         if cancelled is not None and cancelled.is_set():
             raise CancelledError()
-        record_generation(text)
+        if _summary_budget is None:
+            record_generation(text)
         return text.strip()
     except Exception as exc:
         if cancelled is not None and cancelled.is_set():
