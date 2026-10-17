@@ -148,16 +148,18 @@ class HistoryTests(unittest.TestCase):
 
 
 class InlineCallTests(unittest.IsolatedAsyncioTestCase):
-    async def test_open_and_close_use_inline_controls_no_live_dialog(self):
+    async def test_open_and_close_use_fullscreen_overlay_no_live_dialog(self):
         page=Mock(web=True)
         live=LiveConversation(page,lambda:False,lambda:[],Mock(),Mock())
         await live.open_call()
-        self.assertTrue(live.status.visible)
+        self.assertTrue(live.call_screen.visible)
+        self.assertFalse(live.status.visible)
         self.assertIn(live.camera_button,live.source_controls.controls)
         self.assertIn(live.screen_button,live.source_controls.controls)
         page.show_dialog.assert_not_called()
         await live.end_call()
         self.assertFalse(live.status.visible)
+        self.assertFalse(live.call_screen.visible)
         page.pop_dialog.assert_not_called()
 
 # Exercise the actual composer callback, rather than just the call widget.

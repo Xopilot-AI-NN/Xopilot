@@ -116,52 +116,67 @@ class LiveConversation:
         self.transcript = ft.Container(visible=False, padding=16, border_radius=16,
             bgcolor=color("#f3fffc"), border=ft.Border.all(1, color("#a8ddd7")),
             content=ft.Column(spacing=8, controls=[self.user_text, self.reply_text]))
-        def labeled(button, label):
-            return ft.Column(spacing=5, horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                             controls=[button, label if isinstance(label, ft.Text) else ft.Text(label, size=11, color=color("#47747a"))])
-        self.panel = ft.Column(
-            visible=False, spacing=16, horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
-            controls=[ft.Column(horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=10,
-                        controls=[self.orb, self.state_title, self.status_text, self.engine_text]),
-                      ft.Row(alignment=ft.MainAxisAlignment.CENTER, spacing=24, wrap=True,
-                          controls=[labeled(self.mute_button, self.mute_label),
-                                    labeled(self.camera_button, "Камера"), labeled(self.screen_button, "Экран"),
-                                    labeled(self.sound_button, self.sound_label)]),
-                      self.visual_panel, self.transcript],
-        )
-        self.composer = ft.Column(spacing=8, controls=[self.attachments,
-                      ft.Row(spacing=8, controls=[brand_button(ft.Icons.ATTACH_FILE, "Добавить файлы в Live", self.add_files),
-                          self.frame_question, brand_button(ft.Icons.SEND_ROUNDED, "Отправить вопрос в Live", self.ask_frame)]),
-                      ft.Row(alignment=ft.MainAxisAlignment.CENTER, controls=[self.interrupt_button])])
         self.summary = self.status_text
         self.start_button = ft.FilledButton(content="Начать разговор", icon=ft.Icons.CALL,
                                            on_click=self.toggle)
-        self.floating_button = brand_button(ft.Icons.OPEN_IN_NEW, "Плавающее окно", self.minimize, size=46)
+        self.floating_button = brand_button(ft.Icons.OPEN_IN_NEW, "Плавающее окно", self.minimize, size=48)
         self._inline_open = False
         self._viewport_collapsed = False
-        self.activity = ft.ProgressRing(width=18, height=18, stroke_width=2,
+        self.activity = ft.ProgressRing(width=176, height=176, stroke_width=3,
                                         color=color('#087f8c'), visible=False)
-        self.state_icon = ft.Icon(ft.Icons.GRAPHIC_EQ, color=color('#087f8c'), size=22)
-        # Fixed rows keep controls stable when the call changes state. Sources
-        # scroll horizontally on narrow screens instead of wrapping the toolbar.
-        self.source_controls = ft.Row(spacing=8, scroll=ft.ScrollMode.AUTO, controls=[
-            self.camera_button, self.screen_button, self.sound_button,
-            *([self.floating_button] if self._android else []),
-            *([] if self._android else [brand_button(ft.Icons.SETTINGS_OUTLINED,
-                "Устройства звонка", self.open_devices, size=48)])])
-        self.status = ft.Column(visible=False, spacing=8, scroll=ft.ScrollMode.AUTO, controls=[
-            ft.Container(padding=12, border_radius=24, bgcolor=color('#f3fffc'),
-                border=ft.Border.all(1, outline_color()), content=ft.Column(spacing=8, controls=[
-                    ft.Row(spacing=10, controls=[
-                        ft.Container(width=24, alignment=ft.Alignment.CENTER,
-                                     content=ft.Stack(controls=[self.state_icon, self.activity])),
-                        ft.Column(expand=True, spacing=2, controls=[self.state_title, self.status_text]),
-                        self.end_button]),
-                    ft.Row(spacing=8, controls=[self.start_button, self.mute_button,
-                                               ft.Container(expand=True), self.interrupt_button]),
-                    self.source_controls])),
-            self.attachments, self.visual_panel,
-        ])
+        self.state_icon = ft.Icon(ft.Icons.GRAPHIC_EQ, color=color('#087f8c'), size=54)
+        self.orb = ft.Container(width=120, height=120, border_radius=60,
+            alignment=ft.Alignment.CENTER, content=self.state_icon,
+            gradient=ft.LinearGradient(colors=[color('#c9f1e9'), color('#dff8f3')]),
+            shadow=ft.BoxShadow(blur_radius=48, spread_radius=8, color=color('#dff8f3')))
+        self.state_title.size = 24
+        self.status_text.text_align = ft.TextAlign.CENTER
+        self.status_text.max_lines = 3
+        self.mute_button.width = self.mute_button.height = 60
+        self.mute_button.border_radius = 30
+        self.end_button = brand_button(ft.Icons.CALL_END, "Завершить Live", self.end_call, size=60)
+        self.end_button.border_radius = 30
+        self.transcript_view = ft.Container(visible=False, height=140,
+            content=ft.Column(scroll=ft.ScrollMode.AUTO, controls=[self.transcript]))
+        self.source_controls = ft.Row(alignment=ft.MainAxisAlignment.CENTER,
+            spacing=12, scroll=ft.ScrollMode.AUTO, controls=[
+                self.camera_button, self.screen_button, self.sound_button,
+                *([self.floating_button] if self._android else [brand_button(
+                    ft.Icons.SETTINGS_OUTLINED, "Устройства звонка", self.open_devices, size=48)])])
+        self.call_center = ft.Container(expand=True, alignment=ft.Alignment.CENTER,
+            content=ft.Column(tight=True, spacing=20,
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER, controls=[
+                    ft.Container(width=300, height=192, alignment=ft.Alignment.CENTER,
+                        content=ft.Stack(alignment=ft.Alignment.CENTER,
+                                         controls=[self.orb, self.activity, self.preview])),
+                    self.state_title, self.status_text, self.engine_text]))
+        self.call_screen = ft.Container(left=0, right=0, top=0, bottom=0, visible=False,
+            bgcolor=color('#eafffa'), padding=ft.Padding.symmetric(horizontal=20, vertical=16),
+            content=ft.Column(spacing=12, controls=[
+                ft.Row(controls=[ft.IconButton(icon=ft.Icons.KEYBOARD_ARROW_DOWN_ROUNDED,
+                    icon_color=color('#123b43'), tooltip="Вернуться в чат", on_click=self.collapse_call),
+                    ft.Text("Xopilot Live", size=18, weight=ft.FontWeight.W_600,
+                            color=color('#123b43'), expand=True),
+                    ft.IconButton(icon=ft.Icons.SUBTITLES_OUTLINED, tooltip="Показать текст разговора",
+                        icon_color=color('#123b43'), on_click=self.toggle_transcript)]),
+                self.call_center,
+                self.transcript_view,
+                self.visual_panel,
+                self.source_controls,
+                ft.Row(alignment=ft.MainAxisAlignment.CENTER, spacing=16, controls=[
+                    self.start_button, self.mute_button, self.interrupt_button, self.end_button]),
+                ft.Text("Камера и экран включаются только по вашему выбору", size=11,
+                        color=color('#47747a'), text_align=ft.TextAlign.CENTER),
+            ], horizontal_alignment=ft.CrossAxisAlignment.STRETCH))
+        # The composer only holds a return chip; call controls live on their own
+        # screen, so changing call state never rearranges the text field.
+        self.return_label = ft.Text("Вернуться в Live", size=13, color=color('#123b43'))
+        self.status = ft.Column(visible=False, controls=[ft.Container(
+            padding=10, border_radius=20, bgcolor=color('#dff8f3'), on_click=self.open_call,
+            content=ft.Row(spacing=8, controls=[ft.Icon(ft.Icons.GRAPHIC_EQ,
+                color=color('#087f8c'), size=20), self.return_label,
+                ft.Icon(ft.Icons.CHEVRON_RIGHT, color=color('#087f8c'))]))])
+        self.panel = self.call_screen
         self._state = "idle"
         self._stopped = threading.Event()
         self._turn_cancelled = threading.Event()
@@ -192,11 +207,16 @@ class LiveConversation:
         if isinstance(height, (int, float)) and height >= 0:
             self._viewport_collapsed = self._android and (height < 260 or keyboard > 0)
             constrained = (isinstance(width, (int, float)) and width < 600) or height < 600
-            self.status.height = max(72, min(200, height * 0.28)) if constrained else None
+            self.status.height = min(56, height * 0.28) if constrained else None
         else:
             self._viewport_collapsed = False
             self.status.height = None
-        self.status.visible = (self._inline_open or self.busy or self.camera_on or self.screen_on) and not self._viewport_collapsed
+        self.status.visible = (not self._inline_open and (self.busy or self.camera_on or self.screen_on)) and not self._viewport_collapsed
+        self.call_screen.visible = self._inline_open
+        short = isinstance(height, (int, float)) and height < 480
+        self.call_screen.content.scroll = ft.ScrollMode.AUTO if short else None
+        self.call_center.expand = not short
+        self.call_center.visible = not short
 
     def reconnect(self):
         self._closed = False
@@ -206,8 +226,8 @@ class LiveConversation:
         self._refresh_vision_buttons(update=False)
         self.status_text.value = message
         self.summary.value = message
-        self.status.visible = (self._inline_open or self.busy or self.camera_on or self.screen_on) and not self._viewport_collapsed
-        self.panel.visible = True
+        self.status.visible = (not self._inline_open and (self.busy or self.camera_on or self.screen_on)) and not self._viewport_collapsed
+        self.call_screen.visible = self._inline_open
         self.state_title.value = {"idle": "Готов к разговору", "preparing": "Подключаю модель…",
             "listening": "Микрофон выключен" if self.microphone_muted else "Слушаю вас",
             "transcribing": "Распознаю речь…", "thinking": "Готовлю ответ…",
@@ -219,12 +239,13 @@ class LiveConversation:
         self.start_button.visible = not self.busy
         self.mute_button.visible = self.busy
         self.activity.visible = self._state in {"preparing", "transcribing", "thinking", "interrupting", "stopping"}
-        self.state_icon.visible = not self.activity.visible
+        self.state_icon.visible = True
+        self.return_label.value = "Live · " + self.state_title.value
         self.state_icon.icon = ft.Icons.MIC_OFF if self.microphone_muted else ft.Icons.GRAPHIC_EQ
         self.start_button.icon = ft.Icons.CALL_END if self.busy else ft.Icons.CALL
         self.interrupt_button.visible = self._state in {"transcribing", "thinking", "speaking", "interrupting"}
         self.interrupt_button.disabled = self._state == "interrupting"
-        self.end_button.icon = ft.Icons.CALL_END if self.busy else ft.Icons.CLOSE
+        self.end_button.content.icon = ft.Icons.CALL_END if self.busy else ft.Icons.CLOSE
         self.end_button.tooltip = "Завершить Live" if self.busy else "Закрыть"
         self.button.content = ft.Icon(
             ft.Icons.CALL_END if self.busy else ft.Icons.GRAPHIC_EQ,
@@ -243,6 +264,16 @@ class LiveConversation:
         self._inline_open = True
         hint = 'Говорите свободно. Камера и экран — по желанию.'
         self._render(self.status_text.value or hint)
+
+    async def collapse_call(self, _=None):
+        """Return to the chat without cancelling an active conversation."""
+        self._inline_open = False
+        self._render(self.status_text.value or '')
+
+    async def toggle_transcript(self, _=None):
+        self.transcript_view.visible = not self.transcript_view.visible
+        if not self._closed:
+            self.page.update()
 
     async def end_call(self, _=None):
         await self.stop()

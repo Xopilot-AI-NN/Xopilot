@@ -30,6 +30,7 @@ def build_background_layout(
     empty_state: ft.Control | None = None,
     visual_background: ft.Control | None = None,
     compact: bool = False,
+    call_overlay: ft.Control | None = None,
 ) -> ft.Container:
     bg = build_background()
     bg.padding = ft.Padding.all(4 if compact else 10)
@@ -74,12 +75,13 @@ def build_background_layout(
         controls=[menu, main_content],
     )
 
-    if menu_overlay is not None:
+    if menu_overlay is not None or call_overlay is not None:
         # Stack кладёт выезжающее меню поверх main_row целиком —
         # оттого оно накрывает и чат, и строку ввода, а не только часть окна.
         bg.content = ft.Stack(
             expand=True,
-            controls=[main_row, menu_overlay],
+            controls=[main_row, *([menu_overlay] if menu_overlay is not None else []),
+                      *([call_overlay] if call_overlay is not None else [])],
         )
     else:
         bg.content = main_row

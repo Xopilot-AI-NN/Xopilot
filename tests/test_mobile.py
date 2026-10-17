@@ -126,6 +126,22 @@ class MobileLayoutTests(unittest.TestCase):
             self.assertEqual(context.verify_mode, ssl.CERT_REQUIRED)
             self.assertTrue(context.check_hostname)
 
+    def test_live_overlay_stays_above_chat_without_replacing_composer(self):
+        chat, composer, rail = ft.Container(), ft.Container(), ft.Container()
+        menu_overlay, call_overlay = ft.Container(), ft.Container(visible=False)
+        layout = build_background_layout(chat, composer, rail, menu_overlay,
+                                         compact=True, call_overlay=call_overlay)
+        self.assertIs(layout.content.controls[-1], call_overlay)
+        chat_row = layout.content.controls[0]
+        main_column = chat_row.controls[1].content
+        input_area = main_column.controls[-1].content
+        self.assertIs(input_area.content, composer)
+        call_overlay.visible = True
+        layout._xopilot_set_compact(False)
+        self.assertIs(layout.content.controls[0], chat_row)
+        self.assertIs(input_area.content, composer)
+        self.assertIs(layout.content.controls[-1], call_overlay)
+
     def test_portrait_landscape_and_chromebook_resize_restore_menu(self):
         rail = ft.Container(width=76)
         layout = build_background_layout(ft.Container(), ft.Container(), rail, compact=True)

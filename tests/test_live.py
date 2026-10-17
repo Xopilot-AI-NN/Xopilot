@@ -94,7 +94,7 @@ class LiveControllerTests(unittest.IsolatedAsyncioTestCase):
         self.live._state = 'thinking'
         self.live._render('Модель готовит ответ')
         self.assertTrue(self.live.activity.visible)
-        self.assertFalse(self.live.state_icon.visible)
+        self.assertTrue(self.live.state_icon.visible)
         self.assertFalse(self.live.start_button.visible)
         self.assertTrue(self.live.mute_button.visible)
         self.live._state = 'listening'
@@ -105,6 +105,23 @@ class LiveControllerTests(unittest.IsolatedAsyncioTestCase):
         self.live._render('')
         self.assertTrue(self.live.start_button.visible)
         self.assertFalse(self.live.mute_button.visible)
+
+    async def test_return_to_chat_keeps_active_call_and_can_reopen_it(self):
+        self.live._state = 'listening'
+        await self.live.open_call()
+        self.assertTrue(self.live.call_screen.visible)
+        self.assertFalse(self.live.status.visible)
+        await self.live.collapse_call()
+        self.assertFalse(self.live.call_screen.visible)
+        self.assertTrue(self.live.status.visible)
+        self.assertEqual(self.live._state, 'listening')
+        self.assertFalse(self.live._stopped.is_set())
+        await self.live.open_call()
+        self.assertTrue(self.live.call_screen.visible)
+        self.live.fit_viewport(720, 360)
+        self.assertFalse(self.live.call_center.visible)
+        self.live.fit_viewport(360, 720)
+        self.assertTrue(self.live.call_center.visible)
 
     def test_short_viewport_bounds_live_panel_without_replacing_controls(self):
         controls = list(self.live.status.controls)
@@ -117,7 +134,7 @@ class LiveControllerTests(unittest.IsolatedAsyncioTestCase):
 
     def test_landscape_keyboard_hides_panel_but_preserves_capture_and_restores_it(self):
         self.live._android = True
-        self.live._inline_open = True
+        self.live._inline_open = False
         self.live.screen_on = True
         self.live.fit_viewport(720, 180)
         self.assertFalse(self.live.status.visible)
@@ -130,7 +147,7 @@ class LiveControllerTests(unittest.IsolatedAsyncioTestCase):
 
     def test_portrait_keyboard_leaves_chat_space_without_stopping_camera(self):
         self.live._android = True
-        self.live._inline_open = True
+        self.live._inline_open = False
         self.live.camera_on = True
         self.live.fit_viewport(360, 445, keyboard=275)
         self.live._render('Камера включена')

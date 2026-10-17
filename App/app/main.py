@@ -1674,7 +1674,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
     compact = compact_layout(page.width)
     background = build_background_layout(chat, prompt_container, menu, menu_overlay,
                                         header=header, empty_state=empty_state, compact=compact,
-                                        visual_background=live.chat_background)
+                                        visual_background=live.chat_background, call_overlay=live.call_screen)
     last_layout = None
     def resize_layout(_=None):
         nonlocal last_layout
