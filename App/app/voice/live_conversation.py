@@ -139,12 +139,15 @@ class LiveConversation:
         self._inline_open = False
         self._viewport_collapsed = False
         self.status = ft.Column(visible=False, spacing=8, scroll=ft.ScrollMode.AUTO, controls=[
-            self.status_text,
-            ft.Row(wrap=True, spacing=8, controls=[self.start_button,
+            ft.Container(padding=14,border_radius=24,bgcolor=color('#f3fffc'),
+                border=ft.Border.all(1,outline_color()),content=ft.Column(spacing=12,controls=[
+            ft.Row(spacing=10,controls=[ft.Icon(ft.Icons.GRAPHIC_EQ,color=color('#087f8c'),size=24),
+                ft.Column(expand=True,spacing=4,controls=[self.state_title,self.status_text])]),
+            ft.Row(wrap=True, spacing=8,run_spacing=8, controls=[self.start_button,
                 self.mute_button, self.camera_button, self.screen_button, self.sound_button,
                 *([self.floating_button] if self._android else []),
                 *([] if self._android else [brand_button(ft.Icons.SETTINGS_OUTLINED, "Устройства звонка", self.open_devices)]),
-                self.interrupt_button, self.end_button]),
+                self.interrupt_button, self.end_button])])),
             self.attachments, self.visual_panel,
         ])
         self._state = "idle"

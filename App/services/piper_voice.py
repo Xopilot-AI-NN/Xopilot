@@ -52,6 +52,11 @@ class _CancellableSession:
 
 class PiperSpeechVoice:
     def __init__(self, variant):
+        global sd
+        if sd is None:
+            from . import microphone
+            microphone._load_audio()
+            sd=microphone.sd
         try:
             import onnxruntime
             from piper import PiperVoice, SynthesisConfig

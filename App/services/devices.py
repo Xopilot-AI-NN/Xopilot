@@ -1,11 +1,25 @@
-"""Persist audio device names so OS device index changes do not select another mic."""
+"""
+Файл: /App/services/devices.py
+Разработчик: DenBroLiik
+Версия: 2.0.10
+Описание: Выбор устройств по имени с ленивой загрузкой PortAudio.
+"""
 import glob
 import sys
 from .db import get_setting
 from .microphone import sd
 
 
+def _ensure_audio():
+    global sd
+    if sd is None:
+        from . import microphone
+        microphone._load_audio()
+        sd=microphone.sd
+
+
 def audio_devices(kind):
+    _ensure_audio()
     if sd is None:
         return []
     field = 'max_input_channels' if kind == 'input' else 'max_output_channels'
@@ -14,6 +28,7 @@ def audio_devices(kind):
 
 
 def selected_audio_device(kind):
+    _ensure_audio()
     name = get_setting('audio_' + kind, '')
     if not name or sd is None:
         return None

@@ -29,9 +29,14 @@ SILENCE_SECONDS = 0.9
 
 
 def check_live_audio():
+    global sd
     from .platforms import is_android
     if is_android():
         return
+    if sd is None:
+        from . import microphone
+        microphone._load_audio()
+        sd=microphone.sd
     if sd is None:
         raise RuntimeError("Для Live нужны sounddevice и PortAudio.")
     if webrtcvad is None:
