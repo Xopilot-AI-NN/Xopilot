@@ -1,5 +1,6 @@
 """
-Файл: App/app/live_conversation.py
+Файл: App/app/voice/live_conversation.py
+Версия: 2.0.10
 Разработчик: DenBroLiik
 Описание: Голосовой режим: слушать реплику, распознать, ответить и озвучить.
     Дополнительно — две кнопки-тумблера (камера/экран): когда один из них включён, перед
@@ -71,8 +72,8 @@ class LiveConversation:
         except ImportError:
             from services.platforms import is_android
         self._android = is_android()
-        self.status_text = ft.Text(size=13, color=color("#47747a"), text_align=ft.TextAlign.CENTER)
-        self.state_title = ft.Text("Готов к разговору", size=22, weight=ft.FontWeight.W_600,
+        self.status_text = ft.Text(size=13, color=color("#47747a"), max_lines=2, overflow=ft.TextOverflow.ELLIPSIS)
+        self.state_title = ft.Text("Готов к разговору", size=16, weight=ft.FontWeight.W_600,
                                    color=color("#123b43"), text_align=ft.TextAlign.CENTER)
         self.engine_text = ft.Text(size=11, color=color("#47747a"), text_align=ft.TextAlign.CENTER)
         self.orb = ft.Container(width=72, height=72, border_radius=36,
@@ -138,16 +139,27 @@ class LiveConversation:
         self.floating_button = brand_button(ft.Icons.OPEN_IN_NEW, "Плавающее окно", self.minimize, size=46)
         self._inline_open = False
         self._viewport_collapsed = False
+        self.activity = ft.ProgressRing(width=18, height=18, stroke_width=2,
+                                        color=color('#087f8c'), visible=False)
+        self.state_icon = ft.Icon(ft.Icons.GRAPHIC_EQ, color=color('#087f8c'), size=22)
+        # Fixed rows keep controls stable when the call changes state. Sources
+        # scroll horizontally on narrow screens instead of wrapping the toolbar.
+        self.source_controls = ft.Row(spacing=8, scroll=ft.ScrollMode.AUTO, controls=[
+            self.camera_button, self.screen_button, self.sound_button,
+            *([self.floating_button] if self._android else []),
+            *([] if self._android else [brand_button(ft.Icons.SETTINGS_OUTLINED,
+                "Устройства звонка", self.open_devices, size=48)])])
         self.status = ft.Column(visible=False, spacing=8, scroll=ft.ScrollMode.AUTO, controls=[
-            ft.Container(padding=14,border_radius=24,bgcolor=color('#f3fffc'),
-                border=ft.Border.all(1,outline_color()),content=ft.Column(spacing=12,controls=[
-            ft.Row(spacing=10,controls=[ft.Icon(ft.Icons.GRAPHIC_EQ,color=color('#087f8c'),size=24),
-                ft.Column(expand=True,spacing=4,controls=[self.state_title,self.status_text])]),
-            ft.Row(wrap=True, spacing=8,run_spacing=8, controls=[self.start_button,
-                self.mute_button, self.camera_button, self.screen_button, self.sound_button,
-                *([self.floating_button] if self._android else []),
-                *([] if self._android else [brand_button(ft.Icons.SETTINGS_OUTLINED, "Устройства звонка", self.open_devices)]),
-                self.interrupt_button, self.end_button])])),
+            ft.Container(padding=12, border_radius=24, bgcolor=color('#f3fffc'),
+                border=ft.Border.all(1, outline_color()), content=ft.Column(spacing=8, controls=[
+                    ft.Row(spacing=10, controls=[
+                        ft.Container(width=24, alignment=ft.Alignment.CENTER,
+                                     content=ft.Stack(controls=[self.state_icon, self.activity])),
+                        ft.Column(expand=True, spacing=2, controls=[self.state_title, self.status_text]),
+                        self.end_button]),
+                    ft.Row(spacing=8, controls=[self.start_button, self.mute_button,
+                                               ft.Container(expand=True), self.interrupt_button]),
+                    self.source_controls])),
             self.attachments, self.visual_panel,
         ])
         self._state = "idle"
@@ -202,7 +214,13 @@ class LiveConversation:
             "speaking": "Отвечаю", "interrupting": "Останавливаю ответ…",
             "stopping": "Завершаю разговор…"}.get(self._state, "Голосовой разговор")
         self.engine_text.value = model_display_name(self._live_model or live_model_for_display()) + " · " + execution_label()
-        self.start_button.content = "Завершить разговор" if self.busy else "Начать разговор"
+        self.start_button.content = "Разговор идёт" if self.busy else "Начать разговор"
+        self.start_button.disabled = self.busy
+        self.start_button.visible = not self.busy
+        self.mute_button.visible = self.busy
+        self.activity.visible = self._state in {"preparing", "transcribing", "thinking", "interrupting", "stopping"}
+        self.state_icon.visible = not self.activity.visible
+        self.state_icon.icon = ft.Icons.MIC_OFF if self.microphone_muted else ft.Icons.GRAPHIC_EQ
         self.start_button.icon = ft.Icons.CALL_END if self.busy else ft.Icons.CALL
         self.interrupt_button.visible = self._state in {"transcribing", "thinking", "speaking", "interrupting"}
         self.interrupt_button.disabled = self._state == "interrupting"
@@ -279,7 +297,7 @@ class LiveConversation:
     async def toggle_mute(self, _=None):
         self.microphone_muted = not self.microphone_muted
         self.mute_button.content = ft.Icon(ft.Icons.MIC_OFF if self.microphone_muted else ft.Icons.MIC,
-                                          color=ft.Colors.WHITE, size=20)
+                                          color=color("#087f8c"), size=20)
         self.mute_button.tooltip = "Включить микрофон" if self.microphone_muted else "Выключить микрофон"
         self.mute_label.value = "Выключен" if self.microphone_muted else "Микрофон"
         if self._state == "listening":
@@ -295,7 +313,7 @@ class LiveConversation:
     async def toggle_sound(self, _=None):
         self.voice_output_enabled = not self.voice_output_enabled
         self.sound_button.content = ft.Icon(ft.Icons.VOLUME_UP if self.voice_output_enabled else ft.Icons.VOLUME_OFF,
-                                            color=ft.Colors.WHITE, size=20)
+                                            color=color("#087f8c"), size=20)
         self.sound_button.tooltip = "Выключить озвучивание" if self.voice_output_enabled else "Включить озвучивание"
         self.sound_label.value = "Звук" if self.voice_output_enabled else "Без звука"
         if not self.voice_output_enabled and self._state == "speaking":
@@ -376,13 +394,15 @@ class LiveConversation:
                 pass
 
     def _refresh_vision_buttons(self, update=True):
+        style_brand_button(self.camera_button, 'ai' if self.camera_on else 'navigate')
         self.camera_button.border = ft.Border.all(3 if self.camera_on else 2, color("#087f8c") if self.camera_on else outline_color())
         self.camera_button.content = ft.Icon(ft.Icons.VIDEOCAM if self.camera_on else ft.Icons.VIDEOCAM_OFF_OUTLINED,
-                                             color=ft.Colors.WHITE, size=20)
+                                             color=color("#087f8c"), size=20)
         self.camera_button.tooltip = "Live — камера включена" if self.camera_on else "Live — показать с камеры"
+        style_brand_button(self.screen_button, 'ai' if self.screen_on else 'navigate')
         self.screen_button.border = ft.Border.all(3 if self.screen_on else 2, color("#087f8c") if self.screen_on else outline_color())
         self.screen_button.content = ft.Icon(ft.Icons.STOP_SCREEN_SHARE_OUTLINED if self.screen_on else ft.Icons.SCREEN_SHARE_OUTLINED,
-                                             color=ft.Colors.WHITE, size=20)
+                                             color=color("#087f8c"), size=20)
         self.screen_button.tooltip = "Live — экран включён" if self.screen_on else "Live — трансляция экрана"
         if not self._closed and update:
             self.page.update()

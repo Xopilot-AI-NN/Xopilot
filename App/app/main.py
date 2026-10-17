@@ -190,10 +190,12 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                              overflow=ft.TextOverflow.ELLIPSIS)
     composer_label = ft.Text("", size=11, color=color("#47747a"),
                              max_lines=3, overflow=ft.TextOverflow.ELLIPSIS)
+    reply_activity = ft.ProgressRing(width=14, height=14, stroke_width=2,
+                                     color=color("#087f8c"), visible=False)
     composer_actions = ft.Row(wrap=True, spacing=4)
     composer_status = ft.Container(visible=False, content=ft.Column(
         tight=True, spacing=4, horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
-        controls=[composer_label, composer_actions]))
+        controls=[ft.Row(spacing=8, controls=[reply_activity, ft.Container(expand=True, content=composer_label)]), composer_actions]))
     send_button = build_send_button(submit_prompt)
     empty_state = ft.Container(
         expand=True, alignment=ft.Alignment.CENTER, visible=True,
@@ -270,7 +272,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
             'Приостановить задачу' if is_sending else 'Отправить сообщение')
         cancel_edit_button.visible = editing_message is not None and not is_sending
         composer_status.visible = bool(is_sending or pending_count or editing_message is not None or failed_request is not None)
-        composer_label.value = (task_control.state if is_sending and task_control.paused else "Обдумывание…" if is_sending else
+        composer_label.value = (task_control.state if is_sending and task_control.paused else "ИИ отвечает…" if is_sending else
                                 "Редактирование сообщения" if editing_message is not None else
                                 failed_reason or ("Фоновые процессы работают" if task_processes.has_running() else "Журнал команд" if task_processes.has_processes() else "Ответ не получен"))
         if pending_count:composer_label.value+=f' · сообщений в очереди: {pending_count}'
@@ -288,6 +290,10 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                 composer_label.value='ИИ работает на компьютере'
                 send_button.content.icon=ft.Icons.STOP_ROUNDED
                 send_button.tooltip='Остановить задание на ПК'
+        waiting = bool((is_sending and not task_control.paused) or
+                       (remote_workspace and remote_workspace.busy))
+        reply_activity.visible = waiting
+        composer_status.visible = composer_status.visible or waiting
         if update:
             page.update()
     attachment_strip = build_file_attachments(selected_files, lambda _: None)

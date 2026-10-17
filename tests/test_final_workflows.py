@@ -153,8 +153,8 @@ class InlineCallTests(unittest.IsolatedAsyncioTestCase):
         live=LiveConversation(page,lambda:False,lambda:[],Mock(),Mock())
         await live.open_call()
         self.assertTrue(live.status.visible)
-        self.assertIn(live.camera_button,live.status.controls[0].content.controls[1].controls)
-        self.assertIn(live.screen_button,live.status.controls[0].content.controls[1].controls)
+        self.assertIn(live.camera_button,live.source_controls.controls)
+        self.assertIn(live.screen_button,live.source_controls.controls)
         page.show_dialog.assert_not_called()
         await live.end_call()
         self.assertFalse(live.status.visible)
@@ -168,6 +168,19 @@ from App.app import main as main_ui
 
 class FinalComposerTests(unittest.IsolatedAsyncioTestCase):
     setUp = test_real_answers.PersistenceUITests.setUp
+
+    async def test_reply_activity_runs_during_request_and_disappears_after_completion(self):
+        status = self.prompt_container.call_args.kwargs['composer_status']
+        indicator = status.content.controls[0].controls[0]
+        observed = []
+        def reply(*args, **kwargs):
+            observed.append((status.visible, indicator.visible))
+            return 'Ответ'
+        self.generate.side_effect = reply
+        self.prompt.value = 'Проверка ожидания'
+        await self.send(None)
+        self.assertEqual(observed, [(True, True)])
+        self.assertFalse(indicator.visible)
 
     async def test_typed_live_question_uses_main_composer_without_ordinary_generation(self):
         live=self.prompt_container.call_args.kwargs['live_button'].on_click.__self__

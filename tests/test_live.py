@@ -90,6 +90,22 @@ class SegmentationTests(unittest.TestCase):
 
 
 class LiveControllerTests(unittest.IsolatedAsyncioTestCase):
+    def test_waiting_animation_tracks_work_and_stops_when_listening(self):
+        self.live._state = 'thinking'
+        self.live._render('Модель готовит ответ')
+        self.assertTrue(self.live.activity.visible)
+        self.assertFalse(self.live.state_icon.visible)
+        self.assertFalse(self.live.start_button.visible)
+        self.assertTrue(self.live.mute_button.visible)
+        self.live._state = 'listening'
+        self.live._render('Говорите')
+        self.assertFalse(self.live.activity.visible)
+        self.assertTrue(self.live.state_icon.visible)
+        self.live._state = 'idle'
+        self.live._render('')
+        self.assertTrue(self.live.start_button.visible)
+        self.assertFalse(self.live.mute_button.visible)
+
     def test_short_viewport_bounds_live_panel_without_replacing_controls(self):
         controls = list(self.live.status.controls)
         for width, height in ((360, 720), (720, 360), (360, 400)):

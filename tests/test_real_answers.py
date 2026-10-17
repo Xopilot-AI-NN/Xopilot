@@ -199,7 +199,7 @@ class RealReplyUITests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("модель не найдена", page.show_dialog.call_args.args[0].content.value)
         status = container.call_args.kwargs['composer_status']
         self.assertTrue(status.visible)
-        self.assertIn('Настройки → Модели', status.content.controls[0].value)
+        self.assertIn('Настройки → Модели', status.content.controls[0].controls[1].content.value)
         self.assertFalse(container.call_args.kwargs['send_button'].visible)
         self.assertNotIn('Повторить', str(status))
 
