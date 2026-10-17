@@ -180,6 +180,9 @@ class LiveConversation:
         self._state = "idle"
         self._stopped = threading.Event()
         self._turn_cancelled = threading.Event()
+        self._barge_task = None
+        self._barge_cancelled = None
+        self._barge_in_available = None
         self._task = None
         self._closed = False
         self._live_model = None
@@ -327,6 +330,8 @@ class LiveConversation:
 
     async def toggle_mute(self, _=None):
         self.microphone_muted = not self.microphone_muted
+        if self._barge_cancelled is not None:
+            self._barge_cancelled.set()
         self.mute_button.content = ft.Icon(ft.Icons.MIC_OFF if self.microphone_muted else ft.Icons.MIC,
                                           color=color("#087f8c"), size=20)
         self.mute_button.tooltip = "Включить микрофон" if self.microphone_muted else "Выключить микрофон"
@@ -568,6 +573,8 @@ class LiveConversation:
             self.page.update()
             return
         self._inline_open = True
+        if self._barge_cancelled is not None:
+            self._barge_cancelled.set()
         self._typed_question = text
         if not self.busy:
             await self.toggle()
@@ -596,6 +603,7 @@ class LiveConversation:
             return
         self._stopped = threading.Event()
         self._turn_cancelled = threading.Event()
+        self._barge_in_available = None
         self._set_state('preparing', 'Live · Проверяю выбранную модель…')
         try:
             selected_model = await asyncio.to_thread(get_selected_live_model)
@@ -647,6 +655,64 @@ class LiveConversation:
             self._vision_note = f"{source}: {exc} Кадр не передан. Проверьте источник и повторите вопрос."
             raise VisionCaptureError(self._vision_note) from exc
 
+    def _start_barge_in(self):
+        if not self._android or self.microphone_muted or self._barge_in_available is False:
+            return
+        if self._barge_task is not None:
+            return
+        try:
+            from ...services.mobile_audio import record_barge_in
+        except ImportError:
+            from services.mobile_audio import record_barge_in
+        cancelled = self._barge_cancelled = threading.Event()
+        response_cancelled = self._turn_cancelled
+        def speech_started():
+            if not cancelled.is_set() and not self._stopped.is_set():
+                response_cancelled.set()
+        self._barge_task = asyncio.create_task(asyncio.to_thread(
+            record_barge_in, cancelled, speech_started))
+        def completed(task):
+            if task.cancelled():
+                return
+            error = task.exception()
+            if error is not None and not isinstance(error, CancelledError):
+                self._barge_in_available = False
+        self._barge_task.add_done_callback(completed)
+
+    async def _cancel_barge_in(self):
+        task, self._barge_task = self._barge_task, None
+        if self._barge_cancelled is not None:
+            self._barge_cancelled.set()
+        if task is not None:
+            try:
+                await task
+            except asyncio.CancelledError:
+                if asyncio.current_task().cancelling():
+                    raise
+            except (Exception, CancelledError):
+                pass
+        self._barge_cancelled = None
+
+    async def _record_next_utterance(self):
+        task, self._barge_task = self._barge_task, None
+        if task is not None:
+            try:
+                return await task
+            except (CancelledError, asyncio.CancelledError):
+                if asyncio.current_task().cancelling():
+                    raise
+                self._check_turn()
+                if self.microphone_muted or self._typed_question:
+                    raise
+            except Exception as exc:
+                # Missing/failed AEC must never fall back to capturing our own
+                # speaker output. A normal microphone turn is still available.
+                self._barge_in_available = False
+                self._vision_note = 'Перебивание голосом недоступно: ' + str(exc)
+            finally:
+                self._barge_cancelled = None
+        return await asyncio.to_thread(record_utterance, self._turn_cancelled)
+
     async def _run(self):
         error = ""
         try:
@@ -673,9 +739,10 @@ class LiveConversation:
                             continue
                     if self._typed_question:
                         typed_turn = True
+                        await self._cancel_barge_in()
                         transcript, self._typed_question = self._typed_question, None
                     else:
-                        wav = await asyncio.to_thread(record_utterance, self._turn_cancelled)
+                        wav = await self._record_next_utterance()
                         self._check_turn()
                         getattr(self.page, '_xopilot_memory_cancel', lambda: None)()
                         self._set_state("transcribing", "Live · Распознаю вашу реплику…")
@@ -711,6 +778,7 @@ class LiveConversation:
                         except ImportError:
                             from services import user_memory
                         instructions += user_memory.context(transcript)
+                    self._start_barge_in()
                     reply = await asyncio.to_thread(
                         generate_live_reply, history, self._turn_cancelled, model_filename, image_bytes,
                         instructions=instructions, attachments=[*shared_files, *attachments],
@@ -723,7 +791,7 @@ class LiveConversation:
                     self._check_turn()
                     speech_error = ""
                     if self.voice_output_enabled:
-                        self._set_state("speaking", "Говорю. Можно перебить кнопкой или выключить звук.")
+                        self._set_state("speaking", "Говорю. Можно перебить голосом или кнопкой." if self._android and self._barge_in_available is not False else "Говорю. Можно перебить кнопкой.")
                         try:
                             if self._speaker is None:
                                 self._speaker = await asyncio.to_thread(SpeechOutput)
@@ -767,6 +835,7 @@ class LiveConversation:
                 error = f"Live: {exc}"
         finally:
             # Drop ONNX sessions after cancellation/playback has finished.
+            await self._cancel_barge_in()
             self._speaker = None
             self.camera_on = self.screen_on = False
             self._typed_question = None
@@ -793,6 +862,8 @@ class LiveConversation:
             return
         self._stopped.set()
         self._turn_cancelled.set()
+        if self._barge_cancelled is not None:
+            self._barge_cancelled.set()
         self._question_ready.set()
         self._set_state("stopping", "Live · Завершаю разговор…")
 

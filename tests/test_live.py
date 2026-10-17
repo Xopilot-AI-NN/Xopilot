@@ -311,6 +311,66 @@ class LiveControllerTests(unittest.IsolatedAsyncioTestCase):
         second_context = self.mocks["generate_live_reply"].call_args_list[1].args[0]
         self.assertEqual(len(second_context), 3)
 
+    async def test_voice_barge_in_stops_tts_and_preserves_the_new_utterance(self):
+        self.live._android = True
+        self.live._typed_question = 'Первый вопрос'
+        speaking, interrupt, finish_voice = threading.Event(), threading.Event(), threading.Event()
+        heard_cancel = threading.Event()
+        takes = 0
+        def listen(cancelled, on_start):
+            nonlocal takes
+            takes += 1
+            if takes > 1:
+                return self.wait_for_cancel(cancelled)
+            if not interrupt.wait(3):
+                raise RuntimeError('No test interruption')
+            on_start()
+            if not finish_voice.wait(3):
+                raise RuntimeError('New utterance was lost')
+            self.assertFalse(cancelled.is_set())
+            return b'new-voice'
+        speeches = 0
+        def speak(text, cancelled):
+            nonlocal speeches
+            speeches += 1
+            if speeches == 1:
+                speaking.set()
+                if cancelled.wait(3):
+                    heard_cancel.set()
+                    raise CancelledError()
+                raise RuntimeError('TTS was not interrupted')
+        self.speaker.speak.side_effect = speak
+        with patch('App.services.mobile_audio.record_barge_in', side_effect=listen):
+            await self.live.toggle()
+            self.assertTrue(await asyncio.to_thread(speaking.wait, 2))
+            interrupt.set()
+            self.assertTrue(await asyncio.to_thread(heard_cancel.wait, 2))
+            finish_voice.set()
+            async def wait_second():
+                while len(self.history) < 4:
+                    await asyncio.sleep(.005)
+            await asyncio.wait_for(wait_second(), 3)
+            await self.live.stop()
+            await self.finish()
+        self.mocks['transcribe_audio'].assert_called_once()
+        self.assertEqual(self.mocks['transcribe_audio'].call_args.args[0], b'new-voice')
+        self.assertEqual([m['role'] for m in self.history], ['user', 'ai', 'user', 'ai'])
+        self.assertIsNone(self.live._barge_task)
+
+    async def test_unavailable_echo_cancellation_does_not_break_the_reply(self):
+        self.live._android = True
+        self.live._typed_question = 'Вопрос'
+        with patch('App.services.mobile_audio.record_barge_in', side_effect=RuntimeError('AEC unavailable')):
+            await self.live.toggle()
+            async def answered():
+                while not self.history or self.history[-1]['role'] != 'ai' or not self.mocks['record_utterance'].called:
+                    await asyncio.sleep(.005)
+            await asyncio.wait_for(answered(), 3)
+            self.assertFalse(self.live._barge_in_available)
+            await self.live.stop()
+            await self.finish()
+        self.assertEqual(self.history[-1]['content'], 'Здравствуйте')
+
     async def test_interrupt_speech_resumes_listening(self):
         self.mocks["record_utterance"].side_effect = None
         self.mocks["record_utterance"].return_value = b"audio"

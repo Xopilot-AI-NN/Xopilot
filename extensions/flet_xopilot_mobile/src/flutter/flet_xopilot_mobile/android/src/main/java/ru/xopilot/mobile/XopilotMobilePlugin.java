@@ -1,3 +1,9 @@
+/*
+Файл: /extensions/flet_xopilot_mobile/android/XopilotMobilePlugin.java
+Разработчик: DenBroLiik
+Версия: 2.0.10
+Описание: Закрытые данные Android, локальные модели и службы приложения.
+*/
 package ru.xopilot.mobile;
 
 import android.content.Context;
@@ -23,6 +29,7 @@ import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding;
 import io.flutter.plugin.common.PluginRegistry;
 import io.flutter.plugin.common.MethodCall;
 import io.flutter.plugin.common.MethodChannel;
+import io.flutter.plugin.common.EventChannel;
 import java.security.KeyStore;
 import java.io.File;
 import java.security.SecureRandom;
@@ -35,6 +42,8 @@ import javax.crypto.spec.GCMParameterSpec;
 public final class XopilotMobilePlugin implements FlutterPlugin, MethodChannel.MethodCallHandler, ActivityAware, PluginRegistry.ActivityResultListener {
     private Context context;
     private MethodChannel channel;
+    private EventChannel microphoneChannel;
+    private final LiveMicrophone microphone = new LiveMicrophone();
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private volatile Engine engine;
@@ -67,6 +76,8 @@ public final class XopilotMobilePlugin implements FlutterPlugin, MethodChannel.M
         cameraFrames = new CameraFrames(context);
         channel = new MethodChannel(binding.getBinaryMessenger(), "ru.xopilot/mobile");
         channel.setMethodCallHandler(this);
+        microphoneChannel = new EventChannel(binding.getBinaryMessenger(), "ru.xopilot/mobile_audio");
+        microphoneChannel.setStreamHandler(microphone);
         overlay = new LiveOverlay(context, action -> channel.invokeMethod("liveAction", action));
         LiveCaptureService.stopped = () -> overlay.stop(true);
         ((Application)context).registerActivityLifecycleCallbacks(lifecycle);
@@ -76,6 +87,9 @@ public final class XopilotMobilePlugin implements FlutterPlugin, MethodChannel.M
         // Overlay controls must bypass inference: ending/muting remains immediate.
         try {
             switch (call.method) {
+                case "microphoneStart": result.success(java.util.Collections.singletonMap(
+                    "echoCancellation", microphone.start(Boolean.TRUE.equals(call.argument("echoCancellation"))))); return;
+                case "microphoneStop": microphone.stop(); result.success(true); return;
                 case "canvasWeb":
                     if(activityBinding==null)result.error("canvas_unavailable","Откройте Xopilot",null);
                     else canvasWeb.inspect(activityBinding.getActivity(),(Map<String,Object>)call.arguments,result);
@@ -294,10 +308,11 @@ public final class XopilotMobilePlugin implements FlutterPlugin, MethodChannel.M
                 Engine.Companion.setNativeMinLogSeverity(LogSeverity.ERROR);
                 closeAll();
                 Backend backend = "gpu".equals(call.argument("backend")) ? new Backend.GPU() : new Backend.CPU();
+                Number contextTokens = call.argument("context");
                 Engine created = new Engine(new EngineConfig(call.argument("path"), backend,
                     Boolean.TRUE.equals(call.argument("vision")) ? new Backend.GPU() : null,
                     Boolean.TRUE.equals(call.argument("audio")) ? new Backend.CPU() : null,
-                    null, null, call.argument("cache")));
+                    contextTokens == null ? 4096 : contextTokens.intValue(), null, call.argument("cache")));
                 try { created.initialize(); engine = created; }
                 catch (Exception error) { created.close(); throw error; }
                 return null;
@@ -313,12 +328,14 @@ public final class XopilotMobilePlugin implements FlutterPlugin, MethodChannel.M
                 }
                 Number temperature = call.argument("temperature");
                 Boolean thinking = call.argument("thinking");
+                Number outputTokens = call.argument("max_output_tokens");
                 // Full constructor keeps all SDK defaults explicit and avoids
                 // compiler-specific Kotlin synthetic constructors.
                 ConversationConfig config = new ConversationConfig(
                     Contents.Companion.of(call.<String>argument("system")), initial, Collections.emptyList(),
                     temperature == null ? null : new SamplerConfig(40, 0.95, temperature.doubleValue(), 0),
-                    true, Collections.emptyList(), Collections.emptyMap(), null, true, null,
+                    true, Collections.emptyList(), Collections.emptyMap(), null, true,
+                    outputTokens == null ? null : outputTokens.intValue(),
                     thinking == null ? null : new ThinkingConfig(thinking), false, null, null);
                 Conversation conversation = engine.createConversation(config);
                 String id = UUID.randomUUID().toString();
@@ -402,6 +419,7 @@ public final class XopilotMobilePlugin implements FlutterPlugin, MethodChannel.M
     }
 
     @Override public void onDetachedFromEngine(FlutterPluginBinding binding) {
+        microphone.stop(); microphoneChannel.setStreamHandler(null);
         ((Application)context).unregisterActivityLifecycleCallbacks(lifecycle);
         overlay.dispose(); LiveCaptureService.stopped = null;
         cameraFrames.close(); canvasWeb.close();

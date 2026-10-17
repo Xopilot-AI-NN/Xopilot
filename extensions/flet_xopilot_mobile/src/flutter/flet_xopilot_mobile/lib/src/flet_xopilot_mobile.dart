@@ -1,9 +1,10 @@
 // Файл: /extensions/flet_xopilot_mobile/lib/src/flet_xopilot_mobile.dart
 // Разработчик: DenBroLiik
-// Версия: 2.0.9
+// Версия: 2.0.10
 // Описание: Нативные службы Android, запись и офлайн-озвучивание Live.
 import 'dart:async';
 import 'speech_voices.dart';
+import 'live_voice_gate.dart';
 import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
@@ -23,10 +24,15 @@ class XopilotMobileService extends FletService with WidgetsBindingObserver {
   FlutterTts get tts => _tts ??= FlutterTts();
   CameraController? camera;
   StreamSubscription<Uint8List>? audio;
+  Future<void>? audioStopping;
   Timer? audioDeadline;
+  int microphoneBytes = 0;
+  double microphonePeak = 0;
+  bool speechStarted = false;
   Timer? viewportDeadline;
   BytesBuilder pcm = BytesBuilder(copy: false);
   Completer<String>? utterance;
+  Map<String, dynamic>? utteranceStatus;
   bool paused = false;
   bool floating = false;
   int lifecycleEpoch = 0;
@@ -54,22 +60,24 @@ class XopilotMobileService extends FletService with WidgetsBindingObserver {
     });
   }
 
-  Future<void> startAudio(bool segment) async {
+  Future<void> startAudio(bool segment, {bool echoCancellation = false}) async {
     if (paused) throw StateError('Вернитесь в приложение для записи звука');
     if (audio != null) throw StateError('Микрофон уже используется');
     final attempt = ++epoch;
+    microphoneBytes = 0; microphonePeak = 0; speechStarted = false;
     pcm.clear();
     if (!await recorder.hasPermission()) throw StateError('Разрешите доступ к микрофону в настройках Android');
     if (attempt != epoch || paused) throw StateError('Запись отменена');
-    final stream = await recorder.startStream(const RecordConfig(
-      encoder: AudioEncoder.pcm16bits, sampleRate: 16000, numChannels: 1,
-      autoGain: true, echoCancel: true, noiseSuppress: true));
+    final stream = const EventChannel('ru.xopilot/mobile_audio')
+        .receiveBroadcastStream().map((chunk) => chunk as Uint8List);
+    final voiceGate = LiveVoiceGate();
     bool speaking = false;
     int silence = 0, active = 0;
     final before = <Uint8List>[];
     final pending = BytesBuilder(copy: false);
-    if (attempt != epoch || paused) { await recorder.cancel(); throw StateError('Запись отменена'); }
+    if (attempt != epoch || paused) throw StateError('Запись отменена');
     audio = stream.listen((chunk) {
+      microphoneBytes += chunk.length;
       if (!segment) {
         final remaining = 30 * 16000 * 2 - pcm.length;
         if (remaining > 0) pcm.add(chunk.sublist(0, min(remaining, chunk.length)));
@@ -89,13 +97,16 @@ class XopilotMobileService extends FletService with WidgetsBindingObserver {
           final sample = view.getInt16(i, Endian.little);
           square += sample * sample;
         }
-        final voiced = sqrt(square / 480) > 300;
+        final level = sqrt(square / 480);
+        microphonePeak = max(microphonePeak, level);
+        final voiced = echoCancellation ? voiceGate.isVoiced(level) : level > 300;
         if (!speaking) {
           before.add(frame);
           if (before.length > 10) before.removeAt(0);
           active = voiced ? active + 1 : 0;
-          if (active >= 6) {
+          if (active >= (echoCancellation ? 8 : 6)) {
             speaking = true;
+            speechStarted = true;
             for (final part in before) pcm.add(part);
             before.clear();
           }
@@ -113,14 +124,26 @@ class XopilotMobileService extends FletService with WidgetsBindingObserver {
       if (utterance != null && !utterance!.isCompleted) utterance!.completeError(error);
       unawaited(stopAudio());
     });
+    try { await channel.invokeMethod('microphoneStart', {'echoCancellation': echoCancellation}); }
+    catch (_) { await audio?.cancel(); audio = null; rethrow; }
+    if (attempt != epoch || paused) { await stopAudio(); throw StateError('Запись отменена'); }
     if (!segment) audioDeadline = Timer(const Duration(seconds: 30), () => unawaited(stopAudio()));
   }
 
   Future<void> stopAudio() async {
+    print('XopilotAudio: native stop requested');
+    final stopping = audioStopping;
+    if (stopping != null) return await stopping;
     audioDeadline?.cancel(); audioDeadline = null;
     final stream = audio; audio = null;
-    await _recorder?.stop();
-    await stream?.cancel();
+    if (stream == null) return;
+    final pending = () async {
+      try { await channel.invokeMethod('microphoneStop'); print('XopilotAudio: native recorder stopped'); }
+      finally { await stream.cancel(); print('XopilotAudio: native stream cancelled'); }
+    }();
+    audioStopping = pending;
+    try { await pending; }
+    finally { if (identical(audioStopping, pending)) audioStopping = null; }
   }
 
   Future<void> finishUtterance() async {
@@ -138,6 +161,7 @@ class XopilotMobileService extends FletService with WidgetsBindingObserver {
     if (result != null && !result.isCompleted) result.completeError(StateError('Запись отменена'));
     await stopAudio();
     pcm.clear();
+    utterance = null; utteranceStatus = null;
   }
 
   Future<String> cameraFrame(dynamic args) {
@@ -209,6 +233,27 @@ class XopilotMobileService extends FletService with WidgetsBindingObserver {
       case 'audioStart': await startAudio(false); return null;
       case 'audioStop': await stopAudio(); return base64Encode(pcm.takeBytes());
       case 'audioCancel': await cancelAudio(); return null;
+      case 'audioBeginUtterance':
+        if (utterance != null) throw StateError('Запись уже начата');
+        final result = Completer<String>();
+        utterance = result;
+        utteranceStatus = {'state': 'waiting'};
+        result.future.then((data) {
+          if (identical(utterance, result)) utteranceStatus = {'state': 'done', 'data': data};
+        }, onError: (Object error) {
+          if (identical(utterance, result)) utteranceStatus = {'state': 'error', 'error': error.toString()};
+        });
+        try { await startAudio(true, echoCancellation: args?['echoCancellation'] == true); }
+        catch (_) { utterance = null; utteranceStatus = null; rethrow; }
+        return null;
+      case 'audioPollUtterance':
+        final status = utteranceStatus;
+        if (status == null) throw StateError('Запись не начата');
+        if (status['state'] != 'waiting') {
+          await stopAudio();
+          utterance = null; utteranceStatus = null; pcm.clear();
+        }
+        return {...status, 'bytes': microphoneBytes, 'peak': microphonePeak, 'speechStarted': speechStarted};
       case 'recordUtterance':
         utterance = Completer<String>();
         utterance!.future.ignore();
