@@ -724,6 +724,70 @@ class LiveConversation:
                 self._barge_cancelled = None
         return await asyncio.to_thread(record_utterance, self._turn_cancelled)
 
+    async def _answer_turn(self, history, model_filename, image_bytes, **kwargs):
+        """Speak complete phrases while inference continues; one cancellation owns both."""
+        try:
+            from ...services.live_sentences import LiveSentences
+        except ImportError:
+            from services.live_sentences import LiveSentences
+        loop = asyncio.get_running_loop()
+        chunks = asyncio.Queue()
+        received = threading.Event()
+        speech_error = ''
+
+        def on_text(text):
+            received.set()
+            loop.call_soon_threadsafe(chunks.put_nowait, text)
+
+        async def speak():
+            nonlocal speech_error
+            sentences = LiveSentences()
+            while True:
+                text = await chunks.get()
+                parts = sentences.feed(text or '', final=text is None)
+                for part in parts:
+                    self._check_turn()
+                    if not self.voice_output_enabled or speech_error:
+                        continue
+                    self._set_state('speaking', 'Говорю. Можно перебить голосом или кнопкой.'
+                        if self._barge_in_available is not False else 'Говорю. Можно перебить кнопкой.')
+                    try:
+                        if self._speaker is None:
+                            self._speaker = await asyncio.to_thread(SpeechOutput)
+                        await asyncio.to_thread(self._speaker.speak, part, self._turn_cancelled)
+                    except (CancelledError, asyncio.CancelledError):
+                        raise
+                    except Exception as exc:
+                        speech_error = f'Ответ сохранён. Не удалось озвучить: {exc}'
+                if text is None:
+                    return
+
+        speaking = asyncio.create_task(speak())
+        try:
+            reply = await asyncio.to_thread(generate_live_reply, history, self._turn_cancelled,
+                model_filename, image_bytes, on_text=on_text if self.voice_output_enabled else None, **kwargs)
+            self._check_turn()
+            # Older runtimes can only return a whole reply. Keep that fallback
+            # without speaking the same streamed text twice.
+            if not received.is_set():
+                chunks.put_nowait(reply)
+            await self.on_ai_message(reply)
+            self.reply_text.value = reply
+            self.page.update()
+            chunks.put_nowait(None)
+            await speaking
+            self._check_turn()
+            return speech_error
+        finally:
+            if not speaking.done():
+                # Do not leave a detached TTS worker talking after stop/error.
+                self._turn_cancelled.set()
+                chunks.put_nowait(None)
+            try:
+                await speaking
+            except (CancelledError, asyncio.CancelledError):
+                pass
+
     async def _run(self):
         error = ""
         try:
@@ -790,27 +854,11 @@ class LiveConversation:
                             from services import user_memory
                         instructions += user_memory.context(transcript)
                     self._start_barge_in()
-                    reply = await asyncio.to_thread(
-                        generate_live_reply, history, self._turn_cancelled, model_filename, image_bytes,
+                    speech_error = await self._answer_turn(
+                        history, model_filename, image_bytes,
                         instructions=instructions, attachments=[*shared_files, *attachments],
                         **({"private": True} if self.is_private() else {}),
                     )
-                    self._check_turn()
-                    await self.on_ai_message(reply)
-                    self.reply_text.value = reply
-                    self.page.update()
-                    self._check_turn()
-                    speech_error = ""
-                    if self.voice_output_enabled:
-                        self._set_state("speaking", "Говорю. Можно перебить голосом или кнопкой." if self._barge_in_available is not False else "Говорю. Можно перебить кнопкой.")
-                        try:
-                            if self._speaker is None:
-                                self._speaker = await asyncio.to_thread(SpeechOutput)
-                            await asyncio.to_thread(self._speaker.speak, reply, self._turn_cancelled)
-                        except (CancelledError, asyncio.CancelledError):
-                            raise
-                        except Exception as exc:
-                            speech_error = f"Ответ сохранён. Не удалось озвучить: {exc}"
                     # Дать динамикам закончить звучание перед повторным открытием микрофона.
                     await asyncio.sleep(0.25)
                     hint = speech_error or self._vision_note or "Говорите — отвечу после паузы."

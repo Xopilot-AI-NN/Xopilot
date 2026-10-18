@@ -287,6 +287,65 @@ class LiveControllerTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.history)
         self.mocks["transcribe_audio"].assert_not_called()
 
+    async def test_first_phrase_is_spoken_before_model_finishes_and_saved_once(self):
+        first_spoken = threading.Event()
+        spoken = []
+        def generate(history, cancelled, *args, on_text=None, **kwargs):
+            on_text('Первая фраза. ')
+            if not first_spoken.wait(2):
+                raise RuntimeError('TTS waited for the complete answer')
+            on_text('Вторая фраза.')
+            return 'Первая фраза. Вторая фраза.'
+        def speak(text, cancelled):
+            spoken.append(text)
+            first_spoken.set()
+        self.mocks['generate_live_reply'].side_effect = generate
+        self.speaker.speak.side_effect = speak
+        error = await self.live._answer_turn([], 'model.litertlm', None)
+        self.assertEqual(error, '')
+        self.assertEqual(spoken, ['Первая фраза.', 'Вторая фраза.'])
+        self.assertEqual(len(self.history), 1)
+        self.assertEqual(self.history[0]['content'], 'Первая фраза. Вторая фраза.')
+
+    async def test_speech_failure_preserves_full_streamed_reply(self):
+        def generate(history, cancelled, *args, on_text=None, **kwargs):
+            on_text('Первая фраза. Вторая фраза.')
+            return 'Первая фраза. Вторая фраза.'
+        self.mocks['generate_live_reply'].side_effect = generate
+        self.speaker.speak.side_effect = RuntimeError('Audio device unavailable')
+        error = await self.live._answer_turn([], 'model.litertlm', None)
+        self.assertIn('Audio device unavailable', error)
+        self.assertEqual(self.history[0]['content'], 'Первая фраза. Вторая фраза.')
+        self.speaker.speak.assert_called_once()
+
+    async def test_stream_interruption_discards_queued_speech_and_waits_for_generation(self):
+        first_spoken = threading.Event()
+        generation_finished = threading.Event()
+        spoken = []
+        def generate(history, cancelled, *args, on_text=None, **kwargs):
+            on_text('Первая фраза. Вторая фраза. ')
+            try:
+                if not cancelled.wait(2):
+                    raise RuntimeError('Generation was not cancelled')
+                raise CancelledError()
+            finally:
+                generation_finished.set()
+        def speak(text, cancelled):
+            spoken.append(text)
+            first_spoken.set()
+            if cancelled.wait(2):
+                raise CancelledError()
+        self.mocks['generate_live_reply'].side_effect = generate
+        self.speaker.speak.side_effect = speak
+        task = asyncio.create_task(self.live._answer_turn([], 'model.litertlm', None))
+        self.assertTrue(await asyncio.to_thread(first_spoken.wait, 2))
+        self.live._turn_cancelled.set()
+        with self.assertRaises((CancelledError, asyncio.CancelledError)):
+            await task
+        self.assertTrue(generation_finished.is_set())
+        self.assertEqual(spoken, ['Первая фраза.'])
+        self.assertEqual(self.history, [])
+
     async def test_two_turns_share_history_and_return_to_listening(self):
         recordings = 0
 

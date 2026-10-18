@@ -410,7 +410,7 @@ def prepare_voice_model(cancelled: threading.Event, filename: str | None = None,
             raise CancelledError()
 
 
-def _send_cancellable(conversation, message, cancelled, **kwargs):
+def _send_cancellable(conversation, message, cancelled, *, on_text=None, **kwargs):
     if cancelled.is_set():
         raise CancelledError()
     finished = threading.Event()
@@ -424,7 +424,20 @@ def _send_cancellable(conversation, message, cancelled, **kwargs):
     watcher = threading.Thread(target=watch_cancel, daemon=True)
     watcher.start()
     try:
-        result = conversation.send_message(message, **kwargs)
+        if on_text is not None and callable(getattr(conversation, 'send_message_async', None)):
+            parts = []
+            for chunk in conversation.send_message_async(message, **kwargs):
+                if cancelled.is_set():
+                    conversation.cancel_process()
+                    # Drain native completion before closing its conversation.
+                    continue
+                text = _extract_text(chunk)
+                if text:
+                    parts.append(text)
+                    on_text(text)
+            result = {'content': [{'type': 'text', 'text': ''.join(parts)}]}
+        else:
+            result = conversation.send_message(message, **kwargs)
         if cancelled.is_set():
             raise CancelledError()
         return result
@@ -516,7 +529,7 @@ def generate_live_reply(
     cancelled: threading.Event,
     model_filename: str | None = None,
     image_bytes: bytes | None = None,
-    *, instructions="", attachments=None, private=False,
+    *, instructions="", attachments=None, private=False, on_text=None,
 ) -> str:
     """Ответ на последний голосовой вопрос с недавней текстовой историей чата.
     image_bytes — необязательный кадр с камеры/экрана (кнопки Live-камера/Live-экран),
@@ -563,7 +576,7 @@ def generate_live_reply(
             system_message=system, messages=messages,
             **_conversation_kwargs(lm, thinking_disabled=True),
         ) as conversation:
-            result = _send_cancellable(conversation, current, cancelled)
+            result = _send_cancellable(conversation, current, cancelled, on_text=on_text)
         text = _extract_text(result).strip()
         if not text:
             raise RuntimeError("Модель не вернула ответ. Повторите вопрос.")

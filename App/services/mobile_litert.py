@@ -9,6 +9,7 @@ No desktop ctypes library is loaded. The official Kotlin SDK owns all engines
 and conversations. Contents/history use the same format as the desktop client.
 """
 import base64
+import time
 from types import SimpleNamespace
 from . import mobile_runtime as runtime
 
@@ -96,6 +97,21 @@ class Conversation:
         elif isinstance(message, dict): message = message['content']
         answer = runtime.call('send', {'id': self.identity, 'content': message})
         return {'content': [{'type': 'text', 'text': answer}]}
+
+    def send_message_async(self, message):
+        if self.closed: raise RuntimeError('Разговор закрыт')
+        if isinstance(message, Contents): message = message.to_json()
+        elif isinstance(message, dict): message = message['content']
+        runtime.call('streamStart', {'id': self.identity, 'content': message})
+        while True:
+            state = runtime.call('streamPoll', {'id': self.identity})
+            for text in state.get('chunks', []):
+                yield {'content': [{'type': 'text', 'text': text}]}
+            if state.get('error'):
+                raise RuntimeError(state['error'])
+            if state.get('done'):
+                break
+            time.sleep(.05)
 
     def cancel_process(self):
         if not self.closed: runtime.call('cancel', {'id': self.identity})

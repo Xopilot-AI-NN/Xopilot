@@ -49,6 +49,33 @@ public final class XopilotMobilePlugin implements FlutterPlugin, MethodChannel.M
     private volatile Engine engine;
     private final Map<String, Conversation> conversations = new ConcurrentHashMap<>();
     private volatile Conversation active;
+    private final Map<String, ReplyStream> replyStreams = new ConcurrentHashMap<>();
+    private static final class ReplyStream {
+        private final List<String> chunks = new ArrayList<>();
+        private boolean done;
+        private String error;
+        synchronized void append(String text) { chunks.add(text); }
+        synchronized void finish(Throwable failure) {
+            error = failure == null ? null : failure.getMessage();
+            if (failure != null && error == null) error = failure.getClass().getSimpleName();
+            done = true;
+            notifyAll();
+        }
+        synchronized Map<String, Object> poll() {
+            Map<String, Object> result = new HashMap<>();
+            result.put("chunks", new ArrayList<>(chunks)); chunks.clear();
+            result.put("done", done); result.put("error", error);
+            return result;
+        }
+        synchronized void awaitDone() throws InterruptedException {
+            long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
+            while (!done) {
+                long left = until - System.nanoTime();
+                if (left <= 0) throw new IllegalStateException("Модель ещё завершает поток ответа");
+                TimeUnit.NANOSECONDS.timedWait(this, left);
+            }
+        }
+    }
     private ActivityPluginBinding activityBinding;
     private MethodChannel.Result screenPending;
     private DocumentPicker documents;
@@ -227,6 +254,12 @@ public final class XopilotMobilePlugin implements FlutterPlugin, MethodChannel.M
             });
             return;
         }
+        if (call.method.equals("streamPoll")) {
+            ReplyStream stream = replyStreams.get(call.<String>argument("id"));
+            if (stream == null) result.error("xopilot_mobile", "Поток ответа закрыт", null);
+            else result.success(stream.poll());
+            return;
+        }
         if (call.method.equals("cancel")) {
             try {
                 Conversation running = active;
@@ -342,6 +375,31 @@ public final class XopilotMobilePlugin implements FlutterPlugin, MethodChannel.M
                 conversations.put(id, conversation);
                 return id;
             }
+            case "streamStart": {
+                String id = call.argument("id");
+                Conversation conversation = conversations.get(id);
+                if (conversation == null) throw new IllegalStateException("Разговор закрыт");
+                ReplyStream stream = new ReplyStream();
+                if (replyStreams.putIfAbsent(id, stream) != null)
+                    throw new IllegalStateException("Поток ответа уже запущен");
+                active = conversation;
+                try {
+                    conversation.sendMessageAsync(contents(call.argument("content")), new MessageCallback() {
+                        public void onMessage(Message message) { stream.append(message.toString()); }
+                        public void onDone() { complete(null); }
+                        public void onError(Throwable error) { complete(error); }
+                        private void complete(Throwable error) {
+                            if (active == conversation) active = null;
+                            stream.finish(error);
+                        }
+                    });
+                } catch (RuntimeException error) {
+                    if (active == conversation) active = null;
+                    stream.finish(error);
+                    throw error;
+                }
+                return null;
+            }
             case "send": {
                 Conversation conversation = conversations.get(call.<String>argument("id"));
                 if (conversation == null) throw new IllegalStateException("Разговор закрыт");
@@ -350,8 +408,12 @@ public final class XopilotMobilePlugin implements FlutterPlugin, MethodChannel.M
                 finally { active = null; }
             }
             case "closeConversation": {
-                Conversation conversation = conversations.remove(call.<String>argument("id"));
+                String id = call.argument("id");
+                ReplyStream stream = replyStreams.get(id);
+                if (stream != null) stream.awaitDone();
+                Conversation conversation = conversations.remove(id);
                 if (conversation != null) conversation.close();
+                replyStreams.remove(id);
                 return null;
             }
             case "closeAll": closeAll(); return null;
@@ -412,8 +474,13 @@ public final class XopilotMobilePlugin implements FlutterPlugin, MethodChannel.M
     }
 
     private void closeAll() {
+        for (ReplyStream stream : replyStreams.values()) {
+            try { stream.awaitDone(); }
+            catch (InterruptedException error) { Thread.currentThread().interrupt(); return; }
+        }
         for (Conversation conversation : conversations.values()) conversation.close();
         conversations.clear();
+        replyStreams.clear();
         if (engine != null) engine.close();
         engine = null;
     }
