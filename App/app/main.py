@@ -818,7 +818,12 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                         def refresh():
                             if is_sending:
                                 composer_label.value = value
-                                composer_status.update()
+                                try:
+                                    composer_status.update()
+                                except RuntimeError as exc:
+                                    if 'Control must be added to the page' not in str(exc):
+                                        raise
+                                    # A disconnect/layout replacement removed the composer.
                         loop.call_soon_threadsafe(refresh)
                     def approve_action(request):
                         done=threading.Event();answer=[False]

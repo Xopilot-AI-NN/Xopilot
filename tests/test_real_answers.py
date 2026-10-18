@@ -42,6 +42,22 @@ class ModelLimitsTests(unittest.TestCase):
         self.assertEqual(messages[0]["content"][0]["text"], history[0]["content"])
         conversation.return_value.send_message.assert_called_once_with("Следующий вопрос")
 
+    def test_unavailable_constraint_provider_falls_back_before_generation(self):
+        conversation=Mock()
+        conversation.send_message.return_value={'content':[{'text':'{"final":"Готово"}'}]}
+        context=Mock(__enter__=Mock(return_value=conversation),__exit__=Mock(return_value=False))
+        engine=Mock()
+        engine.create_conversation.side_effect=[RuntimeError('Failed to create conversation'),context,context]
+        with patch.multiple(llm,_engine=engine,_conversation=None), patch.object(llm,'_fit_context',return_value=[]), patch.object(llm,'record_generation'):
+            first=llm.generate_reply('Запрос',history=[],structured=True,response_schema={'type':'object'})
+            llm.generate_reply('Ещё запрос',history=[],structured=True,response_schema={'type':'object'})
+        self.assertIn('Готово',first)
+        self.assertEqual(conversation.send_message.call_count,2)
+        self.assertIn('constrained_decoding_config',engine.create_conversation.call_args_list[0].kwargs)
+        for call in engine.create_conversation.call_args_list[1:]:
+            self.assertNotIn('constrained_decoding_config',call.kwargs)
+        self.assertNotIn('response_format',conversation.send_message.call_args.kwargs)
+
     def test_live_reply_does_not_set_a_token_budget(self):
         conversation = Mock()
         conversation.send_message.return_value = {"content": [{"text": "Развёрнутый ответ"}]}

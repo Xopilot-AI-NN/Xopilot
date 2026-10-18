@@ -147,6 +147,24 @@ class DocumentWorkflowTests(unittest.TestCase):
             self.assertIn(screen,call.kwargs['attachments'])
             self.assertTrue(call.args[0].endswith('Что видно на экране?'))
 
+    def test_gemma_native_envelope_preserves_manual_denial(self):
+        from App.services.agent import parse_response
+        parsed=parse_response('[{"tool_name":"read_project_file","arguments":{"path":"main.py"}}]')
+        self.assertEqual(parsed['tool'],'read_project_file')
+        self.assertEqual(parsed['arguments'],{'path':'main.py'})
+        self.assertIn('error',parse_response('{"tool":"read_canvas","tool_name":"write_project_file","arguments":{}}'))
+        folder=self.root/'denied';folder.mkdir()
+        from App.services import project_tools
+        with patch.object(project_tools,'get_db',return_value=self.db):
+            project_tools.configure(self.workspace['id'],str(folder))
+            generate=Mock(side_effect=[json.dumps([{'tool_name':'write_project_file','arguments':{'path':'no.txt','content':'Denied'}}]),
+                                       json.dumps({'final':'Запись отклонена'})])
+            approve=Mock(return_value=False)
+            run_agent('Создай файл no.txt',chat_id=self.chat,history=[],attachments=[],instructions='',
+                      level='medium',cancelled=threading.Event(),generate=generate,approve=approve)
+            approve.assert_called_once()
+            self.assertFalse((folder/'no.txt').exists())
+
     def test_cancelled_agent_cannot_write_canvas(self):
         cancel = threading.Event()
         tools = LocalTools(self.chat, cancel)

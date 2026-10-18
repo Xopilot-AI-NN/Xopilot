@@ -108,16 +108,23 @@ def parse_response(text):
         result = json.loads(value)
     except ValueError:
         return {'error': 'Ответ не является JSON. Верни один объект с final или tool и arguments.'}
+    # Gemma sometimes emits its native tool_name/list envelope. Normalize only
+    # explicit, unambiguous calls; the same schema/scope/approval checks follow.
+    if isinstance(result, list) and result:
+        result = result[0] if len(result) == 1 else {'actions': result}
     if not isinstance(result, dict):
         return {'error': 'Нужен JSON-объект с final или tool и arguments.'}
     calls = result.get('actions') if isinstance(result.get('actions'),list) else [result]
-    required={'search_chats':('query',),'search_library':('query',),'search_web':('query',),
-        'read_website':('url',),'read_chat':('chat_id',),'read_material':('id',),
-        'read_canvas':('id',),'inspect_canvas':('id',),'interact_canvas':('id','action'),
-        'create_canvas':('title',),'update_canvas':('id','content'),'create_document':('name',),
-        'launch_app':('package',),'control_media':('action',),'read_project_file':('path',),
-        'write_project_file':('path','content'),'run_project_command':('argv',),'start_project_process':('argv',)}
+    from .agent_protocol import REQUIRED as required
     for call in calls:
+        if isinstance(call, dict) and 'tool_name' in call:
+            if 'tool' in call and call['tool'] != call['tool_name']:
+                return {'error': 'Противоречивые имена инструмента'}
+            call['tool'] = call.pop('tool_name')
+        if isinstance(call, dict) and call.get('tool') in {'run_project_command','start_project_process'}:
+            args = call.get('arguments')
+            if isinstance(args, list) and args and all(isinstance(a, str) for a in args):
+                call['arguments'] = {'argv': args}
         if isinstance(call,dict) and call.get('tool') in TOOLS:
             name=call['tool']
             if 'arguments' not in call:
@@ -308,8 +315,9 @@ def _run_agent(prompt, *, chat_id, history, attachments, instructions, level, ca
     access = project_tools.settings(tools.workspace_id)
     automatic = level == 'auto'
     limit = None if automatic else LEVELS.get(level, LEVELS['medium'])[1]
-    from .agent_protocol import build as build_protocol
-    protocol = build_protocol(available_tools(access), approval=project_tools.chat_approval_mode(chat_id),
+    from .agent_protocol import build as build_protocol, response_schema
+    toolset = available_tools(access)
+    protocol = build_protocol(toolset, approval=project_tools.chat_approval_mode(chat_id),
         workspace=workspace['name'], attached=bool(access.get('enabled') and access.get('root')),
         prompt=prompt, instructions=instructions)
     transcript = [dict(item) for item in history]
@@ -335,9 +343,10 @@ def _run_agent(prompt, *, chat_id, history, attachments, instructions, level, ca
         step_files = list(dict.fromkeys([*(attachments or []), *(files or [])]))
         budget = '' if limit is None else (f'\nОсталось действий: {limit-step}. ' +
             ('Теперь верни final, инструменты больше недоступны.' if step >= limit else ''))
-        kwargs=dict(history=transcript,attachments=step_files,instructions=protocol+budget)
+        kwargs=dict(history=transcript,attachments=step_files,instructions=protocol+budget,structured=True)
+        if not network:
+            kwargs['response_schema'] = response_schema(toolset)
         if network:
-            kwargs['structured']=True
             if screen_files:kwargs['screen_attachments']=screen_files
         def incorporate(updates, options):
             nonlocal current,attachments,goal
@@ -378,6 +387,8 @@ def _run_agent(prompt, *, chat_id, history, attachments, instructions, level, ca
             # has been compacted. Format feedback is never a new user request.
             current = ('Служебное исправление формата предыдущего ответа (не запрос пользователя):\n'
                        + parsed['error'] + '\nИсправь только формат и продолжи исходную задачу. '
+                       'Если предыдущий ответ — готовый обычный текст, помести тот же текст в final. '
+                       'При исправлении формата не повторяй уже успешные инструменты. '
                        'Не отвечай на служебную просьбу и не объясняй JSON.\n'
                        'Актуальный запрос пользователя:\n' + goal)
             # Keep the latest screen/tool attachment available during repair.
@@ -413,7 +424,11 @@ def _run_agent(prompt, *, chat_id, history, attachments, instructions, level, ca
             except Exception as exc:
                 notify('error',error=str(exc))
                 return {'tool':name,'error':str(exc)},[],TOOL_LABELS[name]+' · ошибка: '+str(exc)
-        if len(actions)==1:results=[execute(actions[0])]
+        # Models may put dependent read/write/run steps in one native batch.
+        # File/Canvas mutations run in response order; independent commands can
+        # still run concurrently. A lock alone cannot preserve pool order.
+        ordered = any(a['tool'] in {'write_project_file','create_canvas','update_canvas','create_document'} for a in actions)
+        if len(actions)==1 or ordered:results=[execute(action) for action in actions]
         else:
             with ThreadPoolExecutor(max_workers=4,thread_name_prefix='xopilot-tools') as pool:
                 results=list(pool.map(execute,actions))

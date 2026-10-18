@@ -16,6 +16,7 @@ conversation с аудиовходом и не добавляет запись �
 
 import atexit
 import glob
+import logging
 import os
 import threading
 import time
@@ -313,7 +314,7 @@ def _build_message(prompt_text, attachments, *, retain_modalities=False):
     return litert_lm.Contents.of(*parts)
 
 
-def generate_reply(prompt_text, history=None, attachments=None, *, instructions="", cancelled=None, private=False):
+def generate_reply(prompt_text, history=None, attachments=None, *, instructions="", cancelled=None, private=False, structured=False, response_schema=None):
     """attachments: [(имя, путь), ...] вложений ТЕКУЩЕГО сообщения (фото/текст/PDF/DOCX/видео).
     Старые вложения из history повторно не отправляются — только текст истории (см. _recent_messages).
     """
@@ -348,12 +349,29 @@ def generate_reply(prompt_text, history=None, attachments=None, *, instructions=
                 raise RuntimeError("Модель не загружена — вызовите load_model()")
             system = DEFAULT_SYSTEM_PROMPT + ("\nОтвечай на языке запроса." if private else response_language_instruction()) + ("\n\nИнструкции рабочего пространства:\n" + instructions if instructions else "")
             messages = _fit_context(engine, system, _recent_messages(history), message, cancelled, private)
-            with engine.create_conversation(
-                system_message=system,
-                messages=messages,
-            ) as conversation:
-                result = (_send_cancellable(conversation, message, cancelled)
-                          if cancelled is not None else conversation.send_message(message))
+            formatting = {}
+            send_options = {}
+            if structured and response_schema is not None and getattr(engine, "_xopilot_constraints", True) is not False and all(hasattr(litert_lm, name) for name in
+                    ('ConstrainedDecodingConfig','LiteRtLmConstraintProviderType','ResponseFormat')):
+                formatting['constrained_decoding_config'] = litert_lm.ConstrainedDecodingConfig(
+                    provider=litert_lm.LiteRtLmConstraintProviderType.LL_GUIDANCE)
+                send_options['response_format'] = litert_lm.ResponseFormat.json(response_schema)
+            options = dict(system_message=system, messages=messages,
+                **(_conversation_kwargs(litert_lm, temperature=.1, thinking_disabled=True) if structured else {}))
+            try:
+                conversation = engine.create_conversation(**options, **formatting)
+            except RuntimeError as exc:
+                if not formatting or not any(word in str(exc).lower() for word in ('constraint','guidance','create conversation')):
+                    raise
+                # Older native wheels may expose the API without its provider.
+                # No token/action has run yet; retry setup with ordinary protocol.
+                logging.getLogger(__name__).warning('Диалог со схемой недоступен, использую обычный формат: %s', exc)
+                engine._xopilot_constraints = False
+                send_options = {}
+                conversation = engine.create_conversation(**options)
+            with conversation as conversation:
+                result = (_send_cancellable(conversation, message, cancelled, **send_options)
+                          if cancelled is not None else conversation.send_message(message, **send_options))
     text = _extract_text(result).strip()
     if not text:
         raise RuntimeError("Модель не вернула ответ. Повторите запрос.")

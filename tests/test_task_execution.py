@@ -43,6 +43,22 @@ class TaskTests(unittest.TestCase):
             cancelled=self.cancelled,generate=lambda *a,**k:next(responses))
         self.assertEqual(result.count('Файлы проекта · выполнено'),20)
 
+    def test_dependent_write_read_batch_runs_in_order(self):
+        target=Path(self.folder.name)/'plan.txt';target.write_text('old')
+        original=project_tools.write_file
+        def delayed_write(*args,**kwargs):
+            time.sleep(.05)
+            return original(*args,**kwargs)
+        replies=iter([json.dumps({'actions':[
+            {'tool':'write_project_file','arguments':{'path':'plan.txt','content':'new'}},
+            {'tool':'read_project_file','arguments':{'path':'plan.txt'}}]}),json.dumps({'final':'Готово'})])
+        events=[]
+        with patch.object(project_tools,'write_file',side_effect=delayed_write):
+            agent.run_agent('Обнови plan.txt и проверь результат',chat_id=1,history=[],attachments=[],instructions='',
+                level='auto',cancelled=self.cancelled,generate=lambda *a,**k:next(replies),approve=lambda _:True,on_action=events.append)
+        read=next(e for e in events if e['tool']=='read_project_file' and e['phase']=='result')
+        self.assertEqual(read['result']['content'],'new')
+
     def test_missing_website_link_can_ask_for_input_without_fake_actions(self):
         generate=Mock(return_value=json.dumps({'final':'Пришлите ссылку на сайт','needs_input':True}))
         events=[]
