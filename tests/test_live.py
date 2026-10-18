@@ -318,6 +318,27 @@ class LiveControllerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.history[0]['content'], 'Первая фраза. Вторая фраза.')
         self.speaker.speak.assert_called_once()
 
+    async def test_delayed_loop_notifications_do_not_drop_completed_stream(self):
+        loop = asyncio.get_running_loop()
+        original = loop.call_soon_threadsafe
+        delayed = []
+        def notify(callback, *args, context=None):
+            if getattr(callback, '__name__', '') in {'set', 'put_nowait'} and isinstance(
+                    getattr(callback, '__self__', None), (asyncio.Event, asyncio.Queue)):
+                delayed.append((callback, args))
+                return None
+            return original(callback, *args, context=context)
+        def generate(history, cancelled, *args, on_text=None, **kwargs):
+            on_text('Первая фраза. Вторая фраза.')
+            return 'Первая фраза. Вторая фраза.'
+        self.mocks['generate_live_reply'].side_effect = generate
+        with patch.object(loop, 'call_soon_threadsafe', side_effect=notify):
+            await self.live._answer_turn([], 'model.litertlm', None)
+        self.assertTrue(delayed)
+        self.assertEqual([call.args[0] for call in self.speaker.speak.call_args_list],
+                         ['Первая фраза.', 'Вторая фраза.'])
+        self.assertEqual(len(self.history), 1)
+
     async def test_stream_interruption_discards_queued_speech_and_waits_for_generation(self):
         first_spoken = threading.Event()
         generation_finished = threading.Event()

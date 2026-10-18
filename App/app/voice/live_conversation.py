@@ -13,6 +13,7 @@ import asyncio
 import threading
 import os
 import time
+import queue
 from concurrent.futures import CancelledError
 
 import flet as ft
@@ -731,19 +732,32 @@ class LiveConversation:
         except ImportError:
             from services.live_sentences import LiveSentences
         loop = asyncio.get_running_loop()
-        chunks = asyncio.Queue()
+        chunks = queue.SimpleQueue()
+        available = asyncio.Event()
         received = threading.Event()
         speech_error = ''
 
         def on_text(text):
             received.set()
-            loop.call_soon_threadsafe(chunks.put_nowait, text)
+            # Store on the producer thread before it can finish. A queued
+            # loop callback must never deliver text after the end sentinel.
+            chunks.put(text)
+            loop.call_soon_threadsafe(available.set)
+
+        def enqueue(text):
+            chunks.put(text)
+            available.set()
 
         async def speak():
             nonlocal speech_error
             sentences = LiveSentences()
             while True:
-                text = await chunks.get()
+                try:
+                    text = chunks.get_nowait()
+                except queue.Empty:
+                    available.clear()
+                    await available.wait()
+                    continue
                 parts = sentences.feed(text or '', final=text is None)
                 for part in parts:
                     self._check_turn()
@@ -770,11 +784,11 @@ class LiveConversation:
             # Older runtimes can only return a whole reply. Keep that fallback
             # without speaking the same streamed text twice.
             if not received.is_set():
-                chunks.put_nowait(reply)
+                enqueue(reply)
             await self.on_ai_message(reply)
             self.reply_text.value = reply
             self.page.update()
-            chunks.put_nowait(None)
+            enqueue(None)
             await speaking
             self._check_turn()
             return speech_error
@@ -782,7 +796,7 @@ class LiveConversation:
             if not speaking.done():
                 # Do not leave a detached TTS worker talking after stop/error.
                 self._turn_cancelled.set()
-                chunks.put_nowait(None)
+                enqueue(None)
             try:
                 await speaking
             except (CancelledError, asyncio.CancelledError):
