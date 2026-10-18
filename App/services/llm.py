@@ -174,7 +174,7 @@ def model_supports_audio(filename: str) -> bool:
         return bool(capabilities.input_modalities.audio)
 
 
-def ensure_model_loaded(filename: str):
+def ensure_model_loaded(filename: str, *, audio=False):
     """Загрузить нужную модель только если сейчас активна другая."""
     global _deferred_gpu_retry_at, _stateful_history
     with _model_activity():
@@ -193,7 +193,7 @@ def ensure_model_loaded(filename: str):
                     _stateful_history = history
                     return result
             return filename
-        return _load_model(filename, DEFAULT_SYSTEM_PROMPT)
+        return _load_model(filename, DEFAULT_SYSTEM_PROMPT, audio=audio)
 
 
 def load_model(filename=DEFAULT_FILENAME, system_prompt=DEFAULT_SYSTEM_PROMPT):
@@ -397,7 +397,9 @@ def prepare_voice_model(cancelled: threading.Event, filename: str | None = None,
         chosen = filename or (DEFAULT_FILENAME if DEFAULT_FILENAME in models else models[0])
         if chosen not in models:
             raise RuntimeError(f"Выбранная модель Live не найдена: {chosen}")
-        ensure_model_loaded(chosen)
+        # On a cold Live start load the audio encoder with the engine. Loading
+        # text first would immediately destroy it and load the whole model twice.
+        ensure_model_loaded(chosen, audio=audio)
         if cancelled.is_set():
             raise CancelledError()
         if not _supports_audio:

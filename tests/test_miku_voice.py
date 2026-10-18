@@ -156,7 +156,10 @@ class MikuInstallationTests(unittest.TestCase):
             root=stage_export_sources(Path(directory)/'source')
             original=Path(miku_installer.__file__).parent/'_rvc_export'
             for path in original.iterdir():
-                if path.suffix=='.py':self.assertEqual((root/'_rvc_export'/path.name).read_bytes(),path.read_bytes())
+                if path.suffix=='.py':
+                    # Staging writes UTF-8/LF; Windows Git checkout may use CRLF.
+                    self.assertEqual((root/'_rvc_export'/path.name).read_text(encoding='utf-8'),
+                                     path.read_text(encoding='utf-8'))
             self.assertTrue((root/'_rvc_export/LICENSE.rvc').is_file())
 
     def test_invalid_metadata_and_corrupted_encoder_are_rejected(self):

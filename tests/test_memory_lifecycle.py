@@ -74,6 +74,16 @@ class EncoderLifecycleTests(unittest.TestCase):
             patcher.start()
             self.addCleanup(patcher.stop)
 
+    def test_cold_live_start_loads_engine_once_with_audio_and_reuses_it(self):
+        llm.prepare_voice_model(threading.Event())
+        self.assertEqual(self.sdk.Engine.call_count, 1)
+        self.assertIsNotNone(self.sdk.Engine.call_args.kwargs['audio_backend'])
+        self.assertIsNone(self.sdk.Engine.call_args.kwargs['vision_backend'])
+        llm.prepare_voice_model(threading.Event())
+        self.assertEqual(self.sdk.Engine.call_count, 1)
+        self.engines[0].close.assert_not_called()
+        llm.unload_model()
+
     def test_text_image_audio_text_switches_have_one_engine_and_keep_capabilities(self):
         llm.load_model()
         self.engines[0].create_conversation.assert_not_called()

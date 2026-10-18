@@ -23,7 +23,9 @@ class DocumentWorkflowTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.db_path = self.root / 'test.db'
         self.db = advanced_xopilot.PyDatabase(str(self.db_path))
-        self.addCleanup(lambda: setattr(self, 'db', None))
+        # Tracebacks and tool callbacks can retain a reference after a test.
+        # Close explicitly before TemporaryDirectory removes the Windows file.
+        self.addCleanup(lambda: self.db.close() if self.db is not None else None)
         for module in (canvases, workspaces):
             p = patch.object(module, 'get_db', side_effect=lambda: self.db)
             p.start()
@@ -39,6 +41,7 @@ class DocumentWorkflowTests(unittest.TestCase):
         doc = canvases.create_document('План', content='Рабочий текст', chat_id=self.chat)
         doc.update(kind='drawing', strokes=[{'color': '#c94b4b', 'width': 5, 'points': [[.1,.2],[.8,.7]]}])
         canvases.save_document(doc)
+        self.db.close()
         self.db = None
         self.db = advanced_xopilot.PyDatabase(str(self.db_path))
         stored = canvases.get_document(doc['id'])
