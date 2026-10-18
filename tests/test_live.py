@@ -252,6 +252,7 @@ class LiveControllerTests(unittest.IsolatedAsyncioTestCase):
             "get_selected_live_model": Mock(return_value=llm.DEFAULT_FILENAME),
             "check_live_audio": Mock(),
             "SpeechOutput": Mock(return_value=self.speaker),
+            "DesktopBargeIn": Mock(side_effect=RuntimeError("No test audio device")),
             "prepare_voice_model": Mock(),
             "record_utterance": Mock(side_effect=self.wait_for_cancel),
             "transcribe_audio": Mock(return_value="Привет"),
@@ -312,7 +313,13 @@ class LiveControllerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(second_context), 3)
 
     async def test_voice_barge_in_stops_tts_and_preserves_the_new_utterance(self):
-        self.live._android = True
+        await self._check_voice_barge_in(True)
+
+    async def test_desktop_voice_barge_in_stops_tts_and_closes_aec(self):
+        await self._check_voice_barge_in(False)
+
+    async def _check_voice_barge_in(self, android):
+        self.live._android = android
         self.live._typed_question = 'Первый вопрос'
         speaking, interrupt, finish_voice = threading.Event(), threading.Event(), threading.Event()
         heard_cancel = threading.Event()
@@ -340,7 +347,10 @@ class LiveControllerTests(unittest.IsolatedAsyncioTestCase):
                     raise CancelledError()
                 raise RuntimeError('TTS was not interrupted')
         self.speaker.speak.side_effect = speak
-        with patch('App.services.mobile_audio.record_barge_in', side_effect=listen):
+        aec=Mock(record=Mock(side_effect=listen))
+        listener=(patch('App.services.mobile_audio.record_barge_in',side_effect=listen) if android else
+                  patch('App.app.voice.live_conversation.DesktopBargeIn',return_value=aec))
+        with listener:
             await self.live.toggle()
             self.assertTrue(await asyncio.to_thread(speaking.wait, 2))
             interrupt.set()
@@ -356,6 +366,7 @@ class LiveControllerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.mocks['transcribe_audio'].call_args.args[0], b'new-voice')
         self.assertEqual([m['role'] for m in self.history], ['user', 'ai', 'user', 'ai'])
         self.assertIsNone(self.live._barge_task)
+        if not android:aec.close.assert_called_once()
 
     async def test_unavailable_echo_cancellation_does_not_break_the_reply(self):
         self.live._android = True

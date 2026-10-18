@@ -30,6 +30,7 @@ from ..materials.material import build_file_attachments
 try:
     from ...services.live_audio import check_live_audio, record_utterance
     from ...services.speech_output import SpeechOutput
+    from ...services.desktop_barge_in import DesktopBargeIn
     from ...services.llm import SpeechNotRecognizedError, generate_live_reply, prepare_voice_model, transcribe_audio, execution_label
     from ...services.model_settings import get_selected_live_model, live_model_for_display, model_display_name
     from ...services.live_vision import capture_camera_frame, capture_screen_frame, CameraStream
@@ -37,6 +38,7 @@ try:
 except ImportError:
     from services.live_audio import check_live_audio, record_utterance
     from services.speech_output import SpeechOutput
+    from services.desktop_barge_in import DesktopBargeIn
     from services.llm import (
         SpeechNotRecognizedError, generate_live_reply, prepare_voice_model, transcribe_audio, execution_label,
     )
@@ -185,6 +187,7 @@ class LiveConversation:
         self._barge_task = None
         self._barge_cancelled = None
         self._barge_in_available = None
+        self._desktop_barge_in = None
         self._task = None
         self._closed = False
         self._live_model = None
@@ -658,14 +661,20 @@ class LiveConversation:
             raise VisionCaptureError(self._vision_note) from exc
 
     def _start_barge_in(self):
-        if not self._android or self.microphone_muted or self._barge_in_available is False:
+        if self.microphone_muted or self._barge_in_available is False:
             return
         if self._barge_task is not None:
             return
-        try:
-            from ...services.mobile_audio import record_barge_in
-        except ImportError:
-            from services.mobile_audio import record_barge_in
+        if self._android:
+            try:
+                from ...services.mobile_audio import record_barge_in
+            except ImportError:
+                from services.mobile_audio import record_barge_in
+        else:
+            def record_barge_in(cancelled, on_start):
+                if self._desktop_barge_in is None:
+                    self._desktop_barge_in = DesktopBargeIn()
+                return self._desktop_barge_in.record(cancelled, on_start)
         cancelled = self._barge_cancelled = threading.Event()
         response_cancelled = self._turn_cancelled
         def speech_started():
@@ -793,7 +802,7 @@ class LiveConversation:
                     self._check_turn()
                     speech_error = ""
                     if self.voice_output_enabled:
-                        self._set_state("speaking", "Говорю. Можно перебить голосом или кнопкой." if self._android and self._barge_in_available is not False else "Говорю. Можно перебить кнопкой.")
+                        self._set_state("speaking", "Говорю. Можно перебить голосом или кнопкой." if self._barge_in_available is not False else "Говорю. Можно перебить кнопкой.")
                         try:
                             if self._speaker is None:
                                 self._speaker = await asyncio.to_thread(SpeechOutput)
@@ -838,6 +847,9 @@ class LiveConversation:
         finally:
             # Drop ONNX sessions after cancellation/playback has finished.
             await self._cancel_barge_in()
+            if self._desktop_barge_in is not None:
+                await asyncio.to_thread(self._desktop_barge_in.close)
+                self._desktop_barge_in = None
             self._speaker = None
             self.camera_on = self.screen_on = False
             self._typed_question = None
