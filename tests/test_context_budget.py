@@ -1,6 +1,6 @@
 """Файл: /tests/test_context_budget.py
 Разработчик: DenBroLiik
-Версия: 2.0.10
+Версия: 2.0.11
 Описание: Сжатие переполненной истории без изменения исходной переписки.
 """
 import copy
@@ -81,12 +81,27 @@ class ContextTests(unittest.TestCase):
             budget.prepare(Engine(), '', [], current, lambda *args:self.fail('No space for summary'))
         self.assertEqual(current, 'important request ' * 1000)
 
-    def test_repeated_corruption_of_a_port_fails_without_changing_history(self):
-        history = [{'role':'user', 'content':'Порт 7799. ' + 'x' * 5000}]
+    def test_long_message_keeps_literal_middle_facts_even_with_corrupt_summary(self):
+        history = [{'role':'user', 'content':'Обсуждаем внешний вид. ' * 160 +
+                    'Порт 7799. Файл src/server.py. Не удаляй файлы. ' + 'Продолжаем. ' * 80}]
         original = copy.deepcopy(history)
-        with self.assertRaisesRegex(RuntimeError, 'изменила числа'):
-            budget.prepare(Engine(), '', history, 'current', lambda *args: 'Порт 7999')
+        result = budget.prepare(Engine(), '', history, 'Какой порт и файл?', lambda *args:'Порт 7999')
+        quoted = ' '.join(budget._text(item) for item in result[1:])
+        self.assertIn('Порт 7799.', quoted)
+        self.assertIn('Файл src/server.py.', quoted)
+        self.assertNotIn('7999', str(result))
         self.assertEqual(history, original)
+
+    def test_questions_are_not_fact_anchors_and_corrections_keep_order(self):
+        history = [{'role':'user','content':'Как меня зовут?'},
+                   {'role':'user','content':'Порт 7799.'},
+                   {'role':'user','content':'Исправление: порт 8800 вместо 7799.'}]
+        result = budget._anchors(Engine(), history, 300, 'порт')
+        self.assertEqual([item['content'] for item in result], [item['content'] for item in history[1:]])
+
+    def test_fact_before_a_question_is_preserved_without_the_question(self):
+        result=budget._anchors(Engine(),[{'role':'user','content':'Меня зовут Денис. Как меня зовут?'}],300,'имя')
+        self.assertEqual(result,[{'role':'user','content':'Меня зовут Денис.'}])
 
     def test_failed_summary_never_silently_discards_history(self):
         history = [{'role': 'user', 'content': 'a' * 5000}]
