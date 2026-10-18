@@ -37,10 +37,6 @@ except ImportError:
 
 from ...materials import material as file_utils
 from .buttons.message_actions import build_message_actions
-try:
-    from ....services.platforms import is_android
-except ImportError:
-    from services.platforms import is_android
 
 
 def build_user_message(
@@ -50,6 +46,7 @@ def build_user_message(
     quote: str | None = None,
     reply_to: str | None = None,
     message_id: int | None = None,
+    animate: bool = False,
 ) -> ft.Container:
     content = []
     if reply_to:
@@ -107,7 +104,6 @@ def build_user_message(
         padding=ft.Padding.symmetric(horizontal=12, vertical=9),
         border_radius=20,
         bgcolor=color("#dff8f3"),
-        blur=None if is_android() else 2,
         content=ft.Column(
             spacing=6,
             controls=[
@@ -124,7 +120,7 @@ def build_user_message(
             )
         ],
     )
-    message = ft.Container(
+    message = (MessageEntrance if animate else ft.Container)(
         alignment=ft.Alignment.CENTER_RIGHT,
         padding=ft.Padding.only(left=40),
         content=ft.Column(
@@ -134,6 +130,11 @@ def build_user_message(
         ),
     )
     message.data = message_id if message_id is not None else text
+    if animate:
+        message.opacity = 0
+        message.offset = ft.Offset(0, .025)
+        message.animate_opacity = ft.Animation(220, ft.AnimationCurve.EASE_OUT)
+        message.animate_offset = ft.Animation(220, ft.AnimationCurve.EASE_OUT_CUBIC)
 
     def handle_hover(e: ft.Event[ft.Container]):
         actions.opacity = 1 if e.data == "true" or e.data is True else 0.65
@@ -197,9 +198,18 @@ class MessageEntrance(ft.Container):
         self.opacity=1
         self.offset=ft.Offset(0,0)
         self.update()
+        reveal=getattr(self,'_text_reveal',None)
+        if reveal:
+            body,text,start=reveal
+            step=max(1,math.ceil((len(text)-start)/16))
+            for end in range(start+step,len(text)+step,step):
+                await asyncio.sleep(.035)
+                if not self._entrance_mounted:return
+                body.value=text[:min(end,len(text))]
+                body.update()
 
 
-def build_ai_message(text: str, on_action=None, message_id: int | None = None, files=None, animate=False, elapsed_seconds=None) -> ft.Container:
+def build_ai_message(text: str, on_action=None, message_id: int | None = None, files=None, animate=False, elapsed_seconds=None, reveal_from=0) -> ft.Container:
     """Пузырь сообщения ИИ (слева). Ответ рендерится как Markdown (GitHub Flavored):
     **жирный**, *курсив*, заголовки, списки, таблицы, код с подсветкой, ссылки.
     Кнопка «Копировать» и цитаты работают с исходным Markdown-текстом."""
@@ -217,6 +227,7 @@ def build_ai_message(text: str, on_action=None, message_id: int | None = None, f
             ),
         ],
     )
+    markdown=bubble_content.controls[0]
     if files:
         bubble_content.controls.insert(0, ft.Row(wrap=True, spacing=6,
             controls=[file_utils.build_file_tile(file) for file in files]))
@@ -224,7 +235,6 @@ def build_ai_message(text: str, on_action=None, message_id: int | None = None, f
         padding=ft.Padding.symmetric(horizontal=12, vertical=9),
         border_radius=20,
         bgcolor=color("#e6ffffff"),
-        blur=None if is_android() else 2,
         content=bubble_content,
     )
 
@@ -260,6 +270,14 @@ def build_ai_message(text: str, on_action=None, message_id: int | None = None, f
         message.offset=ft.Offset(0,.025)
         message.animate_opacity=ft.Animation(220,ft.AnimationCurve.EASE_OUT)
         message.animate_offset=ft.Animation(220,ft.AnimationCurve.EASE_OUT_CUBIC)
+        # Long code/documents use only the native fade, avoiding repeated
+        # Markdown layout of thousands of lines. Persist/copy always uses full text.
+        full=markdown.value
+        start=min(len(_ai_markdown_value(text[:max(0,reveal_from)])),len(full))
+        if len(full)<=8000 and 0<len(full)-start<=4000:
+            initial=min(len(full),start+8)
+            markdown.value=full[:initial]
+            message._text_reveal=(markdown,full,initial)
 
     def handle_hover(e: ft.Event[ft.Container]):
         actions.opacity = 1 if e.data == "true" or e.data is True else 0.65

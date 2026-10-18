@@ -70,6 +70,7 @@ PROVIDERS = {
 }
 _modality_cache = (0.0, {})
 _modality_lock = threading.Lock()
+_image_rejected = set()
 
 
 def image_support(config):
@@ -79,6 +80,8 @@ def image_support(config):
     public catalog, and never infer capabilities from a model's name.
     """
     global _modality_cache
+    if (config['url'], config['model']) in _image_rejected:
+        return False
     if provider_for(config) != 'openrouter':
         return None
     with _modality_lock:
@@ -134,6 +137,8 @@ def validate_configuration(config):
 def save_configuration(config):
     value = validate_configuration(config)
     get_db().set_setting(KEY, json.dumps(value, ensure_ascii=False))
+    _image_rejected.discard((value['url'], value['model']))
+    _screen_fallback_until.pop((value['url'], value['model']), None)
     return value
 
 
@@ -269,7 +274,19 @@ def _generate_reply(prompt_text, history=None, attachments=None, *, instructions
         if response.status >= 400:
             import logging
             logging.getLogger(__name__).warning('HTTP %s',response.status)
-            error_body = response.read(65536) if response.status in {400, 413} else b''
+            error_body = response.read(65536) if response.status in {400, 413, 415, 422} else b''
+            reason = error_body.decode('utf-8', errors='replace').casefold()
+            rejected_image = images and response.status in {400, 415, 422} and any(
+                word in reason for word in ('image', 'vision', 'multimodal')) and any(
+                word in reason for word in ('not support', 'unsupported', 'text only', 'text-only'))
+            if rejected_image:
+                _image_rejected.add(screen_key)
+                if screen_attachments:
+                    remaining=[f for f in (attachments or []) if tuple(f) not in {tuple(x) for x in screen_attachments}]
+                    return _generate_reply(prompt_text, history, remaining,
+                        instructions=instructions+'\nМодель не поддерживает изображения. Используй только controls доступности; не утверждай, что видел экран.',
+                        cancelled=cancelled, structured=structured, _config=config)
+                raise RuntimeError('Выбранная модель не поддерживает изображения. Выберите модель с поддержкой vision.')
             if response.status in {400, 413} and not _context_retry and _summary_budget is None and history:
                 from . import model_context
                 raw_error = error_body
@@ -291,7 +308,7 @@ def _generate_reply(prompt_text, history=None, attachments=None, *, instructions
             if response.status == 429:
                 raise RateLimitedError('Лимит запросов API (HTTP 429). Повторите позже или выберите другую модель.')
             if response.status >= 500:
-                if images and 'response_format' in body:
+                if images and 'response_format' in body and not screen_attachments:
                     _json_unsupported.add(format_key)
                     return _generate_reply(prompt_text,history,attachments,instructions=instructions,cancelled=cancelled,structured=False,screen_attachments=screen_attachments)
                 if screen_attachments:

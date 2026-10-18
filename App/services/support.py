@@ -28,7 +28,14 @@ class SafeFormatter(logging.Formatter):
         message=record.getMessage()
         code=re.search(r'HTTP\s+([45]\d\d)',message)
         logger=re.sub(r'[^A-Za-z0-9_.]','',record.name)[:80]
-        return f'{self.formatTime(record)} {record.levelname} {logger} {kind}'+(' HTTP '+code[1] if code else '')
+        result=f'{self.formatTime(record)} {record.levelname} {logger} {kind}'+(' HTTP '+code[1] if code else '')
+        if logger in {'App.services.ui_responsiveness', 'services.ui_responsiveness'}:
+            frames=getattr(record, 'ui_frames', None)
+            if isinstance(frames, list):
+                safe=[v for v in frames[:12] if isinstance(v,str) and re.fullmatch(
+                    r'(?:app|services)/[A-Za-z0-9_/]+\.py:\d+:[A-Za-z0-9_<>]+',v)]
+                result+=' UI_BLOCKED'+(' '+' <- '.join(safe) if safe else '')
+        return result
 
 
 def install():

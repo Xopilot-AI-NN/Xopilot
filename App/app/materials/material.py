@@ -47,6 +47,35 @@ def is_image_file(file: ft.FilePickerFile) -> bool:
         return bool(file.path and os.path.splitext(file.name)[1].lower() in image_extensions)
 
 
+class ImagePreview(ft.AnimatedSwitcher):
+        """Decode screenshots outside the UI loop; keep layout stable while loading."""
+        def __init__(self, path):
+                super().__init__(content=ft.Icon(ft.Icons.IMAGE_OUTLINED, size=34,
+                    color=color('#087f8c')), width=42, height=42, duration=180,
+                    reverse_duration=120, transition=ft.AnimatedSwitcherTransition.FADE)
+                self._image_path = path
+                self._mounted = False
+                self._load_task = None
+
+        def did_mount(self):
+                self._mounted = True
+                self._load_task = self.page.run_task(self.load_preview)
+
+        def will_unmount(self):
+                self._mounted = False
+                if self._load_task is not None:
+                        self._load_task.cancel()
+                self._load_task = None
+
+        async def load_preview(self):
+                data = await asyncio.to_thread(image_preview, self._image_path)
+                if not self._mounted or not data:
+                        return
+                self.content = ft.Image(src=data, width=42, height=42,
+                    fit=ft.BoxFit.COVER, border_radius=12)
+                self.update()
+
+
 def file_icon(file: ft.FilePickerFile):
         extension = os.path.splitext(file.name)[1].lower()
         if extension == ".pdf":
@@ -72,13 +101,7 @@ def build_file_tile(file: ft.FilePickerFile) -> ft.Container:
                 except Exception as exc:
                         e.page.show_dialog(ft.SnackBar(ft.Text(f"Не удалось открыть материал: {exc}")))
         preview = (
-                ft.Image(
-                        src=image_preview(file.path),
-                        width=42,
-                        height=42,
-                        fit=ft.BoxFit.COVER,
-                        border_radius=12,
-                )
+                ImagePreview(file.path)
                 if is_image_file(file)
                 else ft.Icon(file_icon(file), size=34, color=color("#087f8c"))
         )

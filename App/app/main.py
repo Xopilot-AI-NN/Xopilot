@@ -190,8 +190,8 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                              overflow=ft.TextOverflow.ELLIPSIS)
     composer_label = ft.Text("", size=11, color=color("#47747a"),
                              max_lines=3, overflow=ft.TextOverflow.ELLIPSIS)
-    reply_activity = ft.ProgressBar(width=48, height=3, border_radius=2,
-                                     color=color("#087f8c"), visible=False)
+    from .shared.components.reply_activity import ReplyActivity
+    reply_activity = ReplyActivity()
     composer_actions = ft.Row(wrap=True, spacing=4)
     composer_status = ft.Container(visible=False, content=ft.Column(
         tight=True, spacing=4, horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
@@ -292,7 +292,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                 send_button.tooltip='Остановить задание на ПК'
         waiting = bool((is_sending and not task_control.paused) or
                        (remote_workspace and remote_workspace.busy))
-        reply_activity.visible = waiting
+        reply_activity.set_active(waiting)
         composer_status.visible = composer_status.visible or waiting
         if update:
             page.update()
@@ -645,6 +645,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         request_chat_id = active_chat_id
         new_id=queue_item['id'] if queue_item else None
         request_success=False
+        narration=None
         def recover_request():
             updates=task_control.instruction_snapshot()
             full_text=text+('\n\nУточнения пользователя:\n'+'\n'.join(u['text'] for u in updates) if updates else '')
@@ -735,6 +736,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                     sent_files,
                     on_action=handle_message_action,
                     message_id=new_id,
+                    animate=True,
                 )
                 chat_context.append({"role": "user", "content": text, "id": new_id})
                 chat_list.scroll = ft.ScrollMode.AUTO
@@ -798,6 +800,10 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                 if tool_level and not private_request:
                     loop = asyncio.get_running_loop()
                     from .tasks.task_messages import TaskMessages
+                    from .tasks.turn_narration import TurnNarration
+                    narration=TurnNarration(
+                        lambda content,**kwargs:save_ai_message(request_chat_id,content,**kwargs),
+                        update_message,lambda identifier,seconds:get_db().set_message_elapsed(identifier,seconds))
                     def remember_action(identifier,content):
                         if active_chat_id!=request_chat_id:return
                         existing=next((m for m in chat_context if m.get('id')==identifier),None)
@@ -805,10 +811,12 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                         else:chat_context.append({'role':'ai','content':content,'id':identifier})
                     async def append_comment(content):
                         if request_cancelled.is_set():return
-                        identifier=await asyncio.to_thread(save_ai_message,request_chat_id,content)
+                        identifier,content,reveal_from=await narration.append(content)
                         remember_action(identifier,content)
                         if active_chat_id==request_chat_id:
-                            chat_list.controls.insert(0,build_ai_message(content,on_action=handle_message_action,message_id=identifier,animate=True))
+                            chat_list.controls[:]=[c for c in chat_list.controls if getattr(c,'data',None)!=identifier]
+                            chat_list.controls.insert(0,build_ai_message(content,on_action=handle_message_action,
+                                message_id=identifier,animate=True,reveal_from=reveal_from))
                             chat_list.update()
                     task_messages=TaskMessages(page,request_chat_id,workspaces.chat_workspace(request_chat_id)['id'],
                         current_chat=lambda:active_chat_id,chat_list=lambda:cast(ft.ListView,chat.content),
@@ -917,8 +925,25 @@ def build_app_ui(page: ft.Page) -> ft.Control:
             if reply_text:
                 reply_elapsed = max(0.0, time.monotonic() - reply_started)
                 ai_id = None
+                reply_files=getattr(reply_text,'files',None)
+                async def persist_reply():
+                    if narration:
+                        return await narration.finish(reply_text,reply_files,reply_elapsed)
+                    identifier=await asyncio.to_thread(save_ai_message, request_chat_id, reply_text,
+                        attachments=reply_files,elapsed_seconds=reply_elapsed)
+                    return identifier,str(reply_text),0
+
+                def show_reply(identifier,content,reveal_from):
+                    chat_list.controls[:]=[c for c in chat_list.controls if getattr(c,'data',None)!=identifier]
+                    chat_list.controls.insert(0,build_ai_message(content,on_action=handle_message_action,
+                        message_id=identifier,files=_rebuild_files(reply_files or []),
+                        elapsed_seconds=reply_elapsed,animate=True,reveal_from=reveal_from))
+                    existing=next((m for m in chat_context if m.get('id')==identifier),None)
+                    if existing:existing['content']=content
+                    else:chat_context.append({'role':'ai','content':content,'id':identifier})
+                    chat_list.update()
                 try:
-                    ai_id = await asyncio.to_thread(save_ai_message, request_chat_id, reply_text, attachments=getattr(reply_text, 'files', None), elapsed_seconds=reply_elapsed)
+                    ai_id,display_text,reveal_from = await persist_reply()
                 except Exception as exc:
                     recovery_done = False
 
@@ -927,18 +952,13 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                         if recovery_done:
                             return
                         try:
-                            recovered_id = await asyncio.to_thread(save_ai_message, request_chat_id, reply_text, attachments=getattr(reply_text, 'files', None), elapsed_seconds=reply_elapsed)
+                            recovered_id,content,start = await persist_reply()
                         except Exception as retry_error:
                             page.show_dialog(ft.SnackBar(ft.Text(f"Запись не удалась: {retry_error}")))
                             return
                         recovery_done = True
                         if active_chat_id == request_chat_id:
-                            chat_list.controls.insert(0, build_ai_message(
-                                reply_text, on_action=handle_message_action, message_id=recovered_id,
-                                files=_rebuild_files(getattr(reply_text, 'files', [])), elapsed_seconds=reply_elapsed,
-                            ))
-                            chat_context.append({"role": "ai", "content": reply_text, "id": recovered_id})
-                            chat_list.update()
+                            show_reply(recovered_id,content,start)
                         page.pop_dialog()
 
                     page.show_dialog(ft.AlertDialog(
@@ -955,10 +975,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                     ))
                     return
                 # Реверс-список: ответ ИИ тоже вставляется в начало (низ визуала).
-                chat_list.controls.insert(0, build_ai_message(reply_text, on_action=handle_message_action, message_id=ai_id,
-                    files=_rebuild_files(getattr(reply_text, 'files', [])), elapsed_seconds=reply_elapsed,animate=True))
-                chat_context.append({"role": "ai", "content": reply_text, "id": ai_id})
-                chat_list.update()
+                show_reply(ai_id,display_text,reveal_from)
                 memory_capture.submit(text, reply_generator, private=private_request)
                 request_success=True
         finally:
@@ -1627,6 +1644,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
     page._xopilot_connected=True
     page._xopilot_can_sync=lambda: not (remote_workspace and remote_workspace.busy) and not remote_tasks.running() and not is_sending and not live.busy and not voice_input.busy and editing_message is None and not is_private(active_chat_id)
     page._xopilot_can_upload=lambda:not is_private(active_chat_id)
+    page._xopilot_ai_busy=lambda:is_sending or live.busy
     def refresh_after_sync():
         profile_refresh=getattr(page,'_xopilot_profile_refresh',None)
         if profile_refresh:profile_refresh()

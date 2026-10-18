@@ -180,6 +180,9 @@ class Init():
         page.run_task(persist_loop)
         page.run_task(memory_cleanup_loop)
         if not is_android():
+            from services.ui_responsiveness import monitor_ui
+            page.run_task(monitor_ui, page)
+        if not is_android():
             from app.browser.remote_browser import listen_for_pairing
             page.run_task(listen_for_pairing,page)
             from services import remote_tasks

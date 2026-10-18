@@ -15,6 +15,25 @@ from App.services import desktop_control as desktop
 
 
 class DesktopTests(unittest.TestCase):
+    def test_own_accessibility_application_is_not_walked(self):
+        code='''
+import sys,os
+from unittest.mock import Mock,patch
+sys.modules.update({'gi':Mock(),'gi.repository':Mock()})
+from App.services.linux_accessibility import Accessibility
+a=Accessibility.__new__(Accessibility)
+a._inspect_deadline=None;a.targets={};a.bus=Mock()
+a.bus.call_sync.return_value.unpack.return_value=(1234,)
+with patch.dict(os.environ,{'XOPILOT_CONTROLLER_PID':'1234'}):
+    assert a.is_controller(('own.bus','/root'))
+a.call=Mock(return_value=([('own.bus','/root')],))
+a.prop=Mock();a.is_controller=Mock(return_value=True)
+assert a.inspect()==[]
+a.prop.assert_not_called()
+'''
+        subprocess.run([sys.executable,'-c',code],check=True,
+                       cwd=Path(__file__).resolve().parents[1])
+
     @unittest.skipUnless(
         sys.platform.startswith("linux"),
         "Requires Linux desktop environment",

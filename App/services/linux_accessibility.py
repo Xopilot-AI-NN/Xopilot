@@ -7,6 +7,8 @@
 """
 import uuid
 import time
+import os
+from pathlib import Path
 from gi.repository import Gio,GLib
 
 PREFIX='org.a11y.atspi.'
@@ -41,10 +43,27 @@ class Accessibility:
         try:return self._inspect()
         finally:self._inspect_deadline=None
 
+    def is_controller(self, reference):
+        """Never interrogate/control our own GTK/Flutter accessibility thread."""
+        controller=int(os.environ.get('XOPILOT_CONTROLLER_PID', '0'))
+        parent=int(os.environ.get('XOPILOT_CONTROLLER_PARENT_PID', '0'))
+        if not controller:return False
+        try:
+            pid=self.bus.call_sync('org.freedesktop.DBus', '/org/freedesktop/DBus',
+                'org.freedesktop.DBus', 'GetConnectionUnixProcessID',
+                GLib.Variant('(s)', (reference[0],)), None, 0, self.timeout(), None).unpack()[0]
+            if pid==controller:return True
+            process=Path('/proc')/str(pid)
+            ppid=int((process/'stat').read_text().rpartition(')')[2].split()[1])
+            executable=(process/'exe').resolve().name.casefold()
+            return ppid in {controller, parent} and executable in {'flet', 'xopilot'}
+        except (OSError, ValueError, IndexError, GLib.Error):
+            return False
+
     def _inspect(self):
         self.targets={};rows=[]
         roots=self.call(('org.a11y.atspi.Registry','/org/a11y/atspi/accessible/root'),'Accessible','GetChildren')[0]
-        pending=[(tuple(r),'',0) for r in roots];visited=set()
+        pending=[(tuple(r),'',0) for r in roots if not self.is_controller(r)];visited=set()
         while pending and len(visited)<220 and time.monotonic()<self._inspect_deadline:
             reference,parent,depth=pending.pop(0)
             if reference in visited or depth>12 or reference[1].endswith('/null'):continue
