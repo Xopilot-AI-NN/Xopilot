@@ -46,11 +46,12 @@ exclude = ["__pycache__", "*.pyc", ".flet", "build", "data", "native"]
 color = "#0d1117"
 dark_color = "#0d1117"
 
-# Flet 1.0.3 pins jni 1.0.0; newer jni_flutter bindings require jni 1.1.
-# Match the pair used by the locally verified desktop/Android packages.
+# Flet 1.0.x uses JNI 1.0 bindings. shared_preferences_android 2.5.0
+# generates JNI 1.1 bindings, so keep its compatible platform implementation.
 [tool.flet.flutter.pubspec.dependency_overrides]
 jni = "1.0.0"
 jni_flutter = "1.0.2"
+shared_preferences_android = "2.4.28"
 
 [tool.flet.android]
 bundle_id = "by.xopilot.app"

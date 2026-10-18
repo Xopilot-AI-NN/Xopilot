@@ -233,7 +233,7 @@ def main():
     numbering += ['--bundle-id',bundle_id]
     if args.build_version is not None:
         numbering += ['--build-version', args.build_version]
-    subprocess.run([str(Path(sys.executable).parent / 'flet'), 'build', 'apk', str(ROOT),
+    subprocess.run([sys.executable, str(ROOT/'scripts/flet_android_cli.py'), 'build', 'apk', str(ROOT),
                     '--template', str(template), '--python-version', '3.14',
                     '--arch', *args.arch, '--yes', '--skip-flutter-doctor', *numbering, *exclude], cwd=ROOT, env=environment, check=True)
     artifacts = [ROOT/'build/apk'/f'Xopilot-{abi}.apk' for abi in args.arch]
