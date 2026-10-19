@@ -195,6 +195,15 @@ class Entities:
             record.update(revision=change['revision'],hash='deleted',deleted=True)
             self.save();return
         current=self._local(record)
+        if (scope=='chats' and not change['deleted'] and not record.get('deleted')
+                and record.get('local_id') is not None and record.get('hash') is not None
+                and current is None):
+            # The known chat was deleted locally while this replica was offline.
+            # Rebase its pending tombstone, not a content import into a missing
+            # chat (which can also fail the messages' foreign-key constraint).
+            record.update(revision=change['revision'],blocked=False)
+            self.ledger.setdefault('conflicts',{}).pop(key,None)
+            self.save();return
         if record.get('blocked') or (current is not None and fingerprint(current)!=record.get('hash')):
             self.ledger.setdefault('conflicts',{})[key]=change;record['blocked']=True;self.save();return
         if not self._apply(key,record,change,payload,current):
@@ -380,6 +389,18 @@ class Entities:
             payload=None if change['deleted'] else self.files.decode(change['id'],change['data'])
             record.update(hash=fingerprint(current),blocked=False)
             self.receive(key,change,payload)
+            if not record.get('blocked'):self.ledger['conflicts'].pop(key,None)
+            self.save()
+
+    def recover_local_chat_deletions(self):
+        """Older/push-race conflicts must not permanently suppress a local deletion."""
+        if not self.options['chats']:return
+        for key,change in list(self.ledger.get('conflicts',{}).items()):
+            record=self.ledger['records'][key]
+            if (record['scope']!='chats' or record.get('deleted') or record.get('local_id') is None
+                    or record.get('hash') is None or self._local(record) is not None):continue
+            record['blocked']=False
+            self.receive(key,change,None)
             if not record.get('blocked'):self.ledger['conflicts'].pop(key,None)
             self.save()
 

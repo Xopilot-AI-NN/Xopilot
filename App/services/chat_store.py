@@ -126,6 +126,13 @@ def delete_chat(chat_id: int) -> bool:
     if deleted:
         get_db().set_setting('chat_approval:'+str(chat_id),'manual')
         get_db().set_setting('chat_approval_consent:'+str(chat_id),'false')
+        try:
+            from .cloud_sync import request_soon
+            request_soon()
+        except Exception:
+            # Deletion is already durable; optional scheduler wake-up must not
+            # turn it into a UI failure. The normal polling cycle retries it.
+            pass
     if _active_chat_id == chat_id:
         _active_chat_id = None
     return deleted

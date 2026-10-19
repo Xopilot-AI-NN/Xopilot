@@ -130,13 +130,12 @@ class Init():
                         persist_app_session();last_persist=now
                     if getattr(page,'_xopilot_connected',False) and getattr(page,'_xopilot_can_upload',lambda:False)():
                         # Avoid importing beneath a form the user is editing.
-                        dialogs=[dialog for dialog in page._dialogs.controls if dialog.open]
-                        if not dialogs or getattr(dialogs[-1],'_xopilot_sync_safe',False):
-                            from services import cloud_sync,cloud_account
-                            if cloud_account.state():
-                                result=await asyncio.to_thread(cloud_sync.run_auto_if_due,
-                                    upload_only=not page._xopilot_can_sync())
-                                if result and result.get('received'):page._xopilot_sync_refresh()
+                        from app.tasks.sync_schedule import upload_only
+                        from services import cloud_sync,cloud_account
+                        if cloud_account.state():
+                            result=await asyncio.to_thread(cloud_sync.run_auto_if_due,
+                                upload_only=upload_only(page))
+                            if result and result.get('received'):page._xopilot_sync_refresh()
                 except Exception:
                     pass
 

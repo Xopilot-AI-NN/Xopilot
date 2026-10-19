@@ -175,6 +175,7 @@ def run(*, upload_only=False):
             if not upload_only:
                 entities.reconcile_links()
                 entities.recover_deleted_chat_conflicts()
+            entities.recover_local_chat_deletions()
             if opts['materials'] and not upload_only:
                 from .storage import material_references
                 referenced=material_references(get_db())

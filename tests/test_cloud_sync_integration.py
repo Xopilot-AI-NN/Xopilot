@@ -233,6 +233,48 @@ class SyncIntegration(unittest.TestCase):
             self.assertIn(wid,[item['id'] for item in workspaces.list_workspaces()])
             self.assertEqual(sync.run()['sent'],0)
 
+    def test_bulk_delete_offline_survives_new_cloud_versions_and_restart(self):
+        from App.services import chat_store
+        self.new_account()
+        ar,a=self.profile('bulk-delete-a');br,b=self.profile('bulk-delete-b')
+        for index in range(3):
+            cid=a.create_chat('Bulk deletion '+str(index));a.add_message(cid,'user','original')
+        with self.bind(ar,a):self.login();sync.run()
+        with self.bind(br,b):self.login();sync.run();self.assertEqual(len(b.list_chats()),3)
+        with self.bind(ar,a),patch.object(chat_store,'get_db',return_value=a):
+            self.assertEqual(chat_store.clear_all_chats(),3)
+        with self.bind(br,b):
+            for cid,_,_ in b.list_chats():b.add_message(cid,'ai','Newer remote version while phone offline')
+            sync.run()
+        a.close();a=advanced_xopilot.PyDatabase(str(ar/'xopilot.db'))
+        try:
+            with self.bind(ar,a):
+                result=sync.run();self.assertEqual(result['conflicts'],0);self.assertEqual(a.list_chats(),[])
+            with self.bind(br,b):
+                sync.run();self.assertEqual(b.list_chats(),[])
+                self.assertEqual(sync.run()['sent'],0)
+            with self.bind(ar,a):sync.run();self.assertEqual(a.list_chats(),[])
+        finally:a.close();b.close()
+
+    def test_local_deletion_recovers_persisted_update_conflict_without_resurrection(self):
+        self.new_account()
+        ar,a=self.profile('deleted-conflict-a');br,b=self.profile('deleted-conflict-b')
+        cid=a.create_chat('Deleted while conflict persisted');a.add_message(cid,'user','original')
+        with self.bind(ar,a):self.login();sync.run()
+        with self.bind(br,b):
+            self.login();sync.run();bid=b.list_chats()[0][0]
+            b.add_message(bid,'ai','cloud update');sync.run()
+        with self.bind(ar,a):
+            a.delete_chat(cid)
+            change=cloud.request('/sync/pull')['changes'][-1]
+            key=change['kind']+':'+change['id'];ledger=sync.read_ledger(sync.owner())
+            ledger['records'][key]['blocked']=True;ledger['conflicts']={key:change}
+            ledger['cursor']=change['sequence']
+            a.set_setting(sync.ledger_key(sync.owner()),json.dumps(ledger))
+            result=sync.run();self.assertEqual(result['conflicts'],0);self.assertEqual(a.list_chats(),[])
+        with self.bind(br,b):sync.run();self.assertEqual(b.list_chats(),[])
+        a.close();b.close()
+
     def test_protected_vault_transfers_only_after_close_temporary_never_transfers(self):
         from App.services.private_chats import PrivateChatSession
         self.new_account()

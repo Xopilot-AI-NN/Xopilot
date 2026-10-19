@@ -1,5 +1,6 @@
 """Browse persisted chats and their actual messages from settings."""
 import flet as ft
+import weakref
 try:
     from ...app.theme.palette import color
     from ...services.chat_store import list_chat_items, load_chat_messages
@@ -88,6 +89,11 @@ def build_history_list(page, on_select=None, on_delete=None):
                   for cid,title,subtitle,_ in list_chat_items()]
         render()
     result._xopilot_reload=reload
+    reference=weakref.ref(result)
+    def refresh():
+        control=reference()
+        if control is not None:control._xopilot_reload()
+    page._xopilot_history_refresh=refresh
     return result
 
 

@@ -9,6 +9,32 @@ from App.services.sync_entities import Entities
 
 
 class LegacyConflictRecoveryTests(unittest.TestCase):
+    def test_known_local_deletion_rebases_newer_content_without_importing_it(self):
+        key='chat:known'
+        entities=object.__new__(Entities)
+        record=dict(kind='chat',scope='chats',local_id=7,revision=1,hash='acknowledged')
+        entities.ledger={'records':{key:record},'conflicts':{key:{}}}
+        entities._local=Mock(return_value=None);entities.save=Mock();entities._apply=Mock()
+        change=dict(kind='chat',id='known',revision=2,deleted=False,data={'scope':'chats'})
+        entities.receive(key,change,{'title':'Newer remote version','messages':[]})
+        self.assertEqual(record['revision'],2)
+        self.assertEqual(record['hash'],'acknowledged')
+        self.assertFalse(record.get('deleted',False),'The tombstone still needs server acknowledgment')
+        self.assertFalse(record['blocked'])
+        self.assertFalse(entities.ledger['conflicts'])
+        entities._apply.assert_not_called()
+
+    def test_concurrent_content_edits_remain_conflicts(self):
+        key='chat:known'
+        entities=object.__new__(Entities)
+        record=dict(kind='chat',scope='chats',local_id=7,revision=1,hash='acknowledged')
+        entities.ledger={'records':{key:record}};entities._local=Mock(return_value={'local':'edit'})
+        entities.save=Mock();entities._apply=Mock()
+        change=dict(kind='chat',id='known',revision=2,deleted=False,data={'scope':'chats'})
+        entities.receive(key,change,{'remote':'edit'})
+        self.assertTrue(record['blocked']);self.assertEqual(entities.ledger['conflicts'][key],change)
+        entities._apply.assert_not_called()
+
     def test_first_pull_can_collapse_unknown_entity_to_its_deletion(self):
         for kind, scope in (('chat', 'chats'), ('workspace', 'workspaces'),
                             ('canvas', 'canvases'), ('chat', 'protected')):

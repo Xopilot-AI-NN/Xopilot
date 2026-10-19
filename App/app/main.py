@@ -1681,6 +1681,8 @@ def build_app_ui(page: ft.Page) -> ft.Control:
             persist_draft()
         refresh_composer()
         refresh_menu_chats()
+        history_refresh=getattr(page,'_xopilot_history_refresh',None)
+        if callable(history_refresh):history_refresh()
         page.update()
     page._xopilot_sync_refresh=refresh_after_sync
 
