@@ -16,8 +16,10 @@ from ..theme.palette import color, apply_palette
 from .task_summaries import PREFIX, describe, summarize, context
 try:
     from ...services import task_processes
+    from ...services.desktop_control import close_chat_session
 except ImportError:
     from services import task_processes
+    from services.desktop_control import close_chat_session
 
 
 def action_arguments(arguments):
@@ -111,7 +113,8 @@ class TaskMessages:
 
     async def open_link(self,url):
         try:
-            from ...services.external_browser import open_external
+            try:from ...services.external_browser import open_external
+            except ImportError:from services.external_browser import open_external
             await open_external(url)
         except Exception as exc:self.page.show_dialog(ft.SnackBar(ft.Text(str(exc))))
 
@@ -169,7 +172,8 @@ class TaskMessages:
                     from ..materials.material_viewer import open_material
                     from pathlib import Path
                     if not Path(path).is_file():
-                        from ...services.storage import restore_local_material
+                        try:from ...services.storage import restore_local_material
+                        except ImportError:from services.storage import restore_local_material
                         await asyncio.to_thread(restore_local_material,path)
                     await open_material(e.page,path,'Экран компьютера.jpg')
                 return ft.Container(content=ImagePreview(path,280,175),border_radius=16,on_click=open_image,tooltip='Открыть снимок экрана')
@@ -244,7 +248,6 @@ class TaskMessages:
         preview=ft.Row(wrap=True,visible=False)
         revoke=ft.TextButton(content='Завершить доступ к экрану',visible=event['tool']=='computer_start')
         async def close_access(_):
-            from ...services.desktop_control import close_chat_session
             await asyncio.to_thread(close_chat_session)
             revoke.content='Доступ завершён';revoke.disabled=True;revoke.update()
         revoke.on_click=close_access

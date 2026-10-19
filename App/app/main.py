@@ -21,8 +21,10 @@ import time
 import re
 try:
     from ..services.platforms import available_height, compact_layout, is_android
+    from ..services.desktop_control import close_chat_session
 except ImportError:
     from services.platforms import available_height, compact_layout, is_android
+    from services.desktop_control import close_chat_session
 from concurrent.futures import CancelledError
 from typing import cast
 
@@ -395,7 +397,6 @@ def build_app_ui(page: ft.Page) -> ft.Control:
     confirmation_button,refresh_confirmation = build_confirmation_button(page,lambda:active_chat_id,lambda:not is_sending)
 
     async def close_voice_modes(e):
-        from ..services.desktop_control import close_chat_session
         await asyncio.to_thread(close_chat_session)
         page._xopilot_connected=False
         nonlocal editing_message, draft_before_edit, failed_request, failed_reason
@@ -1297,7 +1298,6 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         if is_private(active_chat_id):
             private_chats.close(active_chat_id)
             drafts.pop(active_chat_id, None)
-        from ..services.desktop_control import close_chat_session
         close_chat_session()
         editing_message, draft_before_edit = None, ("", [])
         live.clear_chat()
@@ -1421,8 +1421,9 @@ def build_app_ui(page: ft.Page) -> ft.Control:
             password_dialog(chat_id=chat_id, after_unlock=unlocked_delete)
             return
         try:
-            if not store_delete_chat(chat_id):
-                raise RuntimeError("Чат не найден в базе данных.")
+            # Удаление могло уже прийти с другого устройства или завершиться
+            # до сбоя обновления интерфейса. Повторное удаление идемпотентно.
+            store_delete_chat(chat_id)
         except Exception as exc:
             page.show_dialog(ft.SnackBar(ft.Text(f"Не удалось удалить чат: {exc}")))
             return
