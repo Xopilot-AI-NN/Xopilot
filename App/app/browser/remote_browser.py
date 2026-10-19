@@ -21,6 +21,8 @@ except ImportError:
 def approval_content(request):
     if request.get('kind')=='command':
         title='Запустить команду на ПК?';preview=json.dumps(request['argv'],ensure_ascii=False,indent=2)
+    elif request.get('kind')=='memory':
+        title='Запомнить сведения о вас?';preview=request.get('text','')
     elif request.get('kind') in {'device','computer_session'}:
         title=request.get('title','Действие на ПК')
         preview=json.dumps(request.get('arguments',{}),ensure_ascii=False,indent=2)

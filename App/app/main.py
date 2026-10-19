@@ -18,6 +18,7 @@ import platform
 import threading
 import json
 import time
+import re
 try:
     from ..services.platforms import available_height, compact_layout, is_android
 except ImportError:
@@ -771,6 +772,10 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                 private_request = is_private(request_chat_id)
                 use_api = api_chat.is_api_selected() and not private_request
                 reply_generator = api_chat.generate_reply if use_api else generate_reply
+                memory_generator = reply_generator
+                if not use_api:
+                    from functools import partial
+                    reply_generator = partial(reply_generator, cache_scope=('chat', request_chat_id))
                 await asyncio.to_thread(task_control.checkpoint)
                 if not use_api:
                     chosen = get_selected_chat_model()
@@ -842,6 +847,10 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                                 preview=json.dumps(request['argv'],ensure_ascii=False,indent=2)
                                 label='Запустить команду?'
                                 note='Процесс выполняется с вашими правами. Проверьте аргументы и доверяйте коду проекта.'
+                            elif kind=='memory':
+                                preview=request['text']
+                                label='Запомнить сведения о вас?'
+                                note='Запись появится в «Персонализация → Память обо мне».'
                             elif kind in {'device','computer_session'}:
                                 preview = json.dumps(request['arguments'], ensure_ascii=False, indent=2)
                                 label = request['title']
@@ -976,7 +985,10 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                     return
                 # Реверс-список: ответ ИИ тоже вставляется в начало (низ визуала).
                 show_reply(ai_id,display_text,reveal_from)
-                memory_capture.submit(text, reply_generator, private=private_request)
+                # Explicit memory actions have their own approval; a rejected action
+                # must not be saved again by the background fact extractor.
+                if not (tool_level and re.search(r'\b(запомни|remember)\b', text, re.I)):
+                    memory_capture.submit(text, memory_generator, private=private_request)
                 request_success=True
         finally:
             is_sending = False

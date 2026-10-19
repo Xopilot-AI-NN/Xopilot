@@ -51,9 +51,14 @@ class ContextTests(unittest.TestCase):
         self.assertIn('example.py', answer)
         self.assertEqual(generation.call_args_list[0].kwargs['attachments'], files)
         for call in generation.call_args_list:
-            self.assertIn(request, call.kwargs['instructions']);self.assertIn('Test', call.kwargs['instructions'])
+            # The goal belongs in conversation turns, keeping the system prefix
+            # reusable across tasks without losing it during protocol repair.
+            self.assertTrue(request in call.args[0] or any(request in str(m['content'])
+                for m in call.kwargs['history']))
+            self.assertIn('Test', call.kwargs['instructions'])
             self.assertEqual(call.kwargs['attachments'], files)
-        self.assertIn({'role':'user','content':request}, generation.call_args_list[1].kwargs['history'])
+        self.assertTrue(any(m['role']=='user' and m['content']==request
+                            for m in generation.call_args_list[1].kwargs['history']))
         self.assertEqual(canvases.list_documents(1, self.project['id'])[0]['content'], 'def sum_qa(a,b): return a+b')
 
     def test_logo_colours_differentiate_actions_and_keep_contrast(self):

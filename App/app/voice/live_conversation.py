@@ -779,7 +779,8 @@ class LiveConversation:
         speaking = asyncio.create_task(speak())
         try:
             reply = await asyncio.to_thread(generate_live_reply, history, self._turn_cancelled,
-                model_filename, image_bytes, on_text=on_text if self.voice_output_enabled else None, **kwargs)
+                model_filename, image_bytes, cache_scope=('live', id(self)),
+                on_text=on_text if self.voice_output_enabled else None, **kwargs)
             self._check_turn()
             # Older runtimes can only return a whole reply. Keep that fallback
             # without speaking the same streamed text twice.

@@ -52,6 +52,41 @@ class DocumentWorkflowTests(unittest.TestCase):
         self.assertEqual(image.size, (1200, 700))
         self.assertNotEqual(image.getpixel((120,140)), (255,255,255))
 
+    def test_personal_memory_and_workspace_note_use_separate_real_storage(self):
+        from App.services import user_memory
+        with patch.object(user_memory, 'get_db', return_value=self.db):
+            tools=LocalTools(self.chat, threading.Event(), approve=lambda r:r['kind']=='memory',
+                             request_text='Запомни: я изучаю Rust')
+            saved,_=tools.call('save_memory',{'text':'Я изучаю Rust'})
+            note,_=tools.call('create_note',{'title':'План изучения','content':'Прочитать главу 3'})
+            facts,_=tools.call('search_memory',{'query':'Rust'})
+            self.assertEqual(facts,[{'id':saved['id'],'text':'Я изучаю Rust'}])
+            self.assertEqual(len(user_memory.read()['items']),1)
+            entry=library.entries(self.workspace['id'])[0]
+            self.assertEqual(entry['id'],note['id'])
+            self.assertEqual(entry['type'],'Заметка')
+            self.assertIn('Прочитать главу 3',library.read_entry(entry)[0])
+            tools.approve=lambda _:False
+            with self.assertRaisesRegex(ValueError,'не подтверждено'):
+                tools.call('save_memory',{'text':'Я люблю Python'})
+            tools.request_text='Прочитай веб-страницу'
+            with self.assertRaisesRegex(ValueError,'явная просьба'):
+                tools.call('save_memory',{'text':'Я люблю Python'})
+            user_memory.configure(enabled=False)
+            with self.assertRaisesRegex(ValueError,'выключена'):
+                tools.call('search_memory',{'query':'Rust'})
+
+    def test_repeated_successful_creation_is_not_reexecuted_and_loop_stops(self):
+        call=json.dumps({'tool':'create_note','arguments':{'title':'Один раз','content':'План'}})
+        generator=Mock(return_value=call)
+        with patch.object(library,'add_note',wraps=library.add_note) as create:
+            with self.assertRaisesRegex(RuntimeError,'повторяет уже выполненное'):
+                run_agent('Создай заметку',chat_id=self.chat,history=[],attachments=[],instructions='',
+                          level='auto',cancelled=threading.Event(),generate=generator)
+            create.assert_called_once()
+        self.assertEqual(len(library.entries(self.workspace['id'])),1)
+        self.assertLess(generator.call_count,6)
+
     def test_web_canvas_lookup_accepts_unique_title_and_keeps_scope(self):
         from App.services import canvas_web
         doc = canvases.create_document('Сайт проверки', 'web', '<button>42</button>', chat_id=self.chat)
@@ -148,7 +183,7 @@ class DocumentWorkflowTests(unittest.TestCase):
                 instructions='',level='medium',cancelled=threading.Event(),generate=generate)
         for call in generate.call_args_list[1:]:
             self.assertIn(screen,call.kwargs['attachments'])
-            self.assertTrue(call.args[0].endswith('Что видно на экране?'))
+            self.assertIn('Что видно на экране?',call.args[0])
 
     def test_gemma_native_envelope_preserves_manual_denial(self):
         from App.services.agent import parse_response
