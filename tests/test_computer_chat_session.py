@@ -35,3 +35,19 @@ class ChatSessionTests(unittest.TestCase):
             source.unlink()
             self.assertEqual(files,[('Экран компьютера.jpg',str(target))])
             with Image.open(target) as image:self.assertEqual(image.size,(960,600))
+
+    def test_two_starts_in_one_chat_request_permission_only_once(self):
+        import threading
+        bridge=Mock();bridge.process.poll.return_value=None
+        bridge.call.return_value={'size':[1920,1200]}
+        approve=Mock(return_value=True)
+        session=desktop.ComputerSession(chat_scoped=True)
+        with patch.object(desktop,'Bridge',return_value=bridge):
+            first=session.start(threading.Event(),approve)
+            second=session.start(threading.Event(),approve)
+        try:
+            self.assertEqual(first['scope'],'chat')
+            self.assertEqual(first,second)
+            approve.assert_called_once()
+            bridge.call.assert_called_once_with('start',cancelled=unittest.mock.ANY)
+        finally:session.close()
