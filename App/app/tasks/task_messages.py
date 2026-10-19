@@ -39,8 +39,8 @@ def build_action_group(cards,turn=None):
     state=ft.Text('Нажмите, чтобы посмотреть шаги и результаты',size=11,color=color('#47747a'))
     body=ft.Column(spacing=4,controls=cards)
     tile=ft.ExpansionTile(title=label,subtitle=state,leading=ft.Icon(ft.Icons.AUTO_AWESOME_OUTLINED,size=18,color=color('#087f8c')),
-        dense=True,expanded=False,min_tile_height=42,tile_padding=8,controls_padding=4,controls=[body])
-    group=ft.Container(border_radius=20,bgcolor=color('#f3fffc'),padding=4,content=ft.Column(spacing=0,controls=[tile]))
+        dense=True,expanded=False,min_tile_height=36,tile_padding=4,controls_padding=4,controls=[body])
+    group=ft.Container(border_radius=14,bgcolor=None,padding=0,content=ft.Column(spacing=0,controls=[tile]))
     group._xopilot_action_cards=body
     group._xopilot_action_label=label
     group._xopilot_action_state=state

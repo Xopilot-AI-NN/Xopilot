@@ -818,7 +818,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                         else:chat_context.append({'role':'ai','content':content,'id':identifier})
                     async def append_comment(content):
                         if request_cancelled.is_set():return
-                        identifier,content,reveal_from=await narration.append('> '+str(content).replace('\n','\n> '))
+                        identifier,content,reveal_from=await narration.append(('<!-- xopilot:progress -->\n' if not narration.text else '')+'> '+str(content).replace('\n','\n> '))
                         remember_action(identifier,content)
                         if active_chat_id==request_chat_id:
                             chat_list.controls[:]=[c for c in chat_list.controls if getattr(c,'data',None)!=identifier]

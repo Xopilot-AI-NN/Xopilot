@@ -73,3 +73,18 @@ class TextRevealTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(history.content.controls[0].content.controls[0].value, text)
         animated = build_ai_message(text, animate=True)
         self.assertFalse(hasattr(animated, '_text_reveal'))
+
+    def test_progress_is_collapsed_and_final_answer_has_no_bubble(self):
+        text='<!-- xopilot:progress -->\n> Открываю приложение\n\n> Проверяю окно\n\nГотово.'
+        message=build_ai_message(text)
+        status,bubble,footer=message.content.controls
+        self.assertFalse(status.expanded)
+        self.assertEqual(status.controls[0].value,'Открываю приложение\n\nПроверяю окно')
+        self.assertEqual(bubble.content.controls[0].value,'Готово.')
+        self.assertIsNone(bubble.bgcolor)
+
+    def test_final_quote_is_not_treated_as_a_progress_note(self):
+        from App.app.chat.messages.message import split_public_progress
+        progress,answer=split_public_progress('<!-- xopilot:progress -->\n> Ищу\n\n<!-- xopilot:answer -->\n> Цитата из результата')
+        self.assertEqual(progress,'Ищу')
+        self.assertEqual(answer,'> Цитата из результата')

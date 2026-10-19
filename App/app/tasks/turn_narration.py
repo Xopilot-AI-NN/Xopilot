@@ -27,7 +27,8 @@ class TurnNarration:
         async with self._lock:
             if self._finished:
                 return self.message_id, self.text, len(self.text)
-            result = await self._store(self.preview(text), files, seconds)
+            answer=('<!-- xopilot:answer -->\n' if self.text.startswith('<!-- xopilot:progress -->\n') else '')+str(text)
+            result = await self._store(self.preview(answer), files, seconds)
             self._finished = True
             return result
 

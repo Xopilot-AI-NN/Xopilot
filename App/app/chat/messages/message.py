@@ -214,15 +214,31 @@ class MessageEntrance(ft.Container):
                 body.update()
 
 
+
+def split_public_progress(text):
+    marker='<!-- xopilot:progress -->\n'
+    if not text.startswith(marker):return '',text
+    lines=text[len(marker):].splitlines();end=0;progress=[]
+    for line in lines:
+        if line.startswith('> '):progress.append(line[2:])
+        elif line.strip():break
+        else:progress.append('')
+        end+=1
+    answer='\n'.join(lines[end:]).strip().removeprefix('<!-- xopilot:answer -->\n')
+    return '\n'.join(progress).strip(),answer
+
+
 def build_ai_message(text: str, on_action=None, message_id: int | None = None, files=None, animate=False, elapsed_seconds=None, reveal_from=0) -> ft.Container:
     """Пузырь сообщения ИИ (слева). Ответ рендерится как Markdown (GitHub Flavored):
     **жирный**, *курсив*, заголовки, списки, таблицы, код с подсветкой, ссылки.
     Кнопка «Копировать» и цитаты работают с исходным Markdown-текстом."""
+    progress,answer=split_public_progress(text)
+    reveal_from=max(0,reveal_from-(len(text)-len(answer)))
     bubble_content = ft.Column(
         spacing=4,
         controls=[
             ft.Markdown(
-                value=_ai_markdown_value(text),
+                value=_ai_markdown_value(answer),
                 selectable=True,
                 extension_set=ft.MarkdownExtensionSet.GITHUB_FLAVORED,
                 code_theme=ft.MarkdownCodeTheme.GITHUB,
@@ -237,14 +253,14 @@ def build_ai_message(text: str, on_action=None, message_id: int | None = None, f
         bubble_content.controls.insert(0, ft.Row(wrap=True, spacing=6,
             controls=[file_utils.build_file_tile(file) for file in files]))
     bubble = ft.Container(
-        padding=ft.Padding.symmetric(horizontal=12, vertical=9),
-        border_radius=20,
-        bgcolor=color("#e6ffffff"),
+        padding=ft.Padding.symmetric(horizontal=4, vertical=10),
+        border_radius=0,
+        bgcolor=None,
         content=bubble_content,
     )
 
     actions = (
-        build_message_actions(text, None, on_action, False, message_id)
+        build_message_actions(('Ход выполнения\n'+progress+'\n\n' if progress else '')+answer, None, on_action, False, message_id)
         if on_action
         else ft.Container()
     )
@@ -269,6 +285,16 @@ def build_ai_message(text: str, on_action=None, message_id: int | None = None, f
         padding=ft.Padding.only(right=40),
         content=ft.Column(tight=True, spacing=0, controls=[bubble, footer]),
     )
+    if progress:
+        status=ft.ExpansionTile(title=ft.Text('Ход выполнения',size=12,color=color('#47747a')),
+            leading=ft.Icon(ft.Icons.AUTO_AWESOME_OUTLINED,size=16,color=color('#087f8c')),
+            subtitle=ft.Text(next((line for line in reversed(progress.splitlines()) if line.strip()),''),size=11,
+                max_lines=1,overflow=ft.TextOverflow.ELLIPSIS,color=color('#47747a')),
+            dense=True,min_tile_height=36,tile_padding=0,controls_padding=8,expanded=False,
+            controls=[ft.Markdown(progress,selectable=True,soft_line_break=True,md_style_sheet=_ai_markdown_style())])
+        bubble.visible=bool(answer or files)
+        footer.visible=bool(answer)
+        message.content.controls.insert(0,status)
     message.data = message_id if message_id is not None else text
     if animate:
         message.opacity=0
@@ -278,7 +304,7 @@ def build_ai_message(text: str, on_action=None, message_id: int | None = None, f
         # Long code/documents use only the native fade, avoiding repeated
         # Markdown layout of thousands of lines. Persist/copy always uses full text.
         full=markdown.value
-        start=min(len(_ai_markdown_value(text[:max(0,reveal_from)])),len(full))
+        start=min(len(_ai_markdown_value(answer[:max(0,reveal_from)])),len(full))
         if len(full)<=8000 and 0<len(full)-start<=4000:
             initial=min(len(full),start+8)
             markdown.value=full[:initial]
