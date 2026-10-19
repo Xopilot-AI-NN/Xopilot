@@ -16,6 +16,7 @@ conversation с аудиовходом и не добавляет запись �
 
 import atexit
 import glob
+import json
 import logging
 import os
 import threading
@@ -28,6 +29,7 @@ from .paths import LEGACY_MODELS_DIR, models_dir
 from .runtime import cache_dir, release_unused_memory
 from . import acceleration
 from .platforms import is_android
+from .conversation_cache import ConversationCache
 
 try:
     from .stats import record_generation
@@ -69,6 +71,7 @@ _loaded_system_prompt = DEFAULT_SYSTEM_PROMPT
 _last_used_at = 0.0
 _deferred_gpu_retry_at = None
 _stateful_history = []
+_warm_context = ConversationCache()
 IDLE_UNLOAD_SECONDS = 60
 _execution = {"backend": None, "reason": "Модель ещё не загружена"}
 
@@ -123,8 +126,11 @@ def unload_model():
         _deferred_gpu_retry_at = None
         _execution = {"backend": None, "reason": "Модель ещё не загружена"}
         try:
-            if conversation is not None:
-                conversation.close()
+            try:
+                _warm_context.clear()
+            finally:
+                if conversation is not None:
+                    conversation.close()
         finally:
             if engine is not None:
                 try:
@@ -314,7 +320,7 @@ def _build_message(prompt_text, attachments, *, retain_modalities=False):
     return litert_lm.Contents.of(*parts)
 
 
-def generate_reply(prompt_text, history=None, attachments=None, *, instructions="", cancelled=None, private=False, structured=False, response_schema=None):
+def generate_reply(prompt_text, history=None, attachments=None, *, instructions="", cancelled=None, private=False, structured=False, response_schema=None, cache_scope=None):
     """attachments: [(имя, путь), ...] вложений ТЕКУЩЕГО сообщения (фото/текст/PDF/DOCX/видео).
     Старые вложения из history повторно не отправляются — только текст истории (см. _recent_messages).
     """
@@ -329,6 +335,7 @@ def generate_reply(prompt_text, history=None, attachments=None, *, instructions=
             raise RuntimeError("Модель не загружена — вызовите load_model()")
         message = _build_message(prompt_text, attachments, retain_modalities=history is None)
         if history is None:
+            _warm_context.clear()
             fitted = _fit_context(_engine, _loaded_system_prompt, _stateful_history, message, cancelled, private)
             if _conversation is not None and fitted != _stateful_history:
                 _conversation.close()
@@ -344,6 +351,9 @@ def generate_reply(prompt_text, history=None, attachments=None, *, instructions=
                 _stateful_history.extend([{'role': 'user', 'content': parts},
                                           {'role': 'model', 'content': [{'type': 'text', 'text': text}]}])
         else:
+            if _conversation is not None:
+                _conversation.close()
+                _conversation = None
             engine = _engine
             if engine is None:
                 raise RuntimeError("Модель не загружена — вызовите load_model()")
@@ -358,20 +368,33 @@ def generate_reply(prompt_text, history=None, attachments=None, *, instructions=
                 send_options['response_format'] = litert_lm.ResponseFormat.json(response_schema)
             options = dict(system_message=system, messages=messages,
                 **(_conversation_kwargs(litert_lm, temperature=.1, thinking_disabled=True) if structured else {}))
-            try:
-                conversation = engine.create_conversation(**options, **formatting)
-            except RuntimeError as exc:
-                if not formatting or not any(word in str(exc).lower() for word in ('constraint','guidance','create conversation')):
-                    raise
-                # Older native wheels may expose the API without its provider.
-                # No token/action has run yet; retry setup with ordinary protocol.
-                logging.getLogger(__name__).warning('Диалог со схемой недоступен, использую обычный формат: %s', exc)
-                engine._xopilot_constraints = False
+            def create():
+                nonlocal send_options
+                try:
+                    return engine.create_conversation(**options, **formatting)
+                except RuntimeError as exc:
+                    if not formatting or not any(word in str(exc).lower() for word in ('constraint','guidance','create conversation')):
+                        raise
+                    logging.getLogger(__name__).warning('Диалог со схемой недоступен, использую обычный формат: %s', exc)
+                    engine._xopilot_constraints = False
+                    send_options = {}
+                    return engine.create_conversation(**options)
+            # Old attachments aren't replayed in history: don't retain hidden image/audio
+            # tokens which a fresh request would not contain. Private calls never persist.
+            key = (id(engine), cache_scope, system, structured,
+                   json.dumps(response_schema, sort_keys=True), bool(formatting)) if (
+                       cache_scope is not None and not private and not attachments and isinstance(message, str)) else None
+            if getattr(engine, '_xopilot_constraints', True) is False:
                 send_options = {}
-                conversation = engine.create_conversation(**options)
-            with conversation as conversation:
+            with _warm_context.acquire(key, messages, create) as conversation:
                 result = (_send_cancellable(conversation, message, cancelled, **send_options)
                           if cancelled is not None else conversation.send_message(message, **send_options))
+                answer = _extract_text(result).strip()
+                if not answer:
+                    raise RuntimeError("Модель не вернула ответ. Повторите запрос.")
+                if cancelled is not None and cancelled.is_set():
+                    raise CancelledError()
+                _warm_context.remember(messages, [{'type': 'text', 'text': message}], answer)
     text = _extract_text(result).strip()
     if not text:
         raise RuntimeError("Модель не вернула ответ. Повторите запрос.")
@@ -453,6 +476,7 @@ def _send_cancellable(conversation, message, cancelled, *, on_text=None, **kwarg
 def transcribe_audio(wav_bytes: bytes, cancelled: threading.Event, model_filename: str | None = None) -> str:
     """Распознать речь локально, без ответа ассистента и записи в статистику/БД."""
     with _model_activity():
+        _warm_context.clear()  # Don't retain a second KV allocation during audio encoding.
         prepare_voice_model(cancelled, model_filename)
         lm = litert_lm
         engine = _engine
@@ -501,6 +525,7 @@ def _fit_context(engine, system, messages, current, cancelled=None, private=Fals
     from . import context_budget
     event = cancelled if cancelled is not None else threading.Event()
     def summarize(instruction, source, target):
+        _warm_context.clear()  # Free KV memory before the separate compaction session.
         with engine.create_conversation(system_message=instruction,
                 max_output_tokens=target,
                 **_conversation_kwargs(litert_lm, temperature=.1, thinking_disabled=True)) as session:
@@ -529,7 +554,7 @@ def generate_live_reply(
     cancelled: threading.Event,
     model_filename: str | None = None,
     image_bytes: bytes | None = None,
-    *, instructions="", attachments=None, private=False, on_text=None,
+    *, instructions="", attachments=None, private=False, on_text=None, cache_scope=None,
 ) -> str:
     """Ответ на последний голосовой вопрос с недавней текстовой историей чата.
     image_bytes — необязательный кадр с камеры/экрана (кнопки Live-камера/Live-экран),
@@ -572,11 +597,18 @@ def generate_live_reply(
                 + ("\n\nИнструкции рабочего пространства:\n" + instructions if instructions else "")
             )
         messages = _fit_context(engine, system, messages, current, cancelled, private)
-        with engine.create_conversation(
+        key = (id(engine), cache_scope, system, 'live') if (
+            cache_scope is not None and not private and not attachments and not image_bytes) else None
+        with _warm_context.acquire(key, messages, lambda: engine.create_conversation(
             system_message=system, messages=messages,
-            **_conversation_kwargs(lm, thinking_disabled=True),
-        ) as conversation:
+            **_conversation_kwargs(lm, thinking_disabled=True))) as conversation:
             result = _send_cancellable(conversation, current, cancelled, on_text=on_text)
+            answer = _extract_text(result).strip()
+            if not answer:
+                raise RuntimeError("Модель не вернула ответ. Повторите вопрос.")
+            if cancelled.is_set():
+                raise CancelledError()
+            _warm_context.remember(messages, current['content'], answer)
         text = _extract_text(result).strip()
         if not text:
             raise RuntimeError("Модель не вернула ответ. Повторите вопрос.")
