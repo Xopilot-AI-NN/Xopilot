@@ -33,7 +33,7 @@ def describe(tool,args):
 def summarize(tool,result):
     links=[]
     if isinstance(result,dict):
-        if tool=='computer_start':return 'Доступ разрешён до завершения задачи',[]
+        if tool=='computer_start':return ('Доступ разрешён в текущем чате' if result.get('scope')=='chat' else 'Доступ разрешён до завершения задачи'),[]
         if tool=='computer_view':return 'Экран просмотрен · элементов: '+str(len(result.get('controls',[]))),[]
         if tool=='computer_input':return 'Выполнено: '+str(result.get('target_name') or result.get('action','действие')),[]
         if tool=='launch_app':return 'Открыто: '+str(result.get('name') or result.get('package','приложение')),[]

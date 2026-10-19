@@ -3,7 +3,7 @@
 Разработчик: DenBroLiik
 Версия: 2.0.8
 Описание: Управление Linux-приложениями и разрешённой пользовательской
-          сессией экрана/доступности; системная мышь не используется; доступ живёт только во время задачи.
+          сессией экрана/доступности; системная мышь не используется; доступ ограничен задачей или текущим открытым чатом.
 """
 import json
 import math
@@ -101,20 +101,24 @@ def validate_input(arguments,size=None):
 
 
 class ComputerSession:
-    def __init__(self):self.bridge=None;self.size=None;self.folder=None;self.observed=False;self.controls={};self.lock=threading.RLock()
+    def __init__(self,chat_scoped=False):self.chat_scoped=chat_scoped;self.bridge=None;self.size=None;self.folder=None;self.observed=False;self.controls={};self.lock=threading.RLock()
 
     def start(self,cancelled,approve):
         with self.lock:
-            if self.bridge:return {'active':True,'size':self.size}
+            if self.bridge and self.bridge.process.poll() is not None:self.close()
+            if self.bridge:return {'active':True,'size':self.size,'scope':'chat' if self.chat_scoped else 'task'}
             request={'kind':'computer_session','platform':'linux','title':'Разрешить ИИ управлять компьютером для этой задачи?',
                      'arguments':{'access':'Просмотр экрана и доступ к кнопкам/полям приложений до завершения задачи. Системная мышь и клавиатура не используются. Снимки передаются выбранной модели.'}}
+            if self.chat_scoped:
+                request['title']='Разрешить ИИ доступ к компьютеру в этом чате?'
+                request['arguments']['access']='Экран и элементы приложений доступны до смены чата или отключения приложения. Снимки передаются выбранной модели. Доступ можно завершить в журнале действий.'
             if not approve or not approve(request):raise ValueError('Доступ к компьютеру не разрешён')
             if cancelled.is_set():raise CancelledError()
             bridge=Bridge()
             try:result=bridge.call('start',cancelled=cancelled)
             except BaseException:bridge.close();raise
             self.bridge=bridge;self.size=result['size'];self.folder=tempfile.TemporaryDirectory(prefix='xopilot-screen-')
-            return {'active':True,'size':self.size}
+            return {'active':True,'size':self.size,'scope':'chat' if self.chat_scoped else 'task'}
 
     def view(self,cancelled):
         with self.lock:
@@ -154,3 +158,39 @@ class ComputerSession:
             if self.bridge:self.bridge.close();self.bridge=None
             if self.folder:self.folder.cleanup();self.folder=None
             self.controls={}
+
+
+_chat_lock=threading.RLock()
+_chat_session=None
+_chat_owner=None
+
+
+def close_chat_session():
+    global _chat_session,_chat_owner
+    with _chat_lock:
+        if _chat_session is not None:_chat_session.close()
+        _chat_session=None;_chat_owner=None
+
+
+def chat_session(chat_id):
+    global _chat_session,_chat_owner
+    with _chat_lock:
+        if _chat_owner!=chat_id or _chat_session is None:
+            close_chat_session()
+            _chat_owner=chat_id;_chat_session=ComputerSession(chat_scoped=True)
+        return _chat_session
+
+
+def preview_files(files):
+    """Сохраняю небольшой кадр журнала до удаления временного оригинала."""
+    import io
+    from PIL import Image
+    from .material_store import store_material
+    result=[]
+    for _,path in files:
+        with Image.open(path) as image:
+            image=image.convert('RGB');image.thumbnail((960,960))
+            output=io.BytesIO();image.save(output,format='JPEG',quality=80)
+        name='Экран компьютера.jpg'
+        result.append((name,store_material(name,data=output.getvalue())))
+    return result

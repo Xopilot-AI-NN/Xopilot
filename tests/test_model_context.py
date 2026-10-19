@@ -23,12 +23,13 @@ class ContextMetadataTests(unittest.TestCase):
         conn.getresponse.return_value.status = 200
         conn.getresponse.return_value.read.return_value = json.dumps({'data': [
             {'id': 'org/model', 'context_length': 131072,
-             'top_provider': {'max_completion_tokens': 8192}}]}).encode()
+             'supported_parameters':['reasoning'],'top_provider': {'max_completion_tokens': 8192}}]}).encode()
         with patch.object(model_context.http.client, 'HTTPSConnection', return_value=conn) as connect:
             engine = model_context.engine(config)
             self.assertIs(model_context.engine(config), engine)
         self.assertEqual(engine.max_num_tokens, 131072)
         self.assertEqual(engine.max_output_tokens, 8192)
+        self.assertTrue(engine.reasoning_supported)
         self.assertNotIn('test-secret', str(conn.request.call_args))
         connect.assert_called_once()
 

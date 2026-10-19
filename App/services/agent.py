@@ -389,7 +389,9 @@ def _run_agent(prompt, *, chat_id, history, attachments, instructions, level, ca
             from .agent_protocol import native_tools
             kwargs.update(native_tools=native_tools(toolset, material_refs=tools.material_refs),
                           tool_results=native_results, native_instructions=native_protocol+budget)
-            if screen_files:kwargs['screen_attachments']=screen_files
+            if screen_files:
+                kwargs['screen_attachments']=screen_files
+                kwargs['require_screen_image']=True
         def incorporate(updates, options):
             nonlocal current,attachments,goal
             clarification = '\n\nУточнения пользователя к текущей задаче:\n'+'\n'.join(u['text'] for u in updates)
@@ -475,7 +477,12 @@ def _run_agent(prompt, *, chat_id, history, attachments, instructions, level, ca
                 else:result, tool_files=tools.call(name,action.get('arguments',{}),**call_options)
                 if key is not None and isinstance(result,dict) and result.get('saved'):
                     completed_creations[key]=dict(result)
-                notify('result',result=result)
+                previews=[]
+                if on_action and name in {'computer_view','computer_input'} and tool_files:
+                    from .desktop_control import preview_files
+                    try:previews=preview_files(tool_files)
+                    except (OSError,ValueError):pass  # Ошибка копии журнала не отменяет выполненное действие.
+                notify('result',result=result,previews=previews)
                 status='выполнено'
                 if isinstance(result,dict) and result.get('running'):status='работает · PID '+str(result['pid'])
                 elif isinstance(result,dict) and result.get('exit_code') is not None:status='код выхода '+str(result['exit_code'])
@@ -510,7 +517,9 @@ def _run_agent(prompt, *, chat_id, history, attachments, instructions, level, ca
 
 
 def run_agent(prompt, **kwargs):
-    from .desktop_control import ComputerSession
-    computer=ComputerSession()
+    from .desktop_control import ComputerSession,chat_session
+    retained=kwargs.pop('keep_computer',False)
+    computer=chat_session(kwargs['chat_id']) if retained else ComputerSession()
     try:return _run_agent(prompt,computer=computer,**kwargs)
-    finally:computer.close()
+    finally:
+        if not retained or kwargs['cancelled'].is_set():computer.close()

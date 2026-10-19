@@ -54,7 +54,9 @@ def engine(config):
                                   next(((m.get('top_provider') or {}).get('max_completion_tokens')
                                         for m in data.get('data', []) if m.get('id') == config['model']), None))
                         value = SimpleNamespace(max_num_tokens=limit,
-                            max_output_tokens=output if type(output) is int and output >= 48 else None)
+                            max_output_tokens=output if type(output) is int and output >= 48 else None,
+                            reasoning_supported=(next((('reasoning' in m.get('supported_parameters',[]) or 'reasoning_effort' in m.get('supported_parameters',[]))
+                                for m in data.get('data',[]) if m.get('id')==config['model']),False) if host=='openrouter.ai' else None))
         except (OSError, ValueError, TypeError, AttributeError, http.client.HTTPException):
             pass
         finally:

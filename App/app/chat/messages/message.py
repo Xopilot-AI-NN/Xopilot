@@ -201,8 +201,13 @@ class MessageEntrance(ft.Container):
         reveal=getattr(self,'_text_reveal',None)
         if reveal:
             body,text,start=reveal
-            step=max(1,math.ceil((len(text)-start)/16))
-            for end in range(start+step,len(text)+step,step):
+            previous=start
+            for frame in range(1,17):
+                # Плавное замедление; слова появляются целиком, история не анимируется.
+                end=start+math.ceil((len(text)-start)*(1-(1-frame/16)**2))
+                while end<len(text) and not text[end].isspace():end+=1
+                if end<=previous:continue
+                previous=end
                 await asyncio.sleep(.035)
                 if not self._entrance_mounted:return
                 body.value=text[:min(end,len(text))]

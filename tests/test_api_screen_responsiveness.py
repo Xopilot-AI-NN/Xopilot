@@ -94,3 +94,10 @@ class ScreenApiTests(unittest.IsolatedAsyncioTestCase):
         finally:
             cancelled.set(); self.release.set()
             await asyncio.gather(task, return_exceptions=True)
+
+    async def test_computer_image_mode_never_silently_substitutes_text(self):
+        files=[('screen.png','/qa/screen.png')]
+        with self.assertRaisesRegex(RuntimeError,'просмотр не заменён текстом'):
+            await asyncio.to_thread(api_chat.generate_reply,'Экран',attachments=files,
+                screen_attachments=files,require_screen_image=True)
+        self.assertEqual(len(self.requests),1)

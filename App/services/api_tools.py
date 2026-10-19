@@ -48,7 +48,8 @@ def decode(message, tools):
     if isinstance(message.get('content'), str) and message['content'].strip():
         envelope['message'] = message['content'].strip()
     return ToolReply(json.dumps(envelope, ensure_ascii=False),
-        {'role': 'assistant', 'content': message.get('content'), 'tool_calls': calls})
+        {'role': 'assistant', 'content': message.get('content'), 'tool_calls': calls,
+         **({key:message[key] for key in ('reasoning_details','reasoning_content') if key in message})})
 
 
 def messages(history, current, results=None):

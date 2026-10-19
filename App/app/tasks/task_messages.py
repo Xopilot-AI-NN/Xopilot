@@ -160,6 +160,21 @@ class TaskMessages:
             width=240,height=28,on_click=lambda _,url=url:self.page.run_task(self.open_link,url)) for url in links]
         item['links'].visible=bool(links)
         item['link_values']=links
+        previews=event.get('previews',[])
+        if previews and not item.get('preview_built'):
+            from ..materials.material import ImagePreview
+            def image(file):
+                path=file[1] if isinstance(file,(tuple,list)) else file.path
+                async def open_image(e):
+                    from ..materials.material_viewer import open_material
+                    from pathlib import Path
+                    if not Path(path).is_file():
+                        from ...services.storage import restore_local_material
+                        await asyncio.to_thread(restore_local_material,path)
+                    await open_material(e.page,path,'Экран компьютера.jpg')
+                return ft.Container(content=ImagePreview(path,280,175),border_radius=16,on_click=open_image,tooltip='Открыть снимок экрана')
+            item['preview'].controls=[image(file) for file in previews]
+            item['preview'].visible=True;item['preview_built']=True
         item['detail'].value=detail
         item['stop'].visible=bool(process and process['running'])
         self.refresh_group()
@@ -178,9 +193,12 @@ class TaskMessages:
         text=PREFIX+json.dumps(record,ensure_ascii=False)
         try:
             if item['message_id'] is None:
-                item['message_id']=await asyncio.to_thread(self.save,self.chat_id,text)
+                options={'attachments':event['previews']} if event.get('previews') else {}
+                item['message_id']=await asyncio.to_thread(self.save,self.chat_id,text,**options)
                 item['card'].data=item['message_id']
-            else:await asyncio.to_thread(self.update,item['message_id'],text)
+            else:
+                options={'attachments':event['previews']} if event.get('previews') else {}
+                await asyncio.to_thread(self.update,item['message_id'],text,**options)
             if self.on_record:self.on_record(item['message_id'],context(text))
         except Exception as exc:
             self.page.show_dialog(ft.SnackBar(ft.Text('Действие выполнено, но журнал не сохранён: '+str(exc))))
@@ -223,13 +241,20 @@ class TaskMessages:
         state.max_lines=2;state.overflow=ft.TextOverflow.ELLIPSIS
         links=ft.Row(wrap=True,spacing=0,visible=False)
         indicator=ft.Icon(ft.Icons.MORE_HORIZ,size=16,color=color('#087f8c'))
+        preview=ft.Row(wrap=True,visible=False)
+        revoke=ft.TextButton(content='Завершить доступ к экрану',visible=event['tool']=='computer_start')
+        async def close_access(_):
+            from ...services.desktop_control import close_chat_session
+            await asyncio.to_thread(close_chat_session)
+            revoke.content='Доступ завершён';revoke.disabled=True;revoke.update()
+        revoke.on_click=close_access
         tile=ft.ExpansionTile(title=label,subtitle=state,leading=indicator,dense=True,
             min_tile_height=30,tile_padding=0,controls_padding=8,expanded=False,
             expanded_cross_axis_alignment=ft.CrossAxisAlignment.STRETCH,
-            controls=[ft.Text(arguments,size=11,font_family='monospace',selectable=True),detail])
+            controls=[preview,revoke,ft.ExpansionTile(title=ft.Text('Технические подробности',size=11),dense=True,controls=[ft.Text(arguments,size=11,font_family='monospace',selectable=True),detail])])
         card=ft.Container(padding=ft.Padding.symmetric(horizontal=10,vertical=0),border_radius=8,
             bgcolor=None,content=ft.Column(spacing=0,controls=[tile,links,stop]))
-        item=dict(card=card,indicator=indicator,label=label,state=state,detail=detail,stop=stop,arguments=arguments,event=event,title=title,links=links,
+        item=dict(preview=preview,card=card,indicator=indicator,label=label,state=state,detail=detail,stop=stop,arguments=arguments,event=event,title=title,links=links,
                   message_id=None,watching=False,persist_lock=asyncio.Lock())
         card._xopilot_action_record=True
         card._xopilot_action_turn=stored.get('turn') if stored else self.turn
@@ -237,8 +262,8 @@ class TaskMessages:
         apply_palette(card)
         return item
 
-    def restore_saved(self,record,message_id):
-        event=dict(id='message:'+str(message_id),tool=record['tool'],label=record['label'],arguments={},phase='result',stored=record)
+    def restore_saved(self,record,message_id,files=None):
+        event=dict(id='message:'+str(message_id),tool=record['tool'],label=record['label'],arguments={},phase='result',stored=record,previews=files or [])
         process=record.get('process')
         if isinstance(process,dict):
             try:event['result']=task_processes.get(process.get('id'),'chat:'+str(self.chat_id),self.workspace_id).snapshot()

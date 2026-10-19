@@ -179,10 +179,21 @@ class ProviderUnavailableError(RuntimeError):
     pass
 
 
-def generate_reply(prompt_text, history=None, attachments=None, *, instructions='', cancelled=None, structured=False, screen_attachments=None, native_tools=None, tool_results=None, native_instructions=None):
+from contextvars import ContextVar
+_require_screen_image=ContextVar("xopilot_require_screen_image",default=False)
+
+
+def generate_reply(prompt_text, history=None, attachments=None, *, instructions='', cancelled=None, structured=False, screen_attachments=None, native_tools=None, tool_results=None, native_instructions=None, require_screen_image=False):
+    token=_require_screen_image.set(require_screen_image)
+    try:return _generate_with_retry(prompt_text,history,attachments,instructions=instructions,cancelled=cancelled,structured=structured,screen_attachments=screen_attachments,native_tools=native_tools,tool_results=tool_results,native_instructions=native_instructions)
+    finally:_require_screen_image.reset(token)
+
+
+def _generate_with_retry(prompt_text, history, attachments, **options):
+    cancelled=options.get('cancelled')
     for attempt in range(3):
         try:
-            return _generate_reply(prompt_text,history,attachments,instructions=instructions,cancelled=cancelled,structured=structured,screen_attachments=screen_attachments,native_tools=native_tools,tool_results=tool_results,native_instructions=native_instructions)
+            return _generate_reply(prompt_text,history,attachments,**options)
         except ProviderUnavailableError:
             if attempt==2:raise
             if cancelled is not None:
@@ -198,11 +209,13 @@ def _generate_reply(prompt_text, history=None, attachments=None, *, instructions
         raise CancelledError()
     screen_key=(config['url'],config['model'])
     if screen_attachments and _screen_fallback_until.get(screen_key,0)>time.monotonic():
+        if _require_screen_image.get():raise RuntimeError('Выбранная модель не приняла снимок экрана. Выберите модель с поддержкой изображений; просмотр не заменён текстом.')
         remaining=[f for f in (attachments or []) if tuple(f) not in {tuple(x) for x in screen_attachments}]
         return _generate_reply(prompt_text,history,remaining,instructions=instructions+'\nЭкран этой модели недоступен; используй только controls доступности.',cancelled=cancelled,structured=structured,native_tools=native_tools,tool_results=tool_results,native_instructions=None)
     notes, images = build_attachment_message_parts(attachments or [])
     if images and image_support(config) is False:
         if screen_attachments:
+            if _require_screen_image.get():raise RuntimeError('Выбранная модель не приняла снимок экрана. Выберите модель с поддержкой изображений; просмотр не заменён текстом.')
             remaining=[f for f in (attachments or []) if tuple(f) not in {tuple(x) for x in screen_attachments}]
             return _generate_reply(prompt_text,history,remaining,instructions=instructions+'\nКадр экрана недоступен выбранной модели. Используй только наблюдаемые controls доступности; не утверждай, что видел изображение.',cancelled=cancelled,structured=structured,native_tools=native_tools,tool_results=tool_results,native_instructions=None)
         raise RuntimeError('Выбранная модель не поддерживает изображения. '
@@ -245,6 +258,11 @@ def _generate_reply(prompt_text, history=None, attachments=None, *, instructions
     if _summary_budget is not None:
         body['max_tokens'] = _summary_budget
     format_key=(config['url'],config['model'])
+    # Gemini самостоятельно выбирает глубину; неизвестным API не навязываю параметры.
+    if provider_for(config)=='openrouter':
+        from .model_context import engine as model_metadata
+        if getattr(model_metadata(config),'reasoning_supported',False):
+            body['reasoning']={'enabled':True,'exclude':not native}
     if native:body['tools']=native_tools
     elif structured and format_key not in _json_unsupported:body['response_format']={'type':'json_object'}
     if config['url'] in _llama_servers:body['cache_prompt']=True
@@ -317,6 +335,7 @@ def _generate_reply(prompt_text, history=None, attachments=None, *, instructions
             if rejected_image:
                 _image_rejected.add(screen_key)
                 if screen_attachments:
+                    if _require_screen_image.get():raise RuntimeError('Выбранная модель не приняла снимок экрана. Выберите модель с поддержкой изображений; просмотр не заменён текстом.')
                     remaining=[f for f in (attachments or []) if tuple(f) not in {tuple(x) for x in screen_attachments}]
                     return _generate_reply(prompt_text, history, remaining,
                         instructions=instructions+'\nМодель не поддерживает изображения. Используй только controls доступности; не утверждай, что видел экран.',
@@ -347,6 +366,7 @@ def _generate_reply(prompt_text, history=None, attachments=None, *, instructions
                     _json_unsupported.add(format_key)
                     return _generate_reply(prompt_text,history,attachments,instructions=instructions,cancelled=cancelled,structured=False,screen_attachments=screen_attachments,native_tools=native_tools,tool_results=tool_results,native_instructions=native_instructions)
                 if screen_attachments:
+                    if _require_screen_image.get():raise RuntimeError('Выбранная модель не приняла снимок экрана. Выберите модель с поддержкой изображений; просмотр не заменён текстом.')
                     remaining=[f for f in (attachments or []) if tuple(f) not in {tuple(x) for x in screen_attachments}]
                     result = _generate_reply(prompt_text,history,remaining,instructions=instructions+'\nПровайдер отклонил кадр экрана. Продолжай по настоящим controls доступности в результатах computer_view; изображение не было просмотрено.',cancelled=cancelled,structured=False,native_tools=native_tools,tool_results=tool_results,native_instructions=None)
                     _screen_fallback_until[screen_key]=time.monotonic()+300

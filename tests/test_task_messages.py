@@ -113,3 +113,17 @@ class MessageTests(unittest.IsolatedAsyncioTestCase):
         text,links=summarize('search_chats',{'chats':[{'title':'У меня есть сайт','matches':[{'excerpt':'Мой сайт https://xopilot.by.'}]}]})
         self.assertIn('У меня есть сайт',text)
         self.assertEqual(links,['https://xopilot.by'])
+
+    async def test_screen_preview_is_saved_as_attachment_not_json_path(self):
+        import flet as ft
+        page=Mock();save=Mock(return_value=42);update=Mock(return_value=True)
+        journal=TaskMessages(page,1,None,current_chat=lambda:1,chat_list=Mock(controls=[]),save=save,update=update)
+        event=dict(id='screen',tool='computer_view',label='Просмотр экрана',arguments={},phase='result',
+            result={'captured':True,'controls':[]},previews=[('Экран компьютера.jpg','/tmp/qa-frame.jpg')])
+        item=journal.make_item(event)
+        await journal.persist(item)
+        self.assertEqual(save.call_args.kwargs['attachments'],event['previews'])
+        self.assertNotIn('/tmp/qa-frame.jpg',save.call_args.args[1])
+        record=decode(save.call_args.args[1])
+        card=journal.restore_saved(record,42,files=[ft.FilePickerFile(id='qa-frame',name='Экран компьютера.jpg',path='/tmp/qa-frame.jpg',size=1)])
+        self.assertTrue(card.content.controls[0].controls[0].visible)

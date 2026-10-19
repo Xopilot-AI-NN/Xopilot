@@ -395,6 +395,8 @@ def build_app_ui(page: ft.Page) -> ft.Control:
     confirmation_button,refresh_confirmation = build_confirmation_button(page,lambda:active_chat_id,lambda:not is_sending)
 
     async def close_voice_modes(e):
+        from ..services.desktop_control import close_chat_session
+        await asyncio.to_thread(close_chat_session)
         page._xopilot_connected=False
         nonlocal editing_message, draft_before_edit, failed_request, failed_reason
         if is_private(active_chat_id):task_control.cancel()
@@ -816,7 +818,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                         else:chat_context.append({'role':'ai','content':content,'id':identifier})
                     async def append_comment(content):
                         if request_cancelled.is_set():return
-                        identifier,content,reveal_from=await narration.append(content)
+                        identifier,content,reveal_from=await narration.append('> '+str(content).replace('\n','\n> '))
                         remember_action(identifier,content)
                         if active_chat_id==request_chat_id:
                             chat_list.controls[:]=[c for c in chat_list.controls if getattr(c,'data',None)!=identifier]
@@ -899,7 +901,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                             history=request_history, attachments=[*shared_files, *sent_attachments],
                             instructions=instructions,level=tool_level,cancelled=request_cancelled,approve=approve_action,
                             on_progress=progress, generate=reply_generator,task=task_control,network=use_api, request_id=new_id if new_id is not None else chat_context[-1].get('id'),
-                            on_action=task_messages.dispatch,on_message=task_messages.comment)
+                            on_action=task_messages.dispatch,on_message=task_messages.comment,keep_computer=True)
                     finally:
                         await task_messages.drain()
                 else:
@@ -1043,7 +1045,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
             journal=TaskMessages(page,active_chat_id,workspaces.chat_workspace(active_chat_id)['id'],
                 current_chat=lambda:active_chat_id,chat_list=lambda:cast(ft.ListView,chat.content),
                 save=save_ai_message,update=update_message)
-            return journal.restore_saved(record,msg.id)
+            return journal.restore_saved(record,msg.id,files=_rebuild_files(msg.attachments))
         if msg.content.startswith('Действие ИИ ·') and not is_private(active_chat_id):
             workspace_id=workspaces.chat_workspace(active_chat_id)['id']
             for process in task_processes.snapshots('chat:'+str(active_chat_id),workspace_id):
@@ -1295,6 +1297,8 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         if is_private(active_chat_id):
             private_chats.close(active_chat_id)
             drafts.pop(active_chat_id, None)
+        from ..services.desktop_control import close_chat_session
+        close_chat_session()
         editing_message, draft_before_edit = None, ("", [])
         live.clear_chat()
         chat_list = cast(ft.ListView, chat.content)

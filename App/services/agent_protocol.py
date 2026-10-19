@@ -28,7 +28,9 @@ Web Canvas: embedded CSS/JS, no external network/system access; inspect_canvas/i
 Apps: list_apps then launch_app with its package. Android media: control_media.
 Desktop: computer_start, computer_view, then computer_input with fresh action/target/name from observed controls.
 Use click or set_text only, never coordinates. Refresh after every action; old target IDs are invalid.
-Keep public progress brief, without internal reasoning or protocol explanations.
+Keep public progress brief: one short sentence about the current action, no internal reasoning or protocol explanations.
+Final: directly state the outcome; use short paragraphs and Markdown lists only for several distinct results.
+Do not repeat progress or successful tool results. Mention a failed capability once, with a concrete next step.
 """
     if native:
         transport = 'Use the provided native functions for actions. Return the final answer as ordinary text.\n'
