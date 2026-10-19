@@ -31,9 +31,9 @@ import asyncio
 import math
 import flet as ft
 try:
-    from ...theme.palette import color, apply_palette
+    from ...theme.palette import color, apply_palette, outline_color
 except ImportError:
-    from app.theme.palette import color, apply_palette
+    from app.theme.palette import color, apply_palette, outline_color
 
 from ...materials import material as file_utils
 from .buttons.message_actions import build_message_actions
@@ -253,8 +253,9 @@ def build_ai_message(text: str, on_action=None, message_id: int | None = None, f
         bubble_content.controls.insert(0, ft.Row(wrap=True, spacing=6,
             controls=[file_utils.build_file_tile(file) for file in files]))
     bubble = ft.Container(
-        padding=ft.Padding.symmetric(horizontal=4, vertical=10),
-        border_radius=0,
+        padding=ft.Padding.symmetric(horizontal=12, vertical=10),
+        border_radius=20,
+        border=ft.Border.all(1, outline_color()),
         bgcolor=None,
         content=bubble_content,
     )
