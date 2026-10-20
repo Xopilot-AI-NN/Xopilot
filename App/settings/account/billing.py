@@ -188,8 +188,8 @@ def open_billing(page):
             ready = account.get('enabled', False)
             if not account.get('signed_in'): detail.value = 'Войдите в аккаунт, чтобы оформлять подписку.'
             elif not ready and not account_error:
-                detail.value += '\nПродажи ещё не открыты. Условия тарифов — ниже; существующие функции доступны в ознакомительном режиме.'
-            elif account.get('limits_enforced'):
+                detail.value += '\nПродажи ещё не открыты. Подписку может назначить администратор.'
+            if account.get('signed_in') and account.get('limits_enforced'):
                 detail.value += '\nДоступ к удалённым заданиям определяется действующей подпиской на сервере.'
             rows = []
             pending = account.get('pending_order')

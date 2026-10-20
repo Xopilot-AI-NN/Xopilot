@@ -8,6 +8,7 @@
 import hashlib
 import json
 import os
+import subprocess
 from pathlib import Path
 import unittest
 import uuid
@@ -20,6 +21,8 @@ from App.services import remote_tasks
 @unittest.skipUnless(os.environ.get('XOPILOT_REMOTE_QA_URL'),'Изолированный QA-сервер не запущен')
 class RemoteTransportTests(unittest.TestCase):
     def test_encrypted_job_approval_result_revocation_and_foreign_account(self):
+        if not os.environ.get('XOPILOT_TEST_DATABASE_URL','').endswith('/xopilot_test'):
+            self.skipTest('Для выдачи QA-подписки нужна изолированная БД xopilot_test')
         base=os.environ['XOPILOT_REMOTE_QA_URL']
         self.assertTrue(base.startswith('http://127.0.0.1:'))
         def api(path,token=None,body=None,method=None):
@@ -48,6 +51,10 @@ class RemoteTransportTests(unittest.TestCase):
         identifier=str(uuid.uuid4());payload=dict(version=1,id=identifier,sender=pid,target=cid,prompt='Проверка связи')
         envelope=crypt('encode',identifier,'task',payload)
         body=dict(id=identifier,target=cid,task=envelope)
+        with self.assertRaises(HTTPError) as unpaid:api('/remote/jobs',pt,body)
+        self.assertEqual(unpaid.exception.code,402);unpaid.exception.close()
+        fixture=os.environ.get('XOPILOT_REMOTE_QA_SERVER','/home/developer/Xopiser/xopilot-backend/target/debug/examples/qa_server')
+        subprocess.run([fixture,'--grant-test-plan',str(uuid.UUID(owner)),'elite'],check=True,capture_output=True)
         api('/remote/jobs',pt,body);api('/remote/jobs',pt,body)
         jobs=api('/remote/inbox',ct)['jobs'];job=next(j for j in jobs if j['id']==identifier)
         self.assertEqual(crypt('decode',identifier,'task',job['task']),payload)

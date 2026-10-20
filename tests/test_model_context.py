@@ -50,8 +50,9 @@ class ContextMetadataTests(unittest.TestCase):
     def test_unknown_provider_is_not_assigned_an_invented_limit(self):
         config = dict(url='https://custom.example/v1', model='m', key='k')
         with patch.object(model_context.http.client, 'HTTPSConnection') as connect:
+            connect.return_value.getresponse.return_value.status=404
             self.assertIsNone(model_context.engine(config))
-            connect.assert_not_called()
+            connect.return_value.request.assert_called_once_with('GET','/v1/models',headers={'Accept':'application/json','Authorization':'Bearer k'})
         self.assertEqual(model_context.learn_error(config,
             'maximum context length is 4,096 tokens, request has 9000'), 4096)
         self.assertEqual(model_context.engine(config).max_num_tokens, 4096)
@@ -90,3 +91,45 @@ class ContextMetadataTests(unittest.TestCase):
             stats.assert_called_once()
         finally:
             server.shutdown(); server.server_close(); thread.join()
+
+    def test_custom_catalog_uses_selected_runtime_limit_not_training_window(self):
+        config=dict(url='https://custom.example/api/v1',model='loaded',key='local-secret')
+        conn=Mock();conn.getresponse.return_value.status=200
+        conn.getresponse.return_value.read.return_value=json.dumps({'data':[
+            {'id':'other','meta':{'n_ctx':8192}},
+            {'id':'loaded','meta':{'n_ctx':32768,'n_ctx_train':262144}}]}).encode()
+        with patch.object(model_context.http.client,'HTTPSConnection',return_value=conn):
+            engine=model_context.engine(config)
+        self.assertEqual(engine.max_num_tokens,32768)
+        conn.request.assert_called_once_with('GET','/api/v1/models',headers={'Accept':'application/json','Authorization':'Bearer local-secret'})
+
+    def test_custom_transport_compacts_before_first_overflow(self):
+        requests=[];metadata=[]
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self,*args):pass
+            def do_GET(self):
+                metadata.append((self.path,self.headers.get('Authorization')))
+                self.send_response(200);self.end_headers()
+                self.wfile.write(json.dumps({'data':[{'id':'selected','meta':{'n_ctx':4096,'n_ctx_train':131072}}]}).encode())
+            def do_POST(self):
+                body=json.loads(self.rfile.read(int(self.headers['Content-Length'])));requests.append(body)
+                answer='User Denis; project Xopilot; commands need approval.' if 'max_tokens' in body else 'Denis; approval required.'
+                self.send_response(200);self.end_headers()
+                self.wfile.write(json.dumps({'choices':[{'message':{'content':answer}}]}).encode())
+        server=ThreadingHTTPServer(('127.0.0.1',0),Handler)
+        worker=threading.Thread(target=server.serve_forever,daemon=True);worker.start()
+        config=dict(url=f'http://127.0.0.1:{server.server_port}/api/v1',model='selected',key='test-key')
+        history=[{'role':'user','content':'My name is Denis. Project Xopilot. Do not run commands without approval.'}]
+        history += [{'role':'ai','content':'Filler '*500} for _ in range(10)]
+        original=copy.deepcopy(history)
+        try:
+            with patch.object(api_chat,'configuration',return_value=config),patch.object(api_chat,'record_generation'):
+                result=api_chat.generate_reply('Name and command policy?',history=history)
+            self.assertEqual(metadata,[('/api/v1/models','Bearer test-key')])
+            self.assertIn('Denis',result)
+            self.assertTrue('max_tokens' in requests[0], 'Summary must happen BEFORE the normal answer, not after an overflow')
+            self.assertTrue(all(r['model']=='selected' for r in requests))
+            self.assertNotIn('max_tokens',requests[-1])
+            self.assertEqual(history,original)
+            self.assertLess(context_budget.count(model_context.engine(config),requests[-1]['messages']),4096*.85)
+        finally:server.shutdown();server.server_close();worker.join()

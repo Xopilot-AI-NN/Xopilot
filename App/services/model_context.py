@@ -61,6 +61,34 @@ def engine(config):
             pass
         finally:
             connection.close()
+    if host not in {'openrouter.ai','generativelanguage.googleapis.com'}:
+        # The configured origin alone receives the key, never a third-party catalog.
+        parsed=urlsplit(config['url'])
+        connection_class=http.client.HTTPSConnection if parsed.scheme=='https' else http.client.HTTPConnection
+        connection=connection_class(parsed.hostname,parsed.port,timeout=5)
+        try:
+            headers={'Accept':'application/json'}
+            if config.get('key'):headers['Authorization']='Bearer '+config['key']
+            connection.request('GET',parsed.path.rstrip('/')+'/models',headers=headers)
+            response=connection.getresponse()
+            if response.status==200:
+                raw=response.read(8*1024*1024+1)
+                if len(raw)<=8*1024*1024:
+                    data=json.loads(raw)
+                    for model in data.get('data',[]):
+                        if not isinstance(model,dict):continue
+                        aliases=model.get('aliases',[])
+                        if model.get('id')!=config['model'] and not (isinstance(aliases,list) and config['model'] in aliases):continue
+                        meta=model.get('meta') if isinstance(model.get('meta'),dict) else {}
+                        # n_ctx is the running slot limit; n_ctx_train can be much larger.
+                        candidates=(meta.get('n_ctx'),model.get('n_ctx'),model.get('context_length'),model.get('max_model_len'),model.get('context_window'))
+                        limit=next((v for v in candidates if type(v) is int and 512<=v<=100_000_000),None)
+                        if limit is not None:
+                            value=SimpleNamespace(max_num_tokens=limit,max_output_tokens=None)
+                        break
+        except (OSError,ValueError,TypeError,AttributeError,http.client.HTTPException):
+            pass
+        finally:connection.close()
     with _lock:
         _cache[key] = (time.monotonic() + (300 if value else 30), value)
         _cache.move_to_end(key)
