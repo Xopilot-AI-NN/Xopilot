@@ -526,6 +526,8 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         await refresh_attachments(animated=True)
 
     async def handle_keyboard(e: ft.KeyboardEvent):
+        if e.ctrl and e.key.lower()=="f":
+            open_message_navigation(None);return
         if e.ctrl and e.key.lower() == "v":
             try:
                 await paste_files()
@@ -539,6 +541,17 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         if action in {"edit", "delete"} and (is_sending or live.busy or voice_input.busy):
             page.show_dialog(ft.SnackBar(ft.Text("Дождитесь завершения ответа или голосового ввода.")))
             return
+        if action=='bookmark':
+            if is_private(active_chat_id):
+                page.show_dialog(ft.SnackBar(ft.Text('Закладки доступны в обычных чатах.')));return
+            try:
+                try:from ..services import message_navigation
+                except ImportError:from services import message_navigation
+                saved=await asyncio.to_thread(message_navigation.toggle,active_chat_id,message_id)
+                page.show_dialog(ft.SnackBar(ft.Text('Добавлено в закладки этого устройства' if saved else 'Закладка убрана')))
+                return saved
+            except Exception as exc:
+                page.show_dialog(ft.SnackBar(ft.Text(str(exc))));return
         if action == "copy":
             await clipboard.set(text)
         elif action == "reply":
@@ -588,6 +601,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
 
     async def on_send(e, retry=False, queue_item=None):
         nonlocal task_control, editing_message, is_sending, failed_request, failed_reason
+        if focused_history:latest_messages()
         if remote_workspace and remote_workspace.eligible and remote_workspace.target and not retry and not queue_item:
             text=(prompt.value or '').strip()
             if not text and not selected_files:return
@@ -1019,6 +1033,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
     page._xopilot_model_state_changed = lambda: refresh_model_button(update=True, private=is_private(active_chat_id))
 
     MESSAGE_PAGE_SIZE = 30
+    focused_history=False
     older_messages: list = []  # остаток истории текущего чата, догружается порциями при скролле вверх (см. on_chat_scroll)
     _loading_older = False  # защита от повторной догрузки, пока Flutter не перемерил список
 
@@ -1063,7 +1078,8 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         """Загружает историю указанного чата, готовит контекст/пагинацию и возвращает
         список control'ов первой страницы (используется и при старте, и при переключении чата).
         """
-        nonlocal active_chat_id, older_messages, failed_request, failed_reason
+        nonlocal active_chat_id, older_messages, failed_request, failed_reason,focused_history
+        focused_history=False
         failed_reason = ""
         if stored is None:
             stored = load_chat_messages(chat_id)
@@ -1303,6 +1319,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         editing_message, draft_before_edit = None, ("", [])
         live.clear_chat()
         chat_list = cast(ft.ListView, chat.content)
+        chat_list.build_controls_on_demand=True
         chat_list.controls[:] = _prepare_chat_view(chat_id, stored)
         prompt.value, files = drafts.get(chat_id, restore_draft(chat_id))
         selected_files[:] = files
@@ -1698,6 +1715,43 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         from ..services.platforms import fit_dialog
     except ImportError:
         from services.platforms import fit_dialog
+    async def jump_to_message(chat_id,message_id):
+        nonlocal older_messages,focused_history
+        if is_sending or live.busy or voice_input.busy:
+            page.show_dialog(ft.SnackBar(ft.Text('Завершите текущую задачу перед переходом.')));return
+        if not any(c[0]==chat_id for c in await asyncio.to_thread(get_db().list_chats)):
+            page.show_dialog(ft.SnackBar(ft.Text('Чат уже удалён.')));return
+        if chat_id!=active_chat_id:switch_chat(chat_id)
+        stored=await asyncio.to_thread(get_db().get_messages,chat_id)
+        index=next((i for i,m in enumerate(stored) if m.id==message_id),None)
+        if index is None:
+            page.show_dialog(ft.SnackBar(ft.Text('Сообщение уже удалено.')));return
+        # Загружаю окно вокруг результата, а не строю весь длинный чат.
+        start=max(0,index-MESSAGE_PAGE_SIZE//2)
+        window=stored[start:min(len(stored),start+MESSAGE_PAGE_SIZE)];window.reverse()
+        older_messages=[]
+        controls=[_build_message_control(m) for m in window]
+        for control,msg in zip(controls,window):
+            control.key=ft.ScrollKey('message-'+str(msg.id))
+            if msg.id==message_id:
+                control.border=ft.Border.all(1,color('#087f8c'));control.border_radius=18
+        focused_history=True
+        chat_list=cast(ft.ListView,chat.content);chat_list.build_controls_on_demand=False;chat_list.controls=controls
+        page.update();await asyncio.sleep(.1)
+        await chat_list.scroll_to(scroll_key='message-'+str(message_id),duration=300,curve=ft.AnimationCurve.EASE_OUT_CUBIC)
+        page.show_dialog(ft.SnackBar(ft.Text('Показан фрагмент истории вокруг сообщения'),action='К последним',on_action=latest_messages))
+
+    def latest_messages(_=None):
+        cast(ft.ListView,chat.content).build_controls_on_demand=True
+        cast(ft.ListView,chat.content).controls=_prepare_chat_view(active_chat_id)
+        page.update()
+
+    def open_message_navigation(_,bookmarks=False):
+        if is_private(active_chat_id):
+            page.show_dialog(ft.SnackBar(ft.Text('Поиск и закладки доступны в обычных чатах.')));return
+        from .chat.messages.message_navigation import open_navigation
+        open_navigation(page,active_chat_id,jump_to_message,bookmarks=bookmarks)
+
     mobile_menu_button = brand_button(ft.Icons.MENU, "Открыть меню", handle_menu_toggle, size=44)
     more_actions = ft.PopupMenuButton(content=brand_button(ft.Icons.MORE_HORIZ, "Действия чата", size=44),
         items=[ft.PopupMenuItem(content=ft.Text("Новый чат"), on_click=start_new_chat),
@@ -1705,11 +1759,18 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                ft.PopupMenuItem(content=ft.Text("Canvas"), on_click=open_canvas),
                ft.PopupMenuItem(content=ft.Text('Материалы'),on_click=open_materials),
                ft.PopupMenuItem(content=ft.Text('Удалить чат'),icon=ft.Icons.DELETE_OUTLINE,on_click=confirm_delete_current),
-               ft.PopupMenuItem(content=ft.Text("Экспортировать чат"), on_click=export_chat)])
+               ft.PopupMenuItem(content=ft.Text("Экспортировать чат"), on_click=export_chat),
+               ft.PopupMenuItem(content=ft.Text("К последним сообщениям"),icon=ft.Icons.ARROW_DOWNWARD,on_click=latest_messages),
+               ft.PopupMenuItem(content=ft.Text("Поиск в чате"),icon=ft.Icons.SEARCH,on_click=open_message_navigation),
+               ft.PopupMenuItem(content=ft.Text("Закладки"),icon=ft.Icons.BOOKMARK_BORDER,on_click=lambda e:open_message_navigation(e,True))])
     header_title = ft.Column(expand=True, tight=True, spacing=2, controls=[title_text, workspace_text])
     desktop_actions = [brand_button(ft.Icons.ADD_COMMENT_OUTLINED, "Новый чат", start_new_chat, size=36),
                        brand_button(ft.Icons.FORUM_OUTLINED, "Все чаты", open_chats, size=36),
-                       brand_button(ft.Icons.DOWNLOAD_OUTLINED, "Экспортировать чат", export_chat, size=36),
+                       ft.PopupMenuButton(icon=ft.Icons.SEARCH,tooltip='Поиск, закладки и экспорт',icon_color=color('#087f8c'),items=[
+                           ft.PopupMenuItem(content=ft.Text('Поиск в чате'),icon=ft.Icons.SEARCH,on_click=open_message_navigation),
+                           ft.PopupMenuItem(content=ft.Text('Закладки'),icon=ft.Icons.BOOKMARK_BORDER,on_click=lambda e:open_message_navigation(e,True)),
+                           ft.PopupMenuItem(content=ft.Text('К последним сообщениям'),icon=ft.Icons.ARROW_DOWNWARD,on_click=latest_messages),
+                           ft.PopupMenuItem(content=ft.Text('Экспортировать чат'),icon=ft.Icons.DOWNLOAD_OUTLINED,on_click=export_chat)]),
                        brand_button(ft.Icons.DRAW_OUTLINED, "Canvas", open_canvas, size=36),
                        brand_button(ft.Icons.DELETE_OUTLINE,'Удалить чат',confirm_delete_current,size=36)]
     header_row = ft.Row(controls=[header_title,*desktop_actions])
