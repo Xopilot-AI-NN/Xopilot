@@ -108,10 +108,10 @@ class PersonalMemoryTests(unittest.TestCase):
         entities.ledger['records'][key] = record
         change = dict(revision=1, deleted=False)
         self.assertTrue(entities._apply(key, record, change, payload, None))
-        self.assertEqual(record['hash'], fingerprint(payload))
-        self.assertIn('Python', memory.context())
+        self.assertEqual(record['hash'], fingerprint(profile.validate(payload)))
+        self.assertIn('Python', memory.context('Python'))
         profile.import_google(owner, name='Google name')
-        self.assertIn('Python', memory.context())
+        self.assertIn('Python', memory.context('Python'))
         self.assertFalse(memory.read()['automatic'])
 
     def test_two_encrypted_databases_transfer_and_delete_memory_with_real_e2ee_codec(self):
@@ -162,14 +162,14 @@ class PersonalMemoryTests(unittest.TestCase):
         page = Mock();identifier = memory.save('Я пишу на Python')
         content = build_memory_page(page)
         rows = content.controls[-1]
-        row = rows.controls[0].content.controls[-1]
+        row = rows.controls[0].controls[0].content.controls[-1]
         row.controls[-2].on_click(None)
         dialog = page.show_dialog.call_args.args[0]
         dialog.content.controls[0].value = 'Я изучаю Rust'
         dialog.actions[-1].on_click(None)
         self.assertEqual(memory.read()['items'][0]['id'], identifier)
-        self.assertIn('Rust', memory.context())
-        rows.controls[0].content.controls[-1].controls[-1].on_click(None)
+        self.assertIn('Rust', memory.context('Rust'))
+        rows.controls[0].controls[0].content.controls[-1].controls[-1].on_click(None)
         self.assertEqual(memory.read()['items'], [])
 
 

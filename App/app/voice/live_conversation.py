@@ -53,7 +53,7 @@ class VisionCaptureError(RuntimeError):
 
 
 class LiveConversation:
-    def __init__(self, page, is_busy, get_history, on_user_message, on_ai_message, get_resources=None, is_private=None, material_store=None, get_material_store=None, get_pending_files=None, on_pending_files_consumed=None):
+    def __init__(self, page, is_busy, get_history, on_user_message, on_ai_message, get_resources=None, is_private=None, material_store=None, get_material_store=None, get_pending_files=None, on_pending_files_consumed=None, get_workspace_id=None):
         self.page = page
         self.get_pending_files = get_pending_files or (lambda: [])
         self.on_pending_files_consumed = on_pending_files_consumed
@@ -63,6 +63,7 @@ class LiveConversation:
         self.on_ai_message = on_ai_message
         self.get_resources = get_resources or (lambda: ("", []))
         self.is_private = is_private or (lambda: False)
+        self.get_workspace_id = get_workspace_id or (lambda: None)
         self.material_store = material_store
         self.get_material_store = get_material_store or (lambda: self.material_store)
         self.button = build_live_button(on_click=self.open_call)
@@ -867,7 +868,7 @@ class LiveConversation:
                             from ...services import user_memory
                         except ImportError:
                             from services import user_memory
-                        instructions += user_memory.context(transcript)
+                        instructions += user_memory.context(transcript,workspace_id=self.get_workspace_id())
                     self._start_barge_in()
                     speech_error = await self._answer_turn(
                         history, model_filename, image_bytes,

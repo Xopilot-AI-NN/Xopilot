@@ -60,7 +60,7 @@ class DocumentWorkflowTests(unittest.TestCase):
             saved,_=tools.call('save_memory',{'text':'Я изучаю Rust'})
             note,_=tools.call('create_note',{'title':'План изучения','content':'Прочитать главу 3'})
             facts,_=tools.call('search_memory',{'query':'Rust'})
-            self.assertEqual(facts,[{'id':saved['id'],'text':'Я изучаю Rust'}])
+            self.assertEqual([(f['id'],f['text'],f['category']) for f in facts],[(saved['id'],'Я изучаю Rust','user')])
             self.assertEqual(len(user_memory.read()['items']),1)
             entry=library.entries(self.workspace['id'])[0]
             self.assertEqual(entry['id'],note['id'])

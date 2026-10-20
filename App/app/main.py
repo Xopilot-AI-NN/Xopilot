@@ -349,7 +349,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         from services import user_memory, navigation
     memory_capture = MemoryCapture(page)
     page._xopilot_memory_cancel = memory_capture.cancel
-    page._xopilot_memory_capture = lambda text: memory_capture.submit(text, generate_reply)
+    page._xopilot_memory_capture = lambda text: memory_capture.submit(text, generate_reply, workspace_id=workspaces.chat_workspace(active_chat_id)['id'])
     voice_input = VoiceInput(page, prompt, lambda: is_sending or live.busy)
     live = LiveConversation(
         page,
@@ -362,6 +362,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         get_material_store=lambda: material_for_chat(active_chat_id),
         get_pending_files=lambda: selected_files.copy(),
         on_pending_files_consumed=consume_live_files,
+        get_workspace_id=lambda:workspaces.chat_workspace(active_chat_id)['id'],
     )
     try: from ..services import remote_tasks
     except ImportError: from services import remote_tasks
@@ -798,7 +799,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                         page.show_dialog(ft.SnackBar(ft.Text('ИИ работает на CPU: ' + device['reason'])))
                 instructions, shared_files = ("", []) if private_request else workspaces.chat_resources(request_chat_id)
                 if not private_request:
-                    instructions += user_memory.context(text)
+                    instructions += user_memory.context(text,workspace_id=workspaces.chat_workspace(request_chat_id)['id'])
                 await asyncio.to_thread(task_control.checkpoint)
                 if request_cancelled.is_set():
                     raise CancelledError()
@@ -991,7 +992,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                 # Explicit memory actions have their own approval; a rejected action
                 # must not be saved again by the background fact extractor.
                 if not (tool_level and re.search(r'\b(запомни|remember)\b', text, re.I)):
-                    memory_capture.submit(text, memory_generator, private=private_request)
+                    memory_capture.submit(text, memory_generator, private=private_request,workspace_id=workspaces.chat_workspace(request_chat_id)['id'])
                 request_success=True
         finally:
             is_sending = False

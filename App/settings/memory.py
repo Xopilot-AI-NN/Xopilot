@@ -16,19 +16,28 @@ def build_memory_page(page, on_status=lambda _: None):
     feedback = ft.Text('', size=12, color=color('#47747a'))
     search = modern_input(ft.TextField(hint_text='Поиск в памяти', prefix_icon=ft.Icons.SEARCH))
     rows = ft.Column(spacing=8)
+    category_filter=modern_input(ft.Dropdown(label='Раздел памяти',value='all',options=[ft.DropdownOption(key='all',text='Все разделы'),*[ft.DropdownOption(key=k,text=v) for k,v in memory.CATEGORIES.items()]]))
+    def projects():
+        import json
+        return json.loads(memory.get_db().get_setting('workspaces_v1') or '{}').get('items',[])
+
 
     def refresh(_=None):
         query = (search.value or '').strip().casefold()
-        items = [item for item in memory.read()['items'] if query in item['text'].casefold()]
+        items = [item for item in memory.read()['items'] if query in item['text'].casefold() and (category_filter.value=='all' or item['category']==category_filter.value)]
+        project_names={item['id']:item['name'] for item in projects()}
+        grouped={key:[] for key in memory.CATEGORIES}
         rows.controls = []
         for item in sorted(items, key=lambda item: item['updated'], reverse=True):
             subtitle = ('Сохранено ИИ' if item['automatic'] else 'Добавлено вручную') + ' · ' + datetime.fromtimestamp(item['updated']).strftime('%d.%m.%Y')
-            rows.controls.append(ft.Container(padding=12, border_radius=16, bgcolor=color('#f3fffc'),
+            subtitle+=' · '+project_names.get(item['workspace_id'],'Общие сведения' if item['workspace_id'] is None else 'Проект недоступен')
+            grouped[item['category']].append(ft.Container(padding=12, border_radius=16, bgcolor=color('#f3fffc'),
                 border=ft.Border.all(1, color('#b9eee4')), content=ft.Column(spacing=6, controls=[
                     ft.Text(item['text'], selectable=True, color=color('#123b43')),
                     ft.Row(controls=[ft.Text(subtitle, size=11, expand=True, color=color('#47747a')),
                         ft.IconButton(icon=ft.Icons.EDIT_OUTLINED, tooltip='Изменить запись', on_click=lambda _, item=item: edit(item)),
                         ft.IconButton(icon=ft.Icons.DELETE_OUTLINE, tooltip='Удалить запись', on_click=lambda _, item=item: remove(item))])])))
+        rows.controls=[ft.ExpansionTile(title=ft.Text(memory.CATEGORIES[key]+' · '+str(len(cards)),color=color('#123b43')),dense=True,expanded=True,controls=cards) for key,cards in grouped.items() if cards]
         if not items:
             rows.controls = [ft.Text('Совпадений нет' if query else 'Память пока пуста. Расскажите ИИ о себе или добавьте запись вручную.', color=color('#47747a'))]
         apply_palette(rows)
@@ -37,15 +46,17 @@ def build_memory_page(page, on_status=lambda _: None):
     def edit(item=None):
         text = modern_input(ft.TextField(label='Что ИИ должен помнить', value=item['text'] if item else '',
             multiline=True, min_lines=3, max_lines=8, max_length=1000, autofocus=True))
+        category=modern_input(ft.Dropdown(label='Категория',value=item['category'] if item else 'user',options=[ft.DropdownOption(key=k,text=v) for k,v in memory.CATEGORIES.items()]))
+        scope=modern_input(ft.Dropdown(label='Область памяти',value=(item['workspace_id'] if item else None) or 'all',options=[ft.DropdownOption(key='all',text='Общие сведения'),*[ft.DropdownOption(key=p['id'],text=p['name']) for p in projects()]]))
         error = ft.Text('', color=color('#b3261e'))
         def save(_):
             try:
-                memory.save(text.value or '', item['id'] if item else None)
+                memory.save(text.value or '', item['id'] if item else None,category=category.value,workspace_id=scope.value)
                 page.pop_dialog();refresh();on_status('Память сохранена')
             except Exception as exc:
                 error.value = str(exc);page.update()
         page.show_dialog(ft.AlertDialog(title=ft.Text('Изменить память' if item else 'Добавить в память'),
-            bgcolor=color('#eafffa'), content=ft.Column(width=500, tight=True, controls=[text, error]),
+            bgcolor=color('#eafffa'), content=ft.Column(width=500, tight=True, controls=[text,category,scope,error]),
             actions=[ft.TextButton(content='Отмена', on_click=lambda _: page.pop_dialog()),
                      ft.FilledButton(content='Сохранить', on_click=save)]))
 
@@ -67,12 +78,14 @@ def build_memory_page(page, on_status=lambda _: None):
             control.value = memory.read()[key];feedback.value = str(exc);page.update()
     enabled.on_change = lambda _: configure('enabled', enabled)
     automatic.on_change = lambda _: configure('automatic', automatic)
+    category_filter.on_select=refresh
     search.on_change = refresh
     refresh()
     return ft.Column(spacing=12, controls=[enabled, automatic,
         ft.Text('ИИ сохраняет только явно сообщённые сведения о вас и предпочтения. Можно сказать «Запомни: …». '
+                'В запрос подгружаются только подходящие записи; остальные ИИ ищет инструментом поиска памяти. Проектная память изолирована по пространствам. '
                 'Автоматический выбор сведений может потребовать дополнительный запрос к выбранной модели. '
                 'Память не используется в защищённых и временных чатах. Она хранится в зашифрованной базе '
                 'и синхронизируется вместе с профилем, если эта категория включена.', size=12, color=color('#47747a')),
         ft.Row(wrap=True, controls=[ft.OutlinedButton(content='Добавить запись', icon=ft.Icons.ADD, on_click=lambda _: edit()),
-                                   ft.TextButton(content='Очистить память', on_click=clear)]),search,feedback,rows])
+                                   ft.TextButton(content='Очистить память', on_click=clear)]),category_filter,search,feedback,rows])

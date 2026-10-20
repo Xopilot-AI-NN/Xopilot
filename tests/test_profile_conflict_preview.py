@@ -45,8 +45,8 @@ class ProfilePreviewTests(unittest.TestCase):
     def test_preview_authenticates_both_profiles_without_resolving_or_mutating_them(self):
         before=copy.deepcopy(self.db.data)
         result=sync.profile_conflict_preview(self.record_key)
-        self.assertEqual(result['local'],self.local);self.assertEqual(result['cloud'],self.cloud)
-        self.assertEqual(result['expected'],{'local':sync.fingerprint(self.local),'cloud':sync.fingerprint(self.cloud)})
+        self.assertEqual(result['local'],self.local);self.assertEqual(result['cloud'],profile.validate(self.cloud))
+        self.assertEqual(result['expected'],{'local':sync.fingerprint(self.local),'cloud':sync.fingerprint(profile.validate(self.cloud))})
         self.assertEqual(self.db.data,before)
 
     def test_change_after_preview_is_not_overwritten_and_no_recovery_is_written(self):

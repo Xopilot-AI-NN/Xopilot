@@ -15,7 +15,7 @@ Never bypass permissions or execute commands by typing into a terminal.
 Known URL: read_website; unknown source: search_web. Cite source URLs.
 Other chats: list_recent_chats/search_chats then read_chat relevant excerpts only.
 Protected/temporary chats are unavailable. Ask if required information is missing.
-Personal memory: durable facts ABOUT THE USER. search_memory reads them;
+Memory has user, preferences, projects and instructions categories; project scope is enforced by the host. Personal memory: durable facts ABOUT THE USER. search_memory reads them;
 save_memory requires an explicit request and confirmation. Never store secrets/questions.
 Notes: create_note in the workspace library; search_library/read_material to find/read notes or files.
 Canvas: editable app text/code/web document. list_canvases/read_canvas before update_canvas.
@@ -54,6 +54,7 @@ Never explain JSON/repair to the user. Never use placeholder tool names.
 
 
 DESCRIPTIONS = {
+    'discover_tools':'Find available functions for a task and load their exact parameter schemas before calling them. Descriptions are not execution.',
     'search_memory': 'Find saved personal facts and preferences about the user; not notes/files/chat history.',
     'save_memory': 'Save an explicitly requested durable personal fact after user confirmation; never save secrets or questions.',
     'create_note': 'Save a titled Markdown note in this workspace library; not personal memory or a project file.',
@@ -89,7 +90,7 @@ DESCRIPTIONS = {
 }
 
 
-REQUIRED = {'search_chats':('query',),'search_library':('query',),'search_web':('query',),
+REQUIRED = {'discover_tools':('query',),'search_chats':('query',),'search_library':('query',),'search_web':('query',),
     'search_memory':('query',),'save_memory':('text',),'create_note':('title','content'),
     'read_website':('url',),'read_chat':('chat_id',),'read_material':('id',),
     'read_canvas':('id',),'inspect_canvas':('id',),'interact_canvas':('id','action'),
@@ -112,6 +113,8 @@ def response_schema(tools, *, material_refs=()):
             properties['id']={'type':'string','enum':sorted(material_refs)}
         if 'table' in properties:properties['table']={'type':'array','items':{'type':'array','items':{}}}
         if 'argv' in properties:properties['argv']={'type':'array','items':{'type':'string'},'minItems':1}
+        if name in {'search_memory','save_memory'} and 'category' in properties:
+            properties['category']={'enum':['user','preferences','projects','instructions']}
         if 'kind' in properties:properties['kind']={'enum':['text','code','web']}
         if name=='computer_input':
             properties['action']={'enum':['click','set_text']}

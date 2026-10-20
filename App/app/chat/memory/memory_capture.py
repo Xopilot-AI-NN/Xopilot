@@ -29,14 +29,14 @@ class MemoryCapture:
     def cancel(self):
         self.cancelled.set()
 
-    def submit(self, message, generate, *, private=False):
+    def submit(self, message, generate, *, private=False, workspace_id=None):
         self.cancel()
         cancelled = self.cancelled = threading.Event()
         async def collect():
             self._running += 1
             try:
                 notes = await asyncio.to_thread(user_memory.capture, message, generate,
-                    cancelled=cancelled, private=private)
+                    cancelled=cancelled, private=private,workspace_id=workspace_id)
                 if notes and not cancelled.is_set() and getattr(self.page, '_xopilot_connected', True):
                     notice = ft.SnackBar(ft.Text('Сохранено в память: ' + '; '.join(notes)), action='Посмотреть')
                     def view(_):
