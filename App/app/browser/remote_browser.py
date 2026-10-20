@@ -34,6 +34,7 @@ def approval_content(request):
 
 
 def open_remote(page):
+    from .remote_history import open_history
     closed=False
     devices=ft.Column(spacing=10)
     status=ft.Text('Ищем ваши устройства…',size=12,color=color('#47747a'))
@@ -74,7 +75,8 @@ def open_remote(page):
         closed=True
     page.show_dialog(ft.AlertDialog(title=ft.Text('Мои компьютеры'),bgcolor=color('#eafffa'),
         shape=ft.RoundedRectangleBorder(radius=24),content=ft.Column(width=580,height=min(500,max(260,(page.height or 800)-230)),
-            scroll=ft.ScrollMode.AUTO,spacing=16,controls=[ft.Text('Свяжите телефон с вашим ПК. Запрос нужно подтвердить на компьютере.',size=13,color=color('#47747a')),devices,status]),
+            scroll=ft.ScrollMode.AUTO,spacing=16,controls=[ft.Text('Свяжите телефон с вашим ПК. Запрос нужно подтвердить на компьютере.',size=13,color=color('#47747a')),devices,status,ft.FilledTonalButton(content='История заданий',icon=ft.Icons.HISTORY_ROUNDED,
+                on_click=lambda _:open_history(page))]),
         actions=[ft.FilledTonalButton(content='Готово',on_click=close)],on_dismiss=dismiss))
     page.run_task(refresh)
 

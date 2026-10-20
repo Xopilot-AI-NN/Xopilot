@@ -48,6 +48,27 @@ def decode(identifier, kind, value):
     return json.loads(open_sealed(key, account['account_id'], 'remote:'+kind+':'+str(identifier), unb64(value), max_bytes=512*1024))
 
 
+def history(offset=0):
+    credentials()
+    if type(offset) is not int or not 0<=offset<=100000:raise ValueError('Неверная страница истории')
+    result=cloud.request('/remote/history?offset='+str(offset))
+    if (not isinstance(result,dict) or not isinstance(result.get('jobs'),list) or len(result['jobs'])>50
+            or result.get('history_days') not in (1,7,30) or type(result.get('has_more')) is not bool
+            or type(result.get('next_offset')) is not int or result['next_offset']!=offset+len(result['jobs'])):
+        raise ValueError('Сервер вернул неверную историю')
+    rows=[]
+    for item in result['jobs']:
+        identifier=str(uuid.UUID(item['id']))
+        if item.get('state') not in ('completed','failed','cancelled') or type(item.get('updated_at')) is not int:
+            raise ValueError('Неверное состояние задания')
+        row=dict(item);row['task']=decode(identifier,'task',item['task'])
+        row['result']=decode(identifier,'result',item['result']) if item.get('result') else None
+        if not isinstance(row['task'],dict) or not isinstance(row['task'].get('prompt'),str):
+            raise ValueError('Неверное содержимое задания')
+        rows.append(row)
+    return {**result,'jobs':rows}
+
+
 def options():
     account = cloud.state()
     return json.loads(get_db().get_setting('remote_host:'+account['account_id']) or '{"enabled":false,"senders":[]}') if account else {'enabled': False, 'senders': []}
@@ -237,6 +258,8 @@ def _execute(row, cancelled):
             raise ValueError('Чат изменился после отправки задания. Синхронизируйте устройства и повторите.')
         history=[{'role':m['role'],'content':m.get('text',m.get('content',''))} for m in messages[:-1]]
     instructions, files = workspaces.chat_resources(cid)
+    from . import user_memory
+    instructions+=user_memory.context(task['prompt'],workspace_id=workspace)
     if task.get('chat_uuid'):
         files=[*files,*[tuple(item) for item in messages[-1].get('attachments',[])]]
     api_selected=api_chat.is_api_selected()
