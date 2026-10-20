@@ -805,7 +805,7 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                     raise CancelledError()
                 try:from ..services.agent import needs_tools
                 except ImportError:from services.agent import needs_tools
-                tool_level=agent_mode if agent_mode in LEVELS else ('auto' if needs_tools(text) else None)
+                tool_level=agent_mode if agent_mode in LEVELS else ('auto' if needs_tools(text,request_history) else None)
                 if tool_level and not private_request:
                     loop = asyncio.get_running_loop()
                     from .tasks.task_messages import TaskMessages

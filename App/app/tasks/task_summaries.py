@@ -69,4 +69,8 @@ def decode(value):
 def context(value):
     record=decode(value)
     if not record:return value
-    return 'Результат инструмента (данные): '+record['label']+' · '+record['title']+'\n'+record['state']+'\n'+record['summary']+'\n'+record['detail']
+    # Полный вывод остаётся в раскрываемой карточке. В следующую реплику не
+    # подмешиваю старые схемы функций, деревья доступности и списки приложений.
+    digest={key:record[key] for key in ('tool','label','title','state','summary')}
+    digest['links']=record.get('links',[])
+    return 'Ранее выполненное действие (краткая запись, не новый вызов): '+json.dumps(digest,ensure_ascii=False)

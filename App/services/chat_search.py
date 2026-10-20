@@ -51,7 +51,8 @@ def search(query, *, after_chat_id=0, limit=20):
 
 def _excerpt(content, query='', budget=640):
     """Extract relevant source text, not invented facts or the complete transcript."""
-    from ..app.tasks.task_summaries import decode
+    try:from ..app.tasks.task_summaries import decode
+    except ImportError:from app.tasks.task_summaries import decode
     record=decode(content)
     if record:
         content=' · '.join(str(record.get(k,'')) for k in ('label','title','state','summary'))

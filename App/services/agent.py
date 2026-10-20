@@ -72,7 +72,9 @@ class AgentReply(str):
         reply = super().__new__(cls, value); reply.files = list(files); return reply
 
 
-def needs_tools(prompt):
+def needs_tools(prompt,history=()):
+    from .agent_context import is_followup_action
+    if is_followup_action(prompt,history):return True
     if re.search(r'\b(запомни|remember)\b|(создай|сохрани|найди|поищи).{0,50}(заметк|памят)',prompt,re.I):return True
     if re.match(r'\s*(?:пожалуйста\s+)?(?:открой|запусти|open|launch)\b',prompt,re.I):return True
     if re.search(r'(предыдущ|позапрошл|прошл|последн|previous|last).{0,35}(чат|chat)',prompt,re.I):return True
@@ -353,6 +355,10 @@ def _run_agent(prompt, *, chat_id, history, attachments, instructions, level, ca
     available = available_tools(access, tools.workspace_id)
     toolset = {'discover_tools':available['discover_tools']}
     from .tool_discovery import CATALOG
+    from .agent_context import external_app,instruction as app_instruction
+    app_target=external_app(prompt,history)
+    base_instructions=instructions
+    instructions+=app_instruction(app_target)
     instructions += '\nИнструменты загружаются по запросу. Сначала вызови discover_tools с категорией или задачей. Каталог: '+CATALOG
     protocol_options = dict(approval=project_tools.chat_approval_mode(chat_id), workspace=workspace['name'],
         attached=bool(access.get('enabled') and access.get('root')), prompt=prompt, instructions=instructions)
@@ -374,6 +380,9 @@ def _run_agent(prompt, *, chat_id, history, attachments, instructions, level, ca
     repeated_creation = None
     repeated_count = 0
     discovery_stalls=0
+    unavailable_tools={}
+    fabricated_count=0
+    unavailable_stalls=0
     while limit is None or step <= limit:
         step += 1
         if task:task.checkpoint()
@@ -399,11 +408,16 @@ def _run_agent(prompt, *, chat_id, history, attachments, instructions, level, ca
                 kwargs['screen_attachments']=screen_files
                 kwargs['require_screen_image']=True
         def incorporate(updates, options):
-            nonlocal current,attachments,goal
+            nonlocal current,attachments,goal,app_target
             clarification = '\n\nУточнения пользователя к текущей задаче:\n'+'\n'.join(u['text'] for u in updates)
             goal += clarification
             current += clarification
             attachments=list(dict.fromkeys([*(attachments or []),*(f for u in updates for f in u['attachments'])]))
+            # Уточнение может явно сменить цель с мессенджера на историю Xopilot.
+            app_target=external_app(updates[-1]['text'],[*transcript,{'role':'user','content':goal}])
+            protocol_options['instructions']=base_instructions+app_instruction(app_target)+'\nИнструменты загружаются по запросу. Каталог: '+CATALOG
+            options={**options,'instructions':build_protocol(toolset,**protocol_options)+budget}
+            if network:options['native_instructions']=build_protocol(toolset,native=True,**protocol_options)+budget
             return current,{**options,'attachments':list(dict.fromkeys([*options['attachments'],*attachments]))}
         raw = task.generate(generate,current,network=network,on_updates=incorporate,**kwargs) if task else generate(current,cancelled=cancelled,**kwargs)
         parsed = parse_response(raw)
@@ -415,7 +429,14 @@ def _run_agent(prompt, *, chat_id, history, attachments, instructions, level, ca
         if cancelled.is_set():
             raise CancelledError()
         if 'final' in parsed:
-            if needs_tools(prompt) and not journal and parsed.get('needs_input') is not True and (limit is None or step<limit):
+            artifact=r'xopilot://|\[XOPILOT_ACTION_V1\]|Результат инструмента\s*\(данные\)'
+            if needs_tools(prompt,history) and re.search(artifact,parsed['final'],re.I) and not re.search(artifact,prompt,re.I):
+                fabricated_count+=1
+                if fabricated_count>=2:raise RuntimeError('Модель подменяет выполнение выдуманным результатом инструмента. Действие не подтверждено.')
+                transcript.extend([{'role':'user','content':current},{'role':'ai','content':raw}])
+                current='Не придумывай протокол результата, ссылку xopilot:// или изображение. Вызови настоящий инструмент для исходной задачи либо честно сообщи об ограничении в final с needs_input=true. Исходная задача: '+goal
+                continue
+            if needs_tools(prompt,history) and not journal and parsed.get('needs_input') is not True and (limit is None or step<limit):
                 unfulfilled_count=unfulfilled_count+1 if unfulfilled_final==parsed['final'] else 1
                 unfulfilled_final=parsed['final']
                 if unfulfilled_count>=3:
@@ -480,10 +501,15 @@ def _run_agent(prompt, *, chat_id, history, attachments, instructions, level, ca
                     notify('result',result=result)
                     return {'tool':name,'result':result},[],TOOL_LABELS[name]+' · уже выполнено'
                 if name not in available:raise ValueError('Инструмент недоступен в текущем пространстве или на устройстве')
+                if name in unavailable_tools:raise ValueError('Инструмент недоступен до исправления приложения: '+unavailable_tools[name]+'. Изменение поисковой строки не исправит эту ошибку.')
+                if app_target and name in {'search_chats','read_chat','list_recent_chats'}:
+                    raise ValueError('Это история Xopilot, а задача относится к '+app_target+'. Выбери категорию computer для действий в приложении; не ищи контакт в истории Xopilot.')
                 if name=='discover_tools':
                     from .tool_discovery import discover
                     from .agent_protocol import native_tools as schemas
-                    matches=discover(action.get('arguments',{}).get('query',''),available)
+                    query=action.get('arguments',{}).get('query','')
+                    if app_target and re.search(r'chat|чат|переписк|мессендж',query,re.I):query='computer'
+                    matches=discover(query,available)
                     with mutation_lock:toolset.update(matches)
                     result={'catalog':CATALOG,'loaded':list(matches),'tools':schemas(matches,material_refs=tools.material_refs),
                             'note':'Прочитай параметры и вызови загруженные функции. Это описание, действия ещё не выполнены.'}
@@ -506,6 +532,7 @@ def _run_agent(prompt, *, chat_id, history, attachments, instructions, level, ca
             except CancelledError:
                 notify('error',error='Действие остановлено');raise
             except Exception as exc:
+                if isinstance(exc,(ImportError,NotImplementedError)):unavailable_tools[name]=str(exc)
                 notify('error',error=str(exc))
                 return {'tool':name,'error':str(exc)},[],TOOL_LABELS[name]+' · ошибка: '+str(exc)
         # Models may put dependent read/write/run steps in one native batch.
@@ -516,6 +543,10 @@ def _run_agent(prompt, *, chat_id, history, attachments, instructions, level, ca
         else:
             with ThreadPoolExecutor(max_workers=4,thread_name_prefix='xopilot-tools') as pool:
                 results=list(pool.map(execute,actions))
+        if all(a['tool'] in unavailable_tools for a in actions):
+            unavailable_stalls+=1
+            if unavailable_stalls>=3:raise RuntimeError('Повторение сломанного инструмента остановлено: '+next(iter(unavailable_tools.values())))
+        else:unavailable_stalls=0
         if all(a['tool']=='discover_tools' for a in actions) and set(toolset)==loaded_before:
             discovery_stalls+=1
             if discovery_stalls>=3:raise RuntimeError('Модель повторяет чтение каталога без выбора инструмента. Уточните задачу или смените модель.')

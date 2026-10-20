@@ -16,7 +16,7 @@ GROUPS={
     'computer':('пк компьютер экран курсор мыш кнопк desktop computer screen cursor click',{'computer_start','computer_view','computer_input'}),
     'device':('приложен музык трек телефон app launch media music android',{'list_apps','launch_app','control_media'}),
 }
-CATALOG='memory — память; chats — переписки; library — материалы/заметки/документы; canvas — Canvas; web — интернет; project — файлы/команды проекта; computer — экран/окна ПК; device — приложения/музыка.'
+CATALOG='memory — память; chats — только история Xopilot (не мессенджеры); library — материалы/заметки/документы; canvas — Canvas; web — интернет; project — файлы/команды проекта; computer — экран/окна ПК; device — приложения/музыка.'
 _STOP={'для','как','что','мне','надо','нужны','нужен','нужно','инструмент','инструменты','tool','tools','the','for','and'}
 
 
