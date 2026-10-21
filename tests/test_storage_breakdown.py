@@ -99,3 +99,26 @@ class StorageDialogTests(unittest.IsolatedAsyncioTestCase):
                 self.assertLess(dialog.content.height,page.height)
                 self.assertTrue(dialog.content.controls[1].expand)
             self.assertTrue(any(isinstance(c,ft.Text) and c.value=='Из чего складывается объём' for c in dialog.content.controls[1].controls))
+
+    async def test_filter_uses_loaded_inventory_and_periodic_refresh_remains_fresh(self):
+        page=Mock(width=393,height=851);page.show_dialog.side_effect=lambda dialog:setattr(dialog,'open',True)
+        inventory=dict(used_bytes=0,quota_bytes=134217728,material_bytes=0,sync_payload_bytes=0,
+            unmapped_bytes=0,metadata_bytes=0,materials=[],unmapped_files=[],excluded_materials=[])
+        async def tick(seconds):
+            if seconds>1:raise asyncio.CancelledError()
+        with patch.object(ui.cloud_account,'state',return_value={'account_id':'qa'}),patch.object(ui.navigation,'save'),\
+                patch.object(ui.storage,'cloud_inventory',return_value=inventory) as fetch,patch.object(ui.asyncio,'sleep',side_effect=tick):
+            ui.open_storage(page,'cloud');dialog=page.show_dialog.call_args.args[0];page._dialogs.controls=[dialog]
+            watch=page.run_task.call_args.args[0]
+            with self.assertRaises(asyncio.CancelledError):await watch()
+            filters=dialog.content.controls[1].controls[0];search=filters.controls[0]
+            search.value='report';await search.on_change(None)
+            search.value='report.py';await search.on_change(None)
+            self.assertEqual(fetch.call_count,1,'Typing must not re-fetch cloud inventory')
+            inventory['used_bytes']=9000
+            with self.assertRaises(asyncio.CancelledError):await watch()
+            self.assertEqual(fetch.call_count,2,'Periodic refresh must still read new cloud state')
+            summary=dialog.content.controls[1].controls[1]
+            self.assertIn('8',summary.content.controls[1].value)
+            dialog.open=False;await search.on_change(None)
+            self.assertEqual(fetch.call_count,2)

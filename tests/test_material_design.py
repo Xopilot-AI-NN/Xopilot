@@ -41,3 +41,17 @@ class MaterialDesignTests(unittest.TestCase):
             self.assertEqual(len(cards.controls),1)
             self.assertEqual(cards.controls[0].content.controls[1].content.controls[0].value,'Разработка')
             search.value='';search.on_change(None);self.assertEqual(len(cards.controls),3)
+
+    def test_shared_widgets_use_material3_roles_and_native_motion(self):
+        page=Mock(controls=[],overlay=[])
+        self.addCleanup(palette.set_theme,page,'light')
+        for name in palette.THEMES:
+            palette.set_theme(page,name);theme=page.theme
+            self.assertTrue(theme.use_material3)
+            self.assertEqual(theme.slider_theme.active_track_color,theme.color_scheme.primary)
+            self.assertEqual(theme.progress_indicator_theme.color,theme.color_scheme.primary)
+            self.assertEqual(theme.tooltip_theme.text_style.color,theme.color_scheme.surface)
+            self.assertEqual(theme.scrollbar_theme.thickness,6)
+            self.assertTrue(theme.scrollbar_theme.interactive)
+            self.assertEqual(page.theme_animation_style.duration,220)
+            self.assertFalse(theme.slider_theme.year_2023)

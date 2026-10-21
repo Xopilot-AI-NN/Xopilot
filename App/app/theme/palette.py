@@ -242,6 +242,7 @@ def set_theme(page, mode):
     global _mode
     _mode = mode if mode in THEMES else 'light'
     from .design import material_theme
+    page.theme_animation_style=ft.AnimationStyle(duration=220,curve=ft.AnimationCurve.EASE_IN_OUT_CUBIC)
     page.theme=material_theme()
     page.dark_theme=page.theme
     page.theme_mode = ft.ThemeMode.DARK if THEMES[_mode][1] else ft.ThemeMode.LIGHT

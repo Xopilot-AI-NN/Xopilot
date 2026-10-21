@@ -147,3 +147,26 @@ class ProjectInspectionTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('main.py',row.content.controls[0].value)
         await row.content.controls[1].controls[0].on_click(None)
         self.assertIn('+port = 9911',page.dialog.content.controls[0].value)
+
+    async def test_project_panel_filters_filenames_and_disables_tools_after_disconnect(self):
+        from App.app.workspace.project_browser import open_project
+        class Page:
+            height=800;width=1000;web=True
+            def update(self):pass
+            def show_dialog(self,value):self.dialog=value;value.open=True
+            def pop_dialog(self):self.dialog.open=False
+            def run_task(self,callback,*args):self.callback=callback;self.args=args
+        page=Page();open_project(page,{'id':self.wid,'name':'QA'})
+        await page.callback(*page.args)
+        controls=page.dialog.content.controls;tools=controls[2];query=controls[3];rows=controls[4]
+        self.assertTrue(all(not b.disabled for b in tools.controls))
+        self.assertEqual(rows.controls[0].content.controls[1].value,'main.py')
+        query.value='absent';query.on_change(None)
+        self.assertEqual(rows.controls[0].content.controls[1].value,'Нет совпадений')
+        query.suffix.on_click(None)
+        self.assertEqual(query.value,'')
+        self.assertEqual(rows.controls[0].content.controls[1].value,'main.py')
+        disconnect=controls[0].content.controls[2].controls[-1]
+        await disconnect.on_click(None)
+        self.assertTrue(all(b.disabled for b in tools.controls))
+        self.assertEqual(controls[0].content.controls[0].controls[1].controls[1].value,'Папка не подключена')

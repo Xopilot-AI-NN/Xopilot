@@ -33,6 +33,8 @@ def open_storage(page, initial_mode='local'):
     if mode=='cloud' and not cloud_account.state():mode='local'
     navigation.save(storage=mode)
     last_snapshot=None
+    inventory_cache={}
+    filter_generation=None
     block_limit=0
     compact=compact_layout(getattr(page,'width',None))
     search=modern_input(ft.TextField(hint_text='Найти материал',prefix_icon=ft.Icons.SEARCH,
@@ -111,15 +113,20 @@ def open_storage(page, initial_mode='local'):
     async def refresh(_=None):
         async with refresh_lock:await render_inventory()
 
-    async def render_inventory():
+    async def render_inventory(use_cache=False):
         nonlocal last_snapshot
         if not dialog.open:return
         try:
-            if mode=='local':
+            requested_mode=mode
+            if use_cache and mode in inventory_cache:
+                inventory,private_versions,profile_versions=inventory_cache[mode]
+            elif mode=='local':
                 inventory=await asyncio.to_thread(storage.local_inventory)
                 private_versions=await asyncio.to_thread(storage.private_recoveries)
-                profile_versions=profile.recoveries()
+                profile_versions=await asyncio.to_thread(profile.recoveries)
             else:inventory=await asyncio.to_thread(storage.cloud_inventory);private_versions=[];profile_versions=[]
+            if not dialog.open or requested_mode!=mode:return
+            inventory_cache[mode]=(inventory,private_versions,profile_versions)
             snapshot=json.dumps([mode,search.value,order.value,inventory,private_versions,profile_versions,block_limit],sort_keys=True,ensure_ascii=False)
             if snapshot==last_snapshot:return
             if mode=='local':
@@ -295,8 +302,15 @@ def open_storage(page, initial_mode='local'):
         navigation.save(storage=None)
         page.pop_dialog()
         if task:task.cancel()
-    search.on_change=refresh
-    order.on_select=refresh
+    async def filter_materials(_):
+        nonlocal filter_generation
+        generation=object();filter_generation=generation
+        await asyncio.sleep(.18)
+        if generation is not filter_generation or not dialog.open:return
+        async with refresh_lock:
+            if generation is filter_generation and dialog.open:await render_inventory(use_cache=True)
+    search.on_change=filter_materials
+    order.on_select=filter_materials
     dialog=ft.AlertDialog(bgcolor=color('#eafffa'),title=ft.Text('Хранилище'),shape=ft.RoundedRectangleBorder(radius=28),
         content=ft.Column(width=550,height=560,spacing=12,controls=[ft.Row(controls=[tabs]),content,status]),
         actions=[action_button('Готово',on_click=close,icon=ft.Icons.CHECK)],

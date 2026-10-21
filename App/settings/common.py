@@ -48,9 +48,9 @@ def setting_row(icon, title: str, subtitle: str, trailing=None, on_click=None) -
     if trailing is not None and not stacked:
         controls.append(trailing)
     return ft.Container(
-        padding=ft.Padding.symmetric(horizontal=14, vertical=12),
+        padding=ft.Padding.symmetric(horizontal=16, vertical=14),
         bgcolor=color("#f3fffc"),
-        border_radius=18,
+        border_radius=20,
         ink=on_click is not None,
         on_click=on_click,
         content=(ft.Column(spacing=8, horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
