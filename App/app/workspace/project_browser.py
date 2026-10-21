@@ -23,6 +23,7 @@ except ImportError:
 
 
 def open_project(page,item):
+    from .project_inspection import open_search,open_git
     identifier=item['id'];cfg=project_tools.settings(identifier)
     path=modern_input(ft.TextField(label='Папка проекта на этом устройстве',value=cfg.get('root',''),read_only=is_android()))
     rows=ft.ListView(height=280,spacing=6,build_controls_on_demand=True)
@@ -85,7 +86,9 @@ def open_project(page,item):
             controls=[path,ft.Row(wrap=True,controls=[action_button('Создать папку проекта' if is_android() else 'Подключить папку',on_click=connect),
                 *([] if is_android() or page.web else [action_button('Выбрать',secondary=True,on_click=browse)]),
                 action_button('Отключить',secondary=True,on_click=disconnect)]),status,
-                action_button('Новый файл',icon=ft.Icons.NOTE_ADD_OUTLINED,secondary=True,on_click=lambda _:page.run_task(editor)),rows,
+                ft.Row(wrap=True,controls=[action_button('Новый файл',icon=ft.Icons.NOTE_ADD_OUTLINED,secondary=True,on_click=lambda _:page.run_task(editor)),
+                    action_button('Поиск по коду',icon=ft.Icons.SEARCH,secondary=True,on_click=lambda _:open_search(page,identifier,editor)),
+                    *([] if is_android() else [action_button('Git',icon=ft.Icons.ACCOUNT_TREE_OUTLINED,secondary=True,on_click=lambda _:open_git(page,identifier))])]),rows,
                 ft.Text('Прочитанные файлы передаются выбранной модели; при API — её внешнему провайдеру. Не подключайте папки с секретами. '
                         'Команды доступны в Linux/Windows. Процесс запускается с вашими правами; это не изолированная среда. '
                         'Путь папки не переносится синхронизацией. Для переноса файлов добавьте их в библиотеку.',size=11,color=color('#47747a'))]),

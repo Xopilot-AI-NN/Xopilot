@@ -25,7 +25,8 @@ Canvas: editable app text/code/web document. list_canvases/read_canvas before up
 Office/downloadable files: create_document. Attached project files: read_project_file/write_project_file.
 Do not confuse library copies, Canvas documents and files in the attached system folder.
 For read/edit/run requests ALL steps must succeed: read_project_file, write_project_file, run_project_command.
-Read before editing; content replaces the WHOLE file. Read back/run to verify. Nonzero exit_code is failure.
+For code exploration use search_project, then read_project_file start_line/end_line around the hit. git_project reads status or one file diff; it never stages, commits or resets.
+Read before editing; content replaces the WHOLE file. A partial line range is NOT the whole file: read the full file before write_project_file. Read back/run to verify. Nonzero exit_code is failure.
 Commands use argv arrays. Long-running servers: start_project_process, then read_project_process.
 Web Canvas: embedded CSS/JS, no external network/system access; inspect_canvas/interact_canvas to test.
 Apps: list_apps then launch_app with its package. Android media: control_media.
@@ -80,6 +81,8 @@ DESCRIPTIONS = {
     'create_document': 'Create a downloadable office/code file, using its filename extension.',
     'inspect_canvas': 'Inspect the DOM of an interactive HTML Canvas preview.',
     'interact_canvas': 'Click/fill/scroll inside the HTML Canvas preview.',
+    'search_project':'Find literal text in project source; returns relative paths and line numbers. Excludes hidden secrets, symlinks, binaries and build folders.',
+    'git_project':'Read Git status or a per-file working/staged diff, without modifying Git. Requires the attached root to be the repository root.',
     'list_project_files': 'List the attached project folder; not the library or Canvas.',
     'read_project_file': 'Read an existing file in the attached project folder.',
     'write_project_file': 'Write the full file in the attached project folder, subject to permissions.',
@@ -97,7 +100,7 @@ DESCRIPTIONS = {
 }
 
 
-REQUIRED = {'discover_tools':('query',),'search_chats':('query',),'search_library':('query',),'search_web':('query',),
+REQUIRED = {'search_project':('query',),'git_project':('mode',),'discover_tools':('query',),'search_chats':('query',),'search_library':('query',),'search_web':('query',),
     'search_memory':('query',),'save_memory':('text',),'create_note':('title','content'),
     'read_website':('url',),'read_chat':('chat_id',),'read_material':('id',),
     'read_canvas':('id',),'inspect_canvas':('id',),'interact_canvas':('id','action'),
@@ -112,8 +115,11 @@ def response_schema(tools, *, material_refs=()):
     calls=[]
     for name,arguments in tools.items():
         properties={key:{'type':'string'} for key in arguments}
-        for key in ('chat_id','after_chat_id','after_message_id','offset'):
+        for key in ('chat_id','after_chat_id','after_message_id','offset','start_line','end_line'):
             if key in properties:properties[key]={'type':'integer','minimum':0}
+        for key in ('start_line','end_line'):
+            if key in properties:properties[key]={'type':'integer','minimum':1}
+        if name=='git_project':properties['mode']={'enum':['status','diff','staged_diff']}
         if 'dy' in properties:properties['dy']={'type':'number'}
         if 'id' in properties:properties['id']={'type':['string','integer']}
         if name=='read_material' and material_refs:

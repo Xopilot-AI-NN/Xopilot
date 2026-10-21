@@ -91,21 +91,32 @@ def resolve(identifier,name):
     return candidate
 
 
-def list_files(identifier):
-    base=root(identifier);result=[]
+def iter_files(identifier):
+    base=root(identifier)
     for folder,dirs,files in os.walk(base,followlinks=False):
-        dirs[:]=[d for d in sorted(dirs) if d not in SKIP and not d.startswith('.') and not (Path(folder)/d).is_symlink()]
+        dirs[:]=[d for d in sorted(dirs) if d not in SKIP and (not d.startswith('.') or d=='.github') and not (Path(folder)/d).is_symlink()]
         for name in sorted(files):
-            if name.startswith('.') or (Path(folder)/name).is_symlink():continue
-            path=Path(folder)/name;result.append({'path':path.relative_to(base).as_posix(),'bytes':path.stat().st_size})
-    return result
+            if (name.startswith('.') and name not in ('.gitignore','.env.example')) or (Path(folder)/name).is_symlink():continue
+            path=Path(folder)/name;yield {'path':path.relative_to(base).as_posix(),'bytes':path.stat().st_size}
 
 
-def read_file(identifier,name):
+def list_files(identifier):
+    return list(iter_files(identifier))
+
+
+def read_file(identifier,name,*,start_line=None,end_line=None):
     path=resolve(identifier,name)
     with path.open('rb') as source:data=source.read(1024*1024+1)
     if len(data)>1024*1024:raise ValueError('Файл слишком большой для текстового редактора (1 МБ)')
-    return {'path':name,'content':data.decode('utf-8')}
+    text=data.decode('utf-8')
+    if start_line is None and end_line is None:return {'path':name,'content':text}
+    start=1 if start_line is None else start_line
+    end=start+199 if end_line is None else end_line
+    if type(start) is not int or type(end) is not int or start<1 or end<start or end-start>=500:
+        raise ValueError('Укажите диапазон до 500 строк, начиная с 1')
+    lines=text.splitlines(keepends=True)
+    return dict(path=name,content=''.join(lines[start-1:end]),start_line=start,end_line=min(end,len(lines)),total_lines=len(lines),next_line=end+1 if end<len(lines) else None)
+
 
 
 def write_file(identifier,name,content,cancelled,approve):

@@ -42,7 +42,9 @@ TOOLS = {
     'launch_app': {'package': 'package приложения из list_apps; требует подтверждения'},
     'control_media': {'action': 'next/previous/pause/play/play_pause/stop; требует подтверждения'},
     'list_project_files': {},
-    'read_project_file': {'path':'относительный путь в подключённой папке'},
+    'read_project_file': {'path':'относительный путь в подключённой папке','start_line':'первая строка, начиная с 1 (необязательно)','end_line':'последняя строка включительно, до 500 строк (необязательно)'},
+    'search_project':{'query':'буквальная строка для поиска в коде','pattern':'маска файлов, например *.py (необязательно)','offset':'сдвиг совпадений для продолжения (необязательно)'},
+    'git_project':{'mode':'status/diff/staged_diff; только чтение','path':'путь файла для diff/staged_diff (необязательно для status)'},
     'write_project_file': {'path':'относительный путь','content':'полный текст файла; запись подтверждает пользователь'},
     'search_web': {'query': 'поисковый запрос'},
     'read_website': {'url': 'публичный HTTP/HTTPS URL; текст и ссылки страницы'},
@@ -63,6 +65,7 @@ TOOL_LABELS.update(search_web='Поиск в интернете',read_website='�
                    start_project_process='Фоновый процесс',list_project_processes='Процессы чата',read_project_process='Вывод процесса',stop_project_process='Завершение процесса')
 TOOL_LABELS.update(inspect_canvas='Просмотр сайта Canvas', interact_canvas='Действие на сайте Canvas')
 TOOL_LABELS['list_recent_chats']='Недавние чаты'
+TOOL_LABELS.update(search_project='Поиск по коду',git_project='Git проекта')
 TOOL_LABELS.update(computer_start='Доступ к компьютеру',computer_view='Просмотр экрана',computer_input='Действие в окне')
 TOOL_LABELS.update(discover_tools='Подбор инструментов',search_memory='Поиск в памяти', save_memory='Сохранение в память', create_note='Создание заметки')
 
@@ -75,6 +78,7 @@ class AgentReply(str):
 def needs_tools(prompt,history=()):
     from .agent_context import is_followup_action
     if is_followup_action(prompt,history):return True
+    if re.search(r'\b(?:git|diff)\b|(?:найди|поищи|search|find).{0,70}(?:функци|класс|в коде|по коду|function|class|project|код|проект)',prompt,re.I):return True
     if re.search(r'\b(запомни|remember)\b|(создай|сохрани|найди|поищи).{0,50}(заметк|памят)',prompt,re.I):return True
     if re.match(r'\s*(?:пожалуйста\s+)?(?:открой|запусти|open|launch)\b',prompt,re.I):return True
     if re.search(r'(предыдущ|позапрошл|прошл|последн|previous|last).{0,35}(чат|chat)',prompt,re.I):return True
@@ -107,7 +111,7 @@ def available_tools(access, workspace_id=None):
         for name in ('computer_start','computer_view','computer_input'):tools.pop(name,None)
     if not android:tools.pop('control_media',None)
     if android or not (access.get('enabled') and access.get('root')):
-        for name in ('list_project_files','read_project_file','write_project_file','run_project_command','start_project_process'):
+        for name in ('list_project_files','read_project_file','write_project_file','run_project_command','start_project_process','search_project','git_project'):
             tools.pop(name,None)
     return tools
 
@@ -176,6 +180,7 @@ class LocalTools:
         self.computer=computer
         self.request_text=request_text
         self.material_refs=set()
+        self.partial_reads=set()
 
     def entries(self):
         result = [entry for entry in library.entries(self.workspace_id) if entry['enabled']]
@@ -321,9 +326,22 @@ class LocalTools:
             saved=canvases.save_document(doc)
             return {'id':saved['id'],'title':saved['title'],'saved':True},[]
         if name=='list_project_files':return project_tools.list_files(self.workspace_id),[]
-        if name=='read_project_file':return project_tools.read_file(self.workspace_id,str(arguments.get('path',''))),[]
-        if name=='write_project_file':return project_tools.write_file(self.workspace_id,str(arguments.get('path','')),
-            arguments.get('content'),self.cancelled,self.approve),[]
+        if name=='read_project_file':
+            import os
+            path=str(arguments.get('path',''));value=project_tools.read_file(self.workspace_id,path,start_line=arguments.get('start_line'),end_line=arguments.get('end_line'))
+            key=os.path.normcase(str(project_tools.resolve(self.workspace_id,path)))
+            if 'start_line' in value:self.partial_reads.add(key)
+            else:self.partial_reads.discard(key)
+            return value,[]
+        if name in {'search_project','git_project'}:
+            from . import project_inspection
+            if name=='search_project':return project_inspection.search(self.workspace_id,arguments.get('query',''),pattern=arguments.get('pattern','*'),offset=arguments.get('offset',0),cancelled=self.cancelled),[]
+            return project_inspection.git(self.workspace_id,arguments.get('mode','status'),path=arguments.get('path')),[]
+        if name=='write_project_file':
+            import os
+            path=str(arguments.get('path',''))
+            if os.path.normcase(str(project_tools.resolve(self.workspace_id,path))) in self.partial_reads:raise ValueError('Прочитайте файл полностью перед заменой: предыдущий результат содержал только диапазон строк')
+            return project_tools.write_file(self.workspace_id,path,arguments.get('content'),self.cancelled,self.approve),[]
         if name=='run_project_command':return project_tools.run_command(self.workspace_id,arguments.get('argv'),self.cancelled,self.approve,self.owner,on_process),[]
         raise ValueError('Действие недоступно')
 

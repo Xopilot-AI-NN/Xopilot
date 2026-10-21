@@ -13,10 +13,12 @@ GROUPS={
     'canvas':('канвас рисун сайт предпросмотр canvas drawing preview',{'list_canvases','read_canvas','create_canvas','update_canvas','inspect_canvas','interact_canvas'}),
     'web':('интернет браузер сайт поисков search web website browser url',{'search_web','read_website'}),
     'project':('проект код файл папк команд компиляц процесс project code file folder command process compile',{'list_project_files','read_project_file','write_project_file','run_project_command','start_project_process','read_project_process','stop_project_process'}),
+    'code_search':('поиск коду функци класс вхожд search grep code function class',{'search_project','read_project_file'}),
+    'git':('git diff коммит изменен индекс status staged changes',{'git_project'}),
     'computer':('пк компьютер экран курсор мыш кнопк desktop computer screen cursor click',{'computer_start','computer_view','computer_input'}),
     'device':('приложен музык трек телефон app launch media music android',{'list_apps','launch_app','control_media'}),
 }
-CATALOG='memory — память; chats — только история Xopilot (не мессенджеры); library — материалы/заметки/документы; canvas — Canvas; web — интернет; project — файлы/команды проекта; computer — экран/окна ПК; device — приложения/музыка.'
+CATALOG='memory — память; chats — только история Xopilot (не мессенджеры); library — материалы/заметки/документы; canvas — Canvas; web — интернет; project — файлы/команды проекта; code_search — поиск по коду/строкам; git — статус/изменения; computer — экран/окна ПК; device — приложения/музыка.'
 _STOP={'для','как','что','мне','надо','нужны','нужен','нужно','инструмент','инструменты','tool','tools','the','for','and'}
 
 
