@@ -61,7 +61,11 @@ class NavigationTests(unittest.IsolatedAsyncioTestCase):
         page=Page();jumps=[]
         async def jump(cid,mid):jumps.append((cid,mid))
         nav.toggle(self.cid,self.ids[0]);open_navigation(page,self.cid,jump,bookmarks=True)
+        self.assertFalse(page.dialog.content.controls[0].autofocus)
         await page.load()
+        author=page.dialog.content.controls[1];author.value='ai';await author.on_select(None)
+        self.assertEqual(page.dialog.content.controls[-2].controls,[])
+        author.value='user';await author.on_select(None)
         rows=page.dialog.content.controls[-2]
         await rows.controls[0].on_click(None)
         self.assertEqual(jumps,[(self.cid,self.ids[0])]);self.assertIsNone(page.dialog)

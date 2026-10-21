@@ -40,11 +40,13 @@ def toggle(chat_id,message_id):
     raise RuntimeError('Закладки изменились. Повторите действие')
 
 
-def search(chat_id,query='',*,bookmarks=False,offset=0,limit=30):
+def search(chat_id,query='',*,bookmarks=False,offset=0,limit=30,role=None):
     if type(offset) is not int or offset<0:raise ValueError('Неверная страница')
+    if role not in (None,'user','ai'):raise ValueError('Неизвестный автор')
     needle=str(query).strip().casefold();marks=_marks(get_db()) if bookmarks else {}
     matches=[]
     for msg in _messages(chat_id):
+        if role and msg.role!=role:continue
         if bookmarks and marks.get(str(msg.id),{}).get('chat_id')!=chat_id:continue
         text=msg.content
         if not needle and not bookmarks:continue

@@ -42,6 +42,7 @@ def build_message_actions(text, files, on_action, can_edit, message_id=None):
         ft.PopupMenuButton(icon=ft.Icons.MORE_HORIZ, icon_color=color('#087f8c'), icon_size=18,
                            tooltip='Действия сообщения', width=26, height=24, padding=0,
                            items=[item('Ответить', ft.Icons.REPLY, 'reply'),
+                                  item('Сохранить как шаблон',ft.Icons.TEXT_SNIPPET_OUTLINED,'template'),
                                   item('Цитировать', ft.Icons.FORMAT_QUOTE, 'quote'),
                                   *([item('Изменить', ft.Icons.EDIT, 'edit')] if can_edit else []),
                                   *([bookmark] if bookmark else []),

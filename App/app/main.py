@@ -541,6 +541,11 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         if action in {"edit", "delete"} and (is_sending or live.busy or voice_input.busy):
             page.show_dialog(ft.SnackBar(ft.Text("Дождитесь завершения ответа или голосового ввода.")))
             return
+        if action=='template':
+            if is_private(active_chat_id):
+                page.show_dialog(ft.SnackBar(ft.Text('Сохранение шаблона из сообщения доступно в обычных чатах.')));return
+            from .chat.composer.prompt_templates import open_editor
+            open_editor(page,body=text);return
         if action=='bookmark':
             if is_private(active_chat_id):
                 page.show_dialog(ft.SnackBar(ft.Text('Закладки доступны в обычных чатах.')));return
@@ -1752,6 +1757,18 @@ def build_app_ui(page: ft.Page) -> ft.Control:
         from .chat.messages.message_navigation import open_navigation
         open_navigation(page,active_chat_id,jump_to_message,bookmarks=bookmarks)
 
+    def open_prompt_templates(_):
+        from .chat.composer.prompt_templates import open_templates
+        target_id=active_chat_id
+        async def apply(body):
+            if target_id!=active_chat_id:
+                page.show_dialog(ft.SnackBar(ft.Text('Чат изменился. Откройте шаблоны заново.')));return
+            try:from ..services.prompt_templates import insert
+            except ImportError:from services.prompt_templates import insert
+            prompt.value=insert(prompt.value or '',body)
+            persist_draft();prompt.update();refresh_composer();await prompt.focus()
+        open_templates(page,apply)
+
     mobile_menu_button = brand_button(ft.Icons.MENU, "Открыть меню", handle_menu_toggle, size=44)
     more_actions = ft.PopupMenuButton(content=brand_button(ft.Icons.MORE_HORIZ, "Действия чата", size=44),
         items=[ft.PopupMenuItem(content=ft.Text("Новый чат"), on_click=start_new_chat),
@@ -1762,12 +1779,14 @@ def build_app_ui(page: ft.Page) -> ft.Control:
                ft.PopupMenuItem(content=ft.Text("Экспортировать чат"), on_click=export_chat),
                ft.PopupMenuItem(content=ft.Text("К последним сообщениям"),icon=ft.Icons.ARROW_DOWNWARD,on_click=latest_messages),
                ft.PopupMenuItem(content=ft.Text("Поиск в чате"),icon=ft.Icons.SEARCH,on_click=open_message_navigation),
+               ft.PopupMenuItem(content=ft.Text("Шаблоны запросов"),icon=ft.Icons.TEXT_SNIPPET_OUTLINED,on_click=open_prompt_templates),
                ft.PopupMenuItem(content=ft.Text("Закладки"),icon=ft.Icons.BOOKMARK_BORDER,on_click=lambda e:open_message_navigation(e,True))])
     header_title = ft.Column(expand=True, tight=True, spacing=2, controls=[title_text, workspace_text])
     desktop_actions = [brand_button(ft.Icons.ADD_COMMENT_OUTLINED, "Новый чат", start_new_chat, size=36),
                        brand_button(ft.Icons.FORUM_OUTLINED, "Все чаты", open_chats, size=36),
                        ft.PopupMenuButton(icon=ft.Icons.SEARCH,tooltip='Поиск, закладки и экспорт',icon_color=color('#087f8c'),items=[
                            ft.PopupMenuItem(content=ft.Text('Поиск в чате'),icon=ft.Icons.SEARCH,on_click=open_message_navigation),
+                           ft.PopupMenuItem(content=ft.Text('Шаблоны запросов'),icon=ft.Icons.TEXT_SNIPPET_OUTLINED,on_click=open_prompt_templates),
                            ft.PopupMenuItem(content=ft.Text('Закладки'),icon=ft.Icons.BOOKMARK_BORDER,on_click=lambda e:open_message_navigation(e,True)),
                            ft.PopupMenuItem(content=ft.Text('К последним сообщениям'),icon=ft.Icons.ARROW_DOWNWARD,on_click=latest_messages),
                            ft.PopupMenuItem(content=ft.Text('Экспортировать чат'),icon=ft.Icons.DOWNLOAD_OUTLINED,on_click=export_chat)]),
