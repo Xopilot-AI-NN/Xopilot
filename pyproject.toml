@@ -2,7 +2,7 @@
 name = "Xopilot"
 version = "2.0.11"
 description = "Xopilot by DenBroLiik"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "flet==1.0.4",
     "screeninfo==0.8.1; platform_system != 'Android'",
@@ -10,9 +10,9 @@ dependencies = [
     "sounddevice==0.5.6; platform_system != 'Android'",
     "webrtcvad-wheels==2.0.14.post1; platform_system != 'Android'",
     "piper-tts==1.8.0; platform_system != 'Android'",
-    "pillow==12.3.0; platform_system != 'Android'",
+    "pillow==13.0.0; platform_system != 'Android'",
     "opencv-python-headless==5.0.0.93; platform_system != 'Android'",
-    "pypdf==6.20.0",
+    "pypdf==6.21.2",
     "python-docx==1.2.0",
     "reportlab>=4.4,<6",
     "openpyxl>=3.1,<4",
@@ -20,8 +20,8 @@ dependencies = [
     "mss==10.2.0; platform_system != 'Android'",
     "scipy>=1.15,<2; platform_system != 'Android'",
     "cryptography==50.0.2; platform_system != 'Android'",
-    "filelock==4.1.0",
-    "pillow==12.3.0; platform_system == 'Android'",
+    "filelock==4.2.1",
+    "pillow==13.0.0; platform_system == 'Android'",
     "cryptography==50.0.2; platform_system == 'Android'",
     "flet-xopilot-mobile==0.1.0; platform_system == 'Android'",
     "certifi>=2025.1.31; platform_system == 'Android'",

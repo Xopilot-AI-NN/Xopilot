@@ -242,7 +242,7 @@ def set_theme(page, mode):
     global _mode
     _mode = mode if mode in THEMES else 'light'
     from .design import material_theme
-    page.theme_animation_style=ft.AnimationStyle(duration=220,curve=ft.AnimationCurve.EASE_IN_OUT_CUBIC)
+    page.theme_animation_style=ft.AnimationStyle(duration=0 if page.__dict__.get('_xopilot_reduce_motion') else 220,curve=ft.AnimationCurve.EASE_IN_OUT_CUBIC)
     page.theme=material_theme()
     page.dark_theme=page.theme
     page.theme_mode = ft.ThemeMode.DARK if THEMES[_mode][1] else ft.ThemeMode.LIGHT
@@ -285,3 +285,6 @@ def install_theme(page, mode):
             from services.platforms import fit_dialog
         return show(apply_palette(fit_dialog(page, dialog)), *args, **kwargs)
     page.show_dialog = show_dialog
+    if isinstance(page,ft.Page):
+        from .motion import refresh_preferences
+        page.run_task(refresh_preferences,page)

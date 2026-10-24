@@ -5,9 +5,12 @@
 Описание: Codex проверяет отказ сборки при старых/подменённых Android-зависимостях.
 """
 import io
+import hashlib
+import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 from zipfile import ZipFile
 from scripts import build_android_wheels as wheels, verify_android_apk as apk
 
@@ -23,12 +26,12 @@ def packages(versions):
 class AndroidDependencyTests(unittest.TestCase):
     def test_apk_versions_must_come_from_installed_metadata(self):
         self.assertEqual(apk.verify_dependencies(packages(wheels.VERSIONS)), apk.PATCHED_DEPENDENCIES)
-        for name, version in [('pillow', '12.2.0'), ('cryptography', '48.0.0')]:
+        for name, version in [('pillow', '12.2.0'), ('pillow', '12.3.0'), ('cryptography', '48.0.0')]:
             with self.subTest(name=name):
                 with self.assertRaisesRegex(RuntimeError, name):
                     apk.verify_dependencies(packages({**wheels.VERSIONS, name: version}))
         with self.assertRaises(RuntimeError):
-            apk.verify_dependencies(packages({'pillow': '12.3.0'}))
+            apk.verify_dependencies(packages({'pillow': wheels.VERSIONS['pillow']}))
 
     def test_actual_openssl_binary_must_have_patched_version(self):
         apk.verify_openssl(b'\0OpenSSL 3.5.7 9 Jun 2026\0')
@@ -46,7 +49,7 @@ class AndroidDependencyTests(unittest.TestCase):
                     path = root / f'{name}-{version}-1-cp314-cp314-android_24_{abi.replace("-", "_")}.whl'
                     path.write_bytes(packages({name: version}))
             self.assertEqual(len(wheels.validate_wheelhouse(root)), 6)
-            next(root.glob('pillow*arm64_v8a.whl')).write_bytes(packages({'pillow': '12.2.0'}))
+            next(root.glob('pillow*arm64_v8a.whl')).write_bytes(packages({'pillow': '12.3.0'}))
             with self.assertRaisesRegex(ValueError, 'version'):
                 wheels.validate_wheelhouse(root)
 
@@ -56,6 +59,34 @@ class AndroidDependencyTests(unittest.TestCase):
             path.write_bytes(b'changed cached archive')
             with self.assertRaisesRegex(ValueError, 'checksum'):
                 wheels.download_checked('https://example.invalid/not-requested', path, '0' * 64)
+
+    def test_changed_or_missing_patch_provenance_forces_rebuild(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            wheelhouse = root / 'wheels'
+            wheelhouse.mkdir()
+            patch_file = root / 'scripts/patches/pillow-13-android.patch'
+            patch_file.parent.mkdir(parents=True)
+            patch_file.write_bytes(b'current Android patch')
+            for abi in wheels.ABIS:
+                for name, version in wheels.VERSIONS.items():
+                    path = wheelhouse / f'{name}-{version}-1-cp314-cp314-android_24_{abi.replace("-", "_")}.whl'
+                    path.write_bytes(packages({name: version}))
+            provenance = wheelhouse / 'provenance.json'
+            provenance.write_text(json.dumps({
+                'pillow_patch_sha256': hashlib.sha256(patch_file.read_bytes()).hexdigest(),
+            }))
+            with patch.object(wheels, 'ROOT', root), patch.object(wheels.subprocess, 'run',
+                    side_effect=RuntimeError('rebuild required')) as run:
+                self.assertEqual(len(wheels.build(wheelhouse, root / 'ndk')), 6)
+                run.assert_not_called()
+                for stale in ('{}', '{"pillow_patch_sha256": "old"}', 'invalid json'):
+                    provenance.write_text(stale)
+                    with self.subTest(provenance=stale), self.assertRaisesRegex(RuntimeError, 'rebuild required'):
+                        wheels.build(wheelhouse, root / 'ndk')
+                provenance.unlink()
+                with self.assertRaisesRegex(RuntimeError, 'rebuild required'):
+                    wheels.build(wheelhouse, root / 'ndk')
 
 
 if __name__ == '__main__':

@@ -12,6 +12,7 @@ user's OS permissions, not in a sandbox; cwd confinement is not OS isolation.
 from concurrent.futures import CancelledError
 from collections import deque
 import json
+import hashlib
 import os
 from pathlib import Path
 import signal
@@ -104,12 +105,17 @@ def list_files(identifier):
     return list(iter_files(identifier))
 
 
+def file_revision(path,data):
+    if data is None:return 'missing'
+    return hashlib.sha256(os.fsencode(path)+b'\0'+data).hexdigest()
+
+
 def read_file(identifier,name,*,start_line=None,end_line=None):
     path=resolve(identifier,name)
     with path.open('rb') as source:data=source.read(1024*1024+1)
     if len(data)>1024*1024:raise ValueError('Файл слишком большой для текстового редактора (1 МБ)')
     text=data.decode('utf-8')
-    if start_line is None and end_line is None:return {'path':name,'content':text}
+    if start_line is None and end_line is None:return {'path':name,'content':text,'revision':file_revision(path,data)}
     start=1 if start_line is None else start_line
     end=start+199 if end_line is None else end_line
     if type(start) is not int or type(end) is not int or start<1 or end<start or end-start>=500:
@@ -119,11 +125,13 @@ def read_file(identifier,name,*,start_line=None,end_line=None):
 
 
 
-def write_file(identifier,name,content,cancelled,approve):
+def write_file(identifier,name,content,cancelled,approve,*,expected_revision=None):
     if not isinstance(content,str) or len(content.encode())>1024*1024:raise ValueError('Текстовый файл должен быть не больше 1 МБ')
     path=resolve(identifier,name)
     before=path.read_bytes() if path.exists() and path.stat().st_size<=1024*1024 else None
     if path.exists() and before is None:raise ValueError('Файл слишком большой для безопасного редактирования')
+    if expected_revision is not None and file_revision(path,before)!=expected_revision:
+        raise ValueError('Файл изменился с момента открытия. Сохранение отменено; ваш текст остаётся в редакторе. Откройте актуальную версию отдельно.')
     request={'kind':'file','path':str(path),'cwd':str(root(identifier)),'before':before.decode('utf-8') if before is not None else '',
              'after':content,'exists':path.exists()}
     if not approve or not approve(request):raise ValueError('Пользователь не подтвердил запись файла')

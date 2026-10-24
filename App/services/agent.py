@@ -181,6 +181,7 @@ class LocalTools:
         self.request_text=request_text
         self.material_refs=set()
         self.partial_reads=set()
+        self.file_revisions={}
 
     def entries(self):
         result = [entry for entry in library.entries(self.workspace_id) if entry['enabled']]
@@ -331,7 +332,8 @@ class LocalTools:
             path=str(arguments.get('path',''));value=project_tools.read_file(self.workspace_id,path,start_line=arguments.get('start_line'),end_line=arguments.get('end_line'))
             key=os.path.normcase(str(project_tools.resolve(self.workspace_id,path)))
             if 'start_line' in value:self.partial_reads.add(key)
-            else:self.partial_reads.discard(key)
+            else:
+                self.partial_reads.discard(key);self.file_revisions[key]=value.pop('revision')
             return value,[]
         if name in {'search_project','git_project'}:
             from . import project_inspection
@@ -341,7 +343,10 @@ class LocalTools:
             import os
             path=str(arguments.get('path',''))
             if os.path.normcase(str(project_tools.resolve(self.workspace_id,path))) in self.partial_reads:raise ValueError('Прочитайте файл полностью перед заменой: предыдущий результат содержал только диапазон строк')
-            return project_tools.write_file(self.workspace_id,path,arguments.get('content'),self.cancelled,self.approve),[]
+            key=os.path.normcase(str(project_tools.resolve(self.workspace_id,path)))
+            value=project_tools.write_file(self.workspace_id,path,arguments.get('content'),self.cancelled,self.approve,expected_revision=self.file_revisions.get(key))
+            self.file_revisions[key]=project_tools.file_revision(project_tools.resolve(self.workspace_id,path),arguments['content'].encode('utf-8'))
+            return value,[]
         if name=='run_project_command':return project_tools.run_command(self.workspace_id,arguments.get('argv'),self.cancelled,self.approve,self.owner,on_process),[]
         raise ValueError('Действие недоступно')
 

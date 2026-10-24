@@ -19,15 +19,15 @@ from zipfile import ZipFile
 ROOT = Path(__file__).resolve().parents[1]
 FORGE_COMMIT = '0fadbfab0d63d11164030dfddc955ed980e32e2c'
 CROSSENV_COMMIT = 'e5e615651f794d060d9484eab463861fef2a2019'
-VERSIONS = {'pillow': '12.3.0', 'cryptography': '50.0.2', 'openssl': '3.5.7'}
+VERSIONS = {'pillow': '13.0.0', 'cryptography': '50.0.2', 'openssl': '3.5.7'}
 ABIS = ('arm64-v8a', 'x86_64')
 SOURCES = {
     'python-android-mobile-forge-3.14.6.tar.gz': (
         'https://github.com/flet-dev/python-build/releases/download/20260730/python-android-mobile-forge-3.14.6.tar.gz',
         '48383c67932f53bd1e767b3b27e8fddcf3f3c61c31513e6c5382654be165c864'),
-    'Pillow-12.3.0.tar.gz': (
-        'https://files.pythonhosted.org/packages/1c/3d/bb7fca845737cf9d7dbde16ed1843984665ff2e0a518f5db43e77ec540b9/pillow-12.3.0.tar.gz',
-        '3b8182a766685eaa002637e28b4ec8d6b18819a0c71f579bf0dbaa5830297cce'),
+    'Pillow-13.0.0.tar.gz': (
+        'https://files.pythonhosted.org/packages/ce/a4/9cc30690a394a8305e8be4c9036aa16d0dfddadd09079860b582f562496d/pillow-13.0.0.tar.gz',
+        'cdcd1ba258178f7356d74170c9a81ba4eab6a5d55748bc402a5a2a6fe6be3510'),
     'cryptography-50.0.2.tar.gz': (
         'https://files.pythonhosted.org/packages/9d/af/182eb91b0df3fe75c4d9f26fe70684569566745f6ba7e5c9c73a862c5252/cryptography-50.0.2.tar.gz',
         '7b46165bb56eb4704e2eaaf86f3c940d19154535d9b0ca7d6d590b04060e00d5'),
@@ -74,9 +74,14 @@ def download_checked(url, path, digest):
 
 def build(directory, ndk, arch=ABIS):
     directory = directory.resolve()
+    pillow_patch = ROOT / 'scripts/patches/pillow-13-android.patch'
+    patch_digest = hashlib.sha256(pillow_patch.read_bytes()).hexdigest()
     try:
-        return validate_wheelhouse(directory, arch)
-    except ValueError:
+        files = validate_wheelhouse(directory, arch)
+        record = json.loads((directory / 'provenance.json').read_text())
+        if isinstance(record, dict) and record.get('pillow_patch_sha256') == patch_digest:
+            return files
+    except (ValueError, OSError):
         pass
     # All source/build state stays inside the generated build tree.
     workspace = ROOT / 'build/android-wheel-build'
@@ -88,6 +93,8 @@ def build(directory, ndk, arch=ABIS):
     config = forge / 'pyproject.toml'
     text = config.read_text().replace('crossenv@flet', 'crossenv@' + CROSSENV_COMMIT)
     config.write_text(text)
+    # The pinned Forge recipe's 12.x patch no longer applies to Pillow 13.
+    shutil.copy2(pillow_patch, forge / 'recipes/pillow/patches/setup-12.x.patch')
     downloads = forge / 'downloads'
     downloads.mkdir(exist_ok=True)
     for name, (url, digest) in SOURCES.items():
@@ -99,7 +106,9 @@ def build(directory, ndk, arch=ABIS):
                CARGO_BUILD_JOBS='2', CPU_COUNT='2')
     env['PATH'] = str(tools / 'bin') + os.pathsep + env.get('PATH', '')
     # Fixed command strings; paths/user input travel only as environment values.
-    subprocess.run(['bash', '-e', '-c', 'source ./setup.sh 3.14 android\nforge android pillow:12.3.0 cryptography:50.0.2'],
+    # setup.sh creates support wheels only for a fresh environment. Regenerate
+    # them when a previously ARM64-only workspace is reused for both ABIs.
+    subprocess.run(['bash', '-e', '-c', 'source ./setup.sh 3.14 android\npython -m make_dep_wheels android\nforge --clean android pillow:13.0.0 cryptography:50.0.2'],
                    cwd=forge, env=env, check=True)
     directory.mkdir(parents=True, exist_ok=True)
     files = validate_wheelhouse(forge / 'dist', arch)
@@ -107,6 +116,7 @@ def build(directory, ndk, arch=ABIS):
         shutil.copy2(path, directory / path.name)
     files = validate_wheelhouse(directory, arch)
     record = {'forge_commit': FORGE_COMMIT, 'crossenv_commit': CROSSENV_COMMIT, 'versions': VERSIONS,
+              'pillow_patch_sha256': patch_digest,
               'sources': {name: digest for name, (_, digest) in SOURCES.items()},
               'wheels': {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in files}}
     (directory / 'provenance.json').write_text(json.dumps(record, indent=2) + '\n')

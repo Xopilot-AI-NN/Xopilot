@@ -4,9 +4,9 @@ litert-lm-api>=0.17.0
 sounddevice==0.5.6
 webrtcvad-wheels==2.0.14.post1
 piper-tts==1.8.0
-pillow==12.3.0
+pillow==13.0.0
 opencv-python-headless==5.0.0.93
-pypdf==6.20.0
+pypdf==6.21.2
 python-docx==1.2.0
 reportlab>=4.4,<6
 openpyxl>=3.1,<4
@@ -14,4 +14,4 @@ playwright>=1.55,<2
 mss==10.2.0
 scipy>=1.15,<2
 cryptography==50.0.2
-filelock==4.1.0
+filelock==4.2.1

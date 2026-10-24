@@ -14,7 +14,7 @@ import struct
 import zipfile
 from email.parser import BytesParser
 
-PATCHED_DEPENDENCIES = {'pillow': '12.3.0', 'cryptography': '50.0.2'}
+PATCHED_DEPENDENCIES = {'pillow': '13.0.0', 'cryptography': '50.0.2'}
 OPENSSL_VERSION = '3.5.7'
 
 

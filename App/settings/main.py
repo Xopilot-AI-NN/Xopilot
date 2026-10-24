@@ -113,10 +113,11 @@ def build_settings_dialog(
 
     page_title = ft.Text("Настройки", size=22, color=color("#123b43"), weight=ft.FontWeight.W_600,
                          max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)
-    page_host = ft.AnimatedSwitcher(content=ft.Container(),expand=True, duration=200, reverse_duration=120,
-        switch_in_curve=ft.AnimationCurve.EASE_OUT_CUBIC,
-        switch_out_curve=ft.AnimationCurve.EASE_IN,
-        transition=ft.AnimatedSwitcherTransition.FADE)
+    try:
+        from ..app.theme.motion import switcher
+    except ImportError:
+        from app.theme.motion import switcher
+    page_host=switcher(page,ft.Container());page_host.expand=True
     selected_page = [None]
 
     def scroll_page(control):

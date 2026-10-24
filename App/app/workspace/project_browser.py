@@ -6,18 +6,15 @@
 """
 """Connect a device-local folder and inspect/edit project source files."""
 import asyncio
-import json
-from pathlib import Path
-import threading
 import flet as ft
 from ..theme.palette import color, modern_input
 from ..menu.buttons.actions import action_button
 try:
-    from ...services import project_tools, library
+    from ...services import project_tools
     from ...services.paths import app_data_dir
     from ...services.platforms import is_android
 except ImportError:
-    from services import project_tools,library
+    from services import project_tools
     from services.paths import app_data_dir
     from services.platforms import is_android
 
@@ -83,32 +80,9 @@ def open_project(page,item):
         await asyncio.to_thread(project_tools.configure,identifier,'',False)
         path.value='';await refresh()
     async def editor(name=None):
-        try:data=await asyncio.to_thread(project_tools.read_file,identifier,name) if name else {'path':'','content':''}
-        except Exception as exc:status.value=str(exc);page.update();return
-        filename=modern_input(ft.TextField(label='Путь внутри проекта',value=data['path'],read_only=bool(name)))
-        code=modern_input(ft.TextField(value=data['content'],multiline=True,min_lines=7,max_lines=16,text_style=ft.TextStyle(font_family='monospace')))
-        error=ft.Text('',size=12)
-        async def save(_):
-            try:
-                await asyncio.to_thread(project_tools.write_file,identifier,filename.value or '',code.value or '',threading.Event(),lambda _:True)
-                page.pop_dialog();await refresh()
-            except Exception as exc:error.value=str(exc);page.update()
-        async def add_library(_):
-            try:
-                from ...services.material_store import store_material
-            except ImportError:
-                from services.material_store import store_material
-            try:
-                managed=await asyncio.to_thread(store_material,filename.value or '',data=(code.value or '').encode())
-                library.append_materials(identifier,[{'name':filename.value,'path':managed,'enabled':True}])
-                error.value='Копия добавлена в библиотеку и будет синхронизироваться как материал'
-            except Exception as exc:error.value=str(exc)
-            page.update()
-        page.show_dialog(ft.AlertDialog(bgcolor=color('#eafffa'),title=ft.Text('Файл проекта'),
-            content=ft.Column(width=650,height=min(500,max(260,(page.height or 800)-220)),scroll=ft.ScrollMode.AUTO,
-                              controls=[filename,code,error]),
-            actions=[ft.TextButton(content='Закрыть',on_click=lambda _:page.pop_dialog()),
-                     action_button('В библиотеку',secondary=True,on_click=add_library),action_button('Сохранить файл',on_click=save)]))
+        from .project_editor import open_editor
+        try:await open_editor(page,identifier,name,on_saved=refresh)
+        except Exception as exc:status.value=str(exc);page.update()
     tools=ft.Row(wrap=True,spacing=8,run_spacing=8,controls=[
         action_button('Новый файл',icon=ft.Icons.NOTE_ADD_OUTLINED,secondary=True,on_click=lambda _:page.run_task(editor)),
         action_button('Поиск по коду',icon=ft.Icons.SEARCH,secondary=True,on_click=lambda _:open_search(page,identifier,editor)),
