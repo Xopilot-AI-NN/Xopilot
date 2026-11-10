@@ -36,6 +36,7 @@ pub fn build_message(message: StoredMessage) -> Element {
     let active = state.read().active;
     let busy = state.read().busy;
     let user = message.role == "user";
+    let marked = state.read().bookmarks.contains(&id);
     let copy_text = message.content.clone();
     rsx! {
         article { class: if user { "message user" } else { "message assistant" },
@@ -85,11 +86,24 @@ pub fn build_message(message: StoredMessage) -> Element {
                     if *actions.read() {
                         div { class: "message-popup",
                             button { class: "popup-item", onclick: { let content = message.content.clone(); move |_| { actions.set(false); let mut value = state.write(); if !value.draft.text.is_empty() { value.draft.text.push_str("\n\n"); } value.draft.text.push_str(&format!("> {}\n\n", content.replace('\n', "\n> "))); } }, icons::build_icon { name: "format_quote" } "Цитировать" }
-                            button { class: "popup-item", disabled: busy, onclick: move |_| { actions.set(false); editing.set(true); }, icons::build_icon { name: "edit" } "Изменить" }
+                            button { class: "popup-item", onclick: move |_| {
+                                actions.set(false);
+                                spawn(async move {
+                                    let result = async {
+                                        let store = state::store(state)?;
+                                        let chat = active.ok_or_else(|| anyhow::anyhow!("Чат не выбран"))?;
+                                        services::runtime::blocking(move || services::message_navigation::toggle(&store, chat, id)).await?;
+                                        state::refresh(state, active).await
+                                    }.await;
+                                    state::report(state, result);
+                                });
+                            }, icons::build_icon { name: "bookmark_border" } if marked { "Убрать закладку" } else { "В закладки" } }
+                            button { class: "popup-item", disabled: busy, onclick: { let saved = message.content.clone(); move |_| { actions.set(false); text.set(saved.clone()); editing.set(true); } }, icons::build_icon { name: "edit" } "Изменить" }
                             button { class: "popup-item danger", disabled: busy, onclick: move |_| { actions.set(false); deleting.set(true); }, icons::build_icon { name: "delete_outline" } "Удалить" }
                         }
                     }
                 }
+                if marked { span { class: "message-bookmarked", title: "В закладках", icons::build_icon { name: "bookmark_border" } } }
                 if let Some(seconds) = message.elapsed_seconds { span { class: "message-duration", "Время ответа · {seconds:.1} с" } }
             }
             if *deleting.read() {

@@ -22,6 +22,7 @@ pub fn build_canvas_dialog() -> Element {
     let mut status = use_signal(String::new);
     let mut dirty = use_signal(|| false);
     let mut pending = use_signal(|| None::<Document>);
+    let mut deleting = use_signal(|| false);
     use_effect(move || state.write().unsaved = *dirty.read());
     use_drop(move || state.write().unsaved = false);
     let _load = use_resource(move || {
@@ -44,9 +45,15 @@ pub fn build_canvas_dialog() -> Element {
             div { class: "canvas-document-row",
                 label { class: "field", "Документ", select { "aria-label": "Документ", value: "{document.id}", onchange: move |e| {
                     let id = e.value();
-                    let selected = docs.read().iter().find(|doc| doc.id == id).cloned();
+                    let selected = if id.is_empty() { Some(Document { kind: "text".into(), chat_id: state.read().active, ..Default::default() }) }
+                        else { docs.read().iter().find(|doc| doc.id == id).cloned() };
                     if let Some(selected) = selected {
-                        if *dirty.read() { pending.set(Some(selected)); } else { current.set(selected); }
+                        if *dirty.read() {
+                            pending.set(Some(selected));
+                            // Пока пользователь решает, показываем действительно открытый документ.
+                            let id = serde_json::to_string(&current.peek().id).unwrap_or_default();
+                            document::eval(&format!("document.querySelector('select[aria-label=\"Документ\"]').value={id};"));
+                        } else { current.set(selected); status.set(String::new()); deleting.set(false); }
                     }
                 },
                     option { value: "", "Новый документ" }
@@ -86,6 +93,27 @@ pub fn build_canvas_dialog() -> Element {
                         state::report(state, result);
                     }); }, "Сохранить" }
                     if *dirty.read() { span { class: "notice", "Есть несохранённые изменения" } }
+                    if !document.id.is_empty() {
+                        button { class: "button danger", onclick: move |_| deleting.set(true), "Удалить Canvas" }
+                    }
+                }
+                if *deleting.read() {
+                    div { class: "section", role: "alert",
+                        p { "Удалить этот Canvas вместе с несохранёнными изменениями?" }
+                        div { class: "row",
+                            button { class: "button", onclick: move |_| deleting.set(false), "Отмена" }
+                            button { class: "button danger", onclick: move |_| { spawn(async move {
+                                let result = async {
+                                    let store = state::store(state)?;
+                                    let id = current.peek().id.clone();
+                                    services::runtime::blocking(move || canvases::delete_document(&store, &id)).await?;
+                                    current.set(Document { kind: "text".into(), chat_id: state.peek().active, ..Default::default() });
+                                    dirty.set(false); deleting.set(false); revision += 1; status.set("Canvas удалён".into()); Ok(())
+                                }.await;
+                                state::report(state, result);
+                            }); }, "Подтвердить удаление Canvas" }
+                        }
+                    }
                 }
                 p { class: "notice", role: "status", "{status}" }
             }

@@ -13,15 +13,15 @@ use dioxus::prelude::*;
 
 #[component]
 pub fn build_overlay() -> Element {
-    let mut state = use_context::<Signal<AppState>>();
+    let state = use_context::<Signal<AppState>>();
     match state.read().screen {
         Screen::Chat => rsx! {},
         Screen::Settings => rsx! { settings::main::build_settings_dialog {} },
         Screen::Memory => {
-            rsx! { dialog::build_dialog { title: "Память обо мне", settings: true, back: Some(EventHandler::new(move |_| state::dismiss(state))), settings::personalizations::main::build_personalizations { memory_only: true } } }
+            rsx! { dialog::build_dialog { title: "Память обо мне", settings: true, immediate: false, back: Some(EventHandler::new(move |_| state::dismiss(state))), settings::personalizations::main::build_personalizations { memory_only: true } } }
         }
         Screen::Account => {
-            rsx! { dialog::build_dialog { title: "Профиль и аккаунт", settings: true, back: Some(EventHandler::new(move |_| { state.write().screen = Screen::Settings; state.write().settings_section = None; })), settings::personalizations::main::build_personalizations { account: true } } }
+            rsx! { dialog::build_dialog { title: "Профиль и аккаунт", settings: true, immediate: false, back: Some(EventHandler::new(move |_| state::dismiss(state))), settings::personalizations::main::build_personalizations { account: true } } }
         }
         Screen::Workspaces => {
             rsx! { dialog::build_dialog { title: "Рабочие пространства", variant: "workspaces", workspace::workspace_browser::build_workspaces_dialog {} } }

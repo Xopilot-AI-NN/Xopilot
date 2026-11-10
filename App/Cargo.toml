@@ -55,3 +55,8 @@ ndk-context = "0.1"
 name = "interface_preview"
 path = "examples/interface_preview.rs"
 required-features = ["desktop"]
+
+[[example]]
+name = "interface_interaction"
+path = "examples/interface_interaction.rs"
+required-features = ["desktop"]

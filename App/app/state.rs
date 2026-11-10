@@ -34,6 +34,7 @@ pub struct AppState {
     pub chats: Vec<Chat>,
     pub active: Option<i64>,
     pub messages: Vec<StoredMessage>,
+    pub bookmarks: std::collections::HashSet<i64>,
     pub draft: Draft,
     pub screen: Screen,
     pub sidebar: bool,
@@ -47,6 +48,7 @@ pub struct AppState {
     pub ready: bool,
     pub unsaved: bool,
     pub pending_screen: Option<Screen>,
+    pub pending_section: Option<Option<usize>>,
     pub workspace_name: String,
     pub notice: Option<String>,
     pub settings_section: Option<usize>,
@@ -58,6 +60,7 @@ impl AppState {
         self.chats = snapshot.chats;
         self.active = Some(snapshot.active);
         self.messages = snapshot.messages;
+        self.bookmarks = snapshot.bookmarks;
         self.draft = snapshot.draft;
         self.theme = snapshot.theme;
         self.workspace_name = snapshot.workspace_name;
@@ -113,6 +116,11 @@ pub fn dismiss(mut state: Signal<AppState>) {
 
 pub fn discard_pending(mut state: Signal<AppState>) {
     let mut value = state.write();
+    if let Some(section) = value.pending_section.take() {
+        value.unsaved = false;
+        value.settings_section = section;
+        return;
+    }
     if let Some(target) = value.pending_screen.take() {
         value.unsaved = false;
         if value.dialog_history.last() == Some(&target) {
@@ -122,6 +130,16 @@ pub fn discard_pending(mut state: Signal<AppState>) {
             value.dialog_history.clear();
         }
         value.screen = target;
+    }
+}
+
+/// Возврат внутри настроек проходит ту же проверку, что и закрытие окна.
+pub fn select_settings_section(mut state: Signal<AppState>, section: Option<usize>) {
+    let mut value = state.write();
+    if value.unsaved && value.settings_section != section {
+        value.pending_section = Some(section);
+    } else {
+        value.settings_section = section;
     }
 }
 

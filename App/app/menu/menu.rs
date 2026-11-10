@@ -62,11 +62,21 @@ pub fn build_menu_overlay() -> Element {
     let open = value.sidebar;
     let busy = value.busy;
     drop(value);
+    use_effect(use_reactive((&open,), move |(open,)| {
+        if open {
+            document::eval(include_str!("../shared/dialog_focus.js"));
+        } else {
+            document::eval("document.getElementById('chat-prompt')?.focus({preventScroll:true});");
+        }
+    }));
     let needle = query.read().to_lowercase();
     rsx! {
-        div { class: if open { "drawer-layer open" } else { "drawer-layer" }, inert: !open,
+        // HTML inert — булев атрибут: даже inert="false" блокирует клики.
+        // При открытии удаляем атрибут целиком, а не меняем его строковое значение.
+        div { class: if open { "drawer-layer open" } else { "drawer-layer" }, inert: if open { None } else { Some("") },
             button { class: "drawer-scrim", title: "Закрыть меню", "aria-label": "Закрыть меню", tabindex: -1, onclick: move |_| state.write().sidebar = false }
-            aside { class: "drawer", "aria-label": "Навигация и ваши чаты",
+            aside { class: "drawer", "aria-label": "Навигация и ваши чаты", role: if open { Some("dialog") } else { None }, "aria-modal": if open { Some("true") } else { None }, tabindex: -1,
+                onkeydown: move |event| { if event.key() == Key::Escape { event.stop_propagation(); state.write().sidebar = false; } },
                 nav { class: "drawer-navigation",
                     button { class: "drawer-item", disabled: busy, onclick: move |_| { spawn(async move { let result = state::new_chat(state).await; state::report(state, result); }); },
                         span { class: "drawer-badge tone-create", icons::build_icon { name: "add_comment" } } span { "Новый чат" }

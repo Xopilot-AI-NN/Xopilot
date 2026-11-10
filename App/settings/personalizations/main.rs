@@ -21,6 +21,8 @@ pub fn build_personalizations(
     let mut language = use_signal(|| "ru".to_owned());
     let mut status = use_signal(String::new);
     let mut loaded = use_signal(|| false);
+    let mut dirty = use_signal(|| false);
+    crate::app::shared::unsaved::use_unsaved(dirty);
     use_future(move || async move {
         let result = async {
             let store = state::store(state)?;
@@ -54,18 +56,19 @@ pub fn build_personalizations(
                     div { class: "profile-avatar", if avatar.read().is_empty() { icons::build_icon { name: "person" } } else { img { src: "data:image/jpeg;base64,{avatar}", alt: "Аватар" } } }
                     div { strong { "{name}" } p { class: "notice", "Локальный профиль Xopilot" } }
                 }
-                label { class: "field", "Как к тебе обращаться", input { value: "{name}", maxlength: 50, oninput: move |e| name.set(e.value()) } }
+                label { class: "field", "Как к тебе обращаться", input { value: "{name}", maxlength: 50, oninput: move |e| { name.set(e.value()); dirty.set(true); } } }
             }
             if memory_only {
                 h2 { class: "section-title", "Личные инструкции" }
                 p { class: "notice", "Сведения, которые ИИ использует в будущих разговорах" }
-                label { class: "field", "Личные инструкции для модели", textarea { value: "{memory}", oninput: move |e| memory.set(e.value()) } }
+                label { class: "field", "Личные инструкции для модели", textarea { value: "{memory}", oninput: move |e| { memory.set(e.value()); dirty.set(true); } } }
             }
             button { class: "button primary", disabled: !*loaded.read(), onclick: move |_| { spawn(async move {
                 let result = async {
                     let store = state::store(state)?;
                     let name = name.read().clone(); let instructions = memory.read().clone();
                     services::runtime::blocking(move || profile::update(&store, &name, &instructions)).await?;
+                    dirty.set(false);
                     status.set("Профиль сохранён".into()); Ok(())
                 }.await; state::report(state, result);
             }); }, "Сохранить профиль" }

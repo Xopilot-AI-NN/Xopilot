@@ -80,6 +80,8 @@ button { -webkit-tap-highlight-color: transparent; }
 .message-action-menu { position: relative; }
 .message-action-menu > button .material-icons { font-size: 18px; }
 .message-duration { font-size: 10px; margin-left: 8px; }
+.message-bookmarked { display: inline-flex; margin-left: 6px; color: var(--accent); }.message-bookmarked .material-icons { font-size: 15px; }
+.search-empty h2 { margin: 0; font-size: 20px; }
 .message-popup { position: absolute; bottom: 26px; left: 0; background: var(--raised); border: 1px solid var(--line); border-radius: 12px; padding: 6px; z-index: 5; min-width: 180px; box-shadow: 0 5px 18px #0002; }
 .user .message-popup { left: auto; right: 0; }
 .markdown p { margin: 0 0 8px; }

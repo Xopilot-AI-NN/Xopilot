@@ -13,10 +13,12 @@ pub fn build_chat() -> Element {
     let mut state = use_context::<Signal<AppState>>();
     let mut query = use_signal(String::new);
     let mut searching = use_signal(|| false);
+    let mut bookmarks_only = use_signal(|| false);
     let mut popup = use_signal(|| false);
     let mut deleting = use_signal(|| false);
     let value = state.read();
     let messages = value.messages.clone();
+    let bookmarks = value.bookmarks.clone();
     let active = value.active;
     let title = value
         .chats
@@ -32,7 +34,24 @@ pub fn build_chat() -> Element {
     let streaming = value.streaming.clone();
     let busy = value.busy;
     drop(value);
+    use_effect(use_reactive((&active,), move |_| {
+        // Фильтр предыдущего чата не должен скрывать сообщения нового.
+        query.set(String::new());
+        searching.set(false);
+        bookmarks_only.set(false);
+        popup.set(false);
+        deleting.set(false);
+    }));
     let needle = query.read().to_lowercase();
+    let filtered: Vec<_> = messages
+        .iter()
+        .rev()
+        .filter(|m| {
+            m.content.to_lowercase().contains(&needle)
+                && (!*bookmarks_only.read() || bookmarks.contains(&m.id))
+        })
+        .cloned()
+        .collect();
     rsx! {
         header { class: "chat-header",
             div { class: "mobile-header-menu", brand::build_brand_button { icon: "menu", label: "Открыть меню", size: 44, onclick: move |_| state.write().sidebar = true } }
@@ -55,9 +74,9 @@ pub fn build_chat() -> Element {
                     for (icon, label, screen) in [("forum", "Все чаты", Screen::Chats), ("draw", "Canvas", Screen::Canvas), ("library_books", "Материалы", Screen::Materials)] {
                         button { class: "popup-item mobile-popup-item", onclick: move |_| { popup.set(false); state::navigate(state, screen); }, icons::build_icon { name: icon } "{label}" }
                     }
-                    button { class: "popup-item", onclick: move |_| { popup.set(false); searching.set(true); }, icons::build_icon { name: "search" } "Поиск в чате" }
+                    button { class: "popup-item", onclick: move |_| { popup.set(false); bookmarks_only.set(false); searching.set(true); }, icons::build_icon { name: "search" } "Поиск в чате" }
                     button { class: "popup-item", onclick: move |_| { popup.set(false); state::navigate(state, Screen::Templates); }, icons::build_icon { name: "text_snippet" } "Шаблоны запросов" }
-                    button { class: "popup-item", onclick: move |_| { popup.set(false); state.write().notice = Some("Закладки ещё переносятся в новую версию.".into()); }, icons::build_icon { name: "bookmark_border" } "Закладки" }
+                    button { class: "popup-item", onclick: move |_| { popup.set(false); bookmarks_only.set(true); query.set(String::new()); searching.set(true); }, icons::build_icon { name: "bookmark_border" } "Закладки" }
                     button { class: "popup-item", onclick: move |_| { popup.set(false); document::eval("const list=document.getElementById('chat-messages');if(list)list.scrollTop=0;"); }, icons::build_icon { name: "arrow_downward" } "К последним сообщениям" }
                     button { class: "popup-item", onclick: move |_| { popup.set(false); spawn(async move { let result = state::export_chat(state).await; state::report(state, result); }); }, icons::build_icon { name: "download" } "Экспортировать чат" }
                 }
@@ -65,12 +84,18 @@ pub fn build_chat() -> Element {
         }
         if *searching.read() {
             div { class: "message-search",
-                label { class: "outlined-search", icons::build_icon { name: "search" } input { "aria-label": "Поиск по сообщениям", placeholder: "Поиск в чате", value: "{query}", oninput: move |e| query.set(e.value()) } }
-                button { class: "plain-icon", title: "Закрыть поиск", onclick: move |_| { query.set(String::new()); searching.set(false); }, icons::build_icon { name: "close" } }
+                label { class: "outlined-search", icons::build_icon { name: "search" } input { "aria-label": "Поиск по сообщениям", placeholder: if *bookmarks_only.read() { "Поиск в закладках" } else { "Поиск в чате" }, value: "{query}", oninput: move |e| query.set(e.value()) } }
+                button { class: "plain-icon", title: "Закрыть поиск", onclick: move |_| { query.set(String::new()); searching.set(false); bookmarks_only.set(false); }, icons::build_icon { name: "close" } }
             }
         }
         div { class: "chat-body",
-            if messages.is_empty() && !busy {
+            if *searching.read() && filtered.is_empty() && !busy {
+                div { class: "empty search-empty", role: "status",
+                    icons::build_icon { name: "search" }
+                    h2 { if *bookmarks_only.read() && needle.is_empty() { "Закладок пока нет" } else { "Ничего не найдено" } }
+                    p { if *bookmarks_only.read() { "Добавьте сообщение в закладки через его меню." } else { "Попробуйте другой запрос." } }
+                }
+            } else if messages.is_empty() && !busy {
                 div { class: "empty",
                     icons::build_icon { name: "auto_awesome" }
                     h1 { "С чего начнём?" }
@@ -86,7 +111,7 @@ pub fn build_chat() -> Element {
                             }
                         }
                     }
-                    for item in messages.into_iter().rev().filter(|m| m.content.to_lowercase().contains(&needle)) {
+                    for item in filtered {
                         message::build_message { key: "{item.id}", message: item }
                     }
                 }

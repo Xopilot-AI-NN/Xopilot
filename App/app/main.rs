@@ -69,7 +69,32 @@ pub fn build_window() -> Element {
     let error = value.error.clone();
     let notice = value.notice.clone();
     let pending_screen = value.pending_screen;
+    let pending_section = value.pending_section;
     drop(value);
+    // Обычное уведомление не должно навсегда перекрывать кнопки на телефоне.
+    let notice_value = use_memo(move || state.read().notice.clone());
+    let _notice_timeout = use_resource(move || {
+        let notice = notice_value.read().clone();
+        async move {
+            if notice.is_some() {
+                services::runtime::background(async {
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                })
+                .await;
+                if state.peek().notice == notice {
+                    state.write().notice = None;
+                }
+            }
+        }
+    });
+    use_effect(use_reactive(
+        (&pending_screen, &pending_section),
+        move |(screen, section)| {
+            if screen.is_some() || section.is_some() {
+                document::eval(include_str!("shared/dialog_focus.js"));
+            }
+        },
+    ));
     rsx! {
         style { {format!("@font-face{{font-family:GoogleSans;src:url('{FONT}')}}@font-face{{font-family:MaterialIcons;src:url('{}')}}{}", icons::FONT, palette::STYLES)} }
         document::Link { rel: "icon", href: asset!("/assets/icon.png") }
@@ -102,13 +127,14 @@ pub fn build_window() -> Element {
                     button { class: "plain-icon", title: "Закрыть сообщение", onclick: move |_| state.write().notice = None, icons::build_icon { name: "close" } }
                 }
             }
-            if pending_screen.is_some() {
+            if pending_screen.is_some() || pending_section.is_some() {
                 div { class: "modal-backdrop confirmation-backdrop",
-                    section { class: "confirmation", role: "alertdialog", "aria-modal": "true", "aria-label": "Несохранённые изменения",
+                    section { class: "confirmation", role: "alertdialog", "aria-modal": "true", "aria-label": "Несохранённые изменения", tabindex: -1,
+                        onkeydown: move |event| { if event.key() == Key::Escape { event.stop_propagation(); state.write().pending_screen = None; state.write().pending_section = None; } },
                         h2 { "Отбросить изменения?" }
-                        p { "В редакторе есть несохранённый текст." }
+                        p { "В форме есть несохранённые изменения." }
                         div { class: "row dialog-actions",
-                            button { class: "button", onclick: move |_| state.write().pending_screen = None, "Остаться" }
+                            button { class: "button", onclick: move |_| { state.write().pending_screen = None; state.write().pending_section = None; document::eval(include_str!("shared/dialog_focus.js")); }, "Остаться" }
                             button { class: "button danger", onclick: move |_| state::discard_pending(state), "Отбросить и перейти" }
                         }
                     }

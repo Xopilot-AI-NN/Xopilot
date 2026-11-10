@@ -11,6 +11,7 @@ pub fn build_dialog(
     #[props(default = "general".into())] variant: String,
     #[props(default)] settings: bool,
     #[props(default)] narrow: bool,
+    #[props(default = true)] immediate: bool,
     #[props(default)] back: Option<EventHandler<MouseEvent>>,
     children: Element,
 ) -> Element {
@@ -38,7 +39,7 @@ pub fn build_dialog(
                         }
                         button { class: "plain-icon dialog-close", title: "Закрыть окно", "aria-label": "Закрыть окно", onclick: move |_| state::dismiss(state), icons::build_icon { name: "close" } }
                     }
-                    if settings { p { class: "dialog-status", "Изменения применяются сразу" } }
+                    if settings { p { class: "dialog-status", if immediate { "Изменения применяются сразу" } else { "Сохраните изменения перед закрытием" } } }
                 }
                 div { class: "dialog-body", {children} }
             }

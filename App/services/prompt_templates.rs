@@ -45,3 +45,25 @@ pub fn delete(store: &Store, id: &str) -> Result<()> {
         write_json(db, KEY, &items)
     })
 }
+
+pub fn update(store: &Store, id: &str, title: &str, body: &str) -> Result<()> {
+    ensure!(
+        !title.trim().is_empty() && title.chars().count() <= 80,
+        "Введите название до 80 символов"
+    );
+    ensure!(
+        !body.trim().is_empty() && body.chars().count() <= 20_000,
+        "Введите текст до 20 000 символов"
+    );
+    store.with(|db| {
+        let mut items: Vec<Template> = read_json(db, KEY)?;
+        let item = items
+            .iter_mut()
+            .find(|item| item.id == id)
+            .ok_or_else(|| anyhow::anyhow!("Шаблон уже удалён"))?;
+        item.title = title.trim().into();
+        item.body = body.into();
+        item.updated = super::canvases::now();
+        write_json(db, KEY, &items)
+    })
+}

@@ -23,4 +23,3 @@ identifier = "by.xopilot.app"
 
 [android.application]
 uses_cleartext_traffic = true
-

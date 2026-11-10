@@ -365,3 +365,53 @@ fn nested_dialogs_return_to_the_same_settings_section_and_keep_draft() {
     UI_STATE.with(|cell| *cell.borrow_mut() = None);
     UI_STORE.with(|cell| *cell.borrow_mut() = None);
 }
+
+#[test]
+fn unsaved_settings_require_a_decision_before_returning_to_the_list() {
+    use dioxus::prelude::*;
+    use xopilot::app::state::{self, Screen};
+    UI_STORE.with(|cell| *cell.borrow_mut() = Some(store()));
+    let mut dom = VirtualDom::new(action_fixture);
+    dom.rebuild_in_place();
+    let mut state = UI_STATE.with(|cell| cell.borrow().unwrap());
+    state::navigate(state, Screen::Settings);
+    state::select_settings_section(state, Some(0));
+    state.write().unsaved = true;
+    state::select_settings_section(state, None);
+    assert_eq!(state.read().settings_section, Some(0));
+    assert_eq!(state.read().pending_section, Some(None));
+    state::discard_pending(state);
+    assert_eq!(state.read().settings_section, None);
+    assert!(!state.read().unsaved);
+    UI_STATE.with(|cell| *cell.borrow_mut() = None);
+    UI_STORE.with(|cell| *cell.borrow_mut() = None);
+}
+
+#[test]
+fn bookmarks_keep_flet_identifiers_and_are_scoped_to_their_chat() {
+    use xopilot::services::message_navigation;
+    let store = store();
+    let (first, second, message) = store
+        .with(|db| {
+            let first = db.create_chat("Первый")?;
+            let second = db.create_chat("Второй")?;
+            let message = db.add_message_full(first, "user", "Закладка", None, None, &[], None)?;
+            Ok((first, second, message))
+        })
+        .unwrap();
+    assert!(message_navigation::toggle(&store, first, message).unwrap());
+    let saved: serde_json::Value = store.read(message_navigation::KEY).unwrap();
+    assert_eq!(saved[message.to_string()]["chat_id"], first);
+    assert!(
+        message_navigation::marked(&store, first)
+            .unwrap()
+            .contains(&message)
+    );
+    assert!(
+        message_navigation::marked(&store, second)
+            .unwrap()
+            .is_empty()
+    );
+    assert!(message_navigation::toggle(&store, second, message).is_err());
+    assert!(!message_navigation::toggle(&store, first, message).unwrap());
+}

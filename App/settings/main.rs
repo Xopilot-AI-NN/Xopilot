@@ -42,14 +42,15 @@ const SECTIONS: &[(&str, &str, &str)] = &[
 
 #[component]
 pub fn build_settings_dialog() -> Element {
-    let mut state = use_context::<Signal<AppState>>();
+    let state = use_context::<Signal<AppState>>();
     let selected = state.read().settings_section;
     let title = selected
         .map(|index| SECTIONS[index].1)
         .unwrap_or("Настройки");
-    let back = selected.map(|_| EventHandler::new(move |_| state.write().settings_section = None));
+    let back =
+        selected.map(|_| EventHandler::new(move |_| state::select_settings_section(state, None)));
     rsx! {
-        dialog::build_dialog { title, settings: true, back,
+        dialog::build_dialog { title, settings: true, immediate: selected != Some(0), back,
             if let Some(index) = selected {
                 match index {
                     0 => rsx! { personalizations::main::build_personalizations { account: true } },
@@ -62,7 +63,7 @@ pub fn build_settings_dialog() -> Element {
             } else {
                 h2 { class: "section-title", "Параметры приложения" }
                 nav { class: "settings-navigation", for (index, &(icon, label, subtitle)) in SECTIONS.iter().enumerate() {
-                    button { class: "settings-navigation-row", onclick: move |_| state.write().settings_section = Some(index),
+                    button { class: "settings-navigation-row", onclick: move |_| state::select_settings_section(state, Some(index)),
                         span { class: "settings-badge tone-navigate", icons::build_icon { name: icon } }
                         span { class: "settings-row-copy", strong { "{label}" } small { "{subtitle}" } }
                         icons::build_icon { name: "chevron_right" }

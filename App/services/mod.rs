@@ -10,6 +10,7 @@ pub mod chat_store;
 pub mod db;
 pub mod drafts;
 pub mod exports;
+pub mod message_navigation;
 pub mod mobile_documents;
 pub mod paths;
 pub mod profile;

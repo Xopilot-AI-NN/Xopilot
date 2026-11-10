@@ -1,9 +1,13 @@
 // Фокус остаётся в открытом диалоге. Не регистрируем обработчик повторно.
-const dialog = document.querySelector('[role="dialog"]');
+// WebKit должен сначала применить пакет Dioxus: особенно удаление inert у меню.
+await new Promise(resolve => requestAnimationFrame(resolve));
+// Подтверждение поверх редактора получает фокус раньше нижнего диалога.
+const dialog = [...document.querySelectorAll('[aria-modal="true"]')].pop();
 if (dialog) dialog.focus({ preventScroll: true });
 if (dialog && !dialog.dataset.focusReady) {
     dialog.dataset.focusReady = 'true';
     dialog.addEventListener('keydown', event => {
+        if (dialog !== [...document.querySelectorAll('[aria-modal="true"]')].pop()) return;
         if (event.key !== 'Tab') return;
         const controls = Array.from(dialog.querySelectorAll('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),[tabindex="0"]')).filter(el => el.getClientRects().length);
         if (!controls.length) { event.preventDefault(); return; }

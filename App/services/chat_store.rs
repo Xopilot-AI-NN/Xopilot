@@ -22,6 +22,7 @@ pub struct Snapshot {
     pub draft: Draft,
     pub theme: String,
     pub workspace_name: String,
+    pub bookmarks: std::collections::HashSet<i64>,
 }
 
 pub fn list_chat_items(db: &Database) -> Result<Vec<Chat>> {
@@ -60,6 +61,7 @@ pub fn load(db: &Database, requested: Option<i64>) -> Result<Snapshot> {
         draft: read_draft(db, active)?,
         theme: db.get_setting("theme")?.unwrap_or_else(|| "light".into()),
         workspace_name,
+        bookmarks: super::message_navigation::marked_in(db, active)?,
     })
 }
 

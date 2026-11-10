@@ -105,3 +105,26 @@ fn settings_overlay_retains_chat_and_exposes_original_sections() {
     assert!(!html.contains("История хранится локально в SQLCipher."));
     assert!(!html.contains("Твой ИИ. Твои проекты."));
 }
+
+fn open_drawer_fixture() -> Element {
+    let _state = use_context_provider(|| {
+        Signal::new(AppState {
+            sidebar: true,
+            ..Default::default()
+        })
+    });
+    rsx! { app::menu::menu::build_menu_overlay {} }
+}
+
+#[test]
+fn open_drawer_removes_inert_instead_of_setting_it_to_false() {
+    let mut dom = VirtualDom::new(open_drawer_fixture);
+    dom.rebuild_in_place();
+    let html = dioxus_ssr::render(&dom);
+    assert!(html.contains("drawer-layer open"));
+    assert!(
+        !html.contains("inert="),
+        "Любое значение HTML inert блокирует меню"
+    );
+    assert!(html.contains("aria-modal=\"true\""));
+}
