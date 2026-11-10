@@ -1,0 +1,26 @@
+[application]
+name = "Xopilot"
+default_platform = "desktop"
+
+[bundle]
+identifier = "by.xopilot.app"
+publisher = "Xopilot"
+icon = ["App/assets/icon.png"]
+short_description = "Чаты и проекты с ИИ"
+category = "Productivity"
+
+[web.app]
+title = "Xopilot"
+
+[android]
+min_sdk = 26
+target_sdk = 35
+compile_sdk = 35
+identifier = "by.xopilot.app"
+
+[android.permissions]
+"android.permission.INTERNET" = { description = "Запросы к выбранному API" }
+
+[android.application]
+uses_cleartext_traffic = true
+

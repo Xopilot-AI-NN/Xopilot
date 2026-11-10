@@ -1,3 +1,5 @@
+> Архив Flet-версии. Проверки нового Rust/Dioxus-приложения: [RUST_DIOXUS.md](RUST_DIOXUS.md).
+
 # Отчёт о проверках Xopilot
 
 Дата: 13 октября 2026 года, Europe/Minsk.

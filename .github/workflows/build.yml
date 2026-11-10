@@ -1,276 +1,68 @@
-name: Build Xopilot
+name: Build Xopilot Rust
 
 on:
   workflow_dispatch:
   push:
-    tags:
-      - "v*"
-      - "dev-*"
+    branches: [main, master]
+    tags: ["v*", "dev-*"]
+  pull_request:
 
 permissions:
   contents: read
 
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_BUILD_JOBS: 2
+
 jobs:
-  build:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            platform: linux
-            system_name: Linux
-
-          - os: windows-latest
-            platform: windows
-            system_name: Windows
-
-    runs-on: ${{ matrix.os }}
-
+  checks:
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Setup Python
-        uses: actions/setup-python@v7
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          python-version: "3.14.7"
+          components: rustfmt, clippy
+      - run: ./scripts/check.sh
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r App/requirements.txt
-          pip install flet
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install Linux build dependencies
-        if: matrix.platform == 'linux'
+  linux:
+    needs: checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install native dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev perl
-
-      - name: Configure Windows native build tools
-        if: matrix.platform == 'windows'
-        shell: pwsh
-        run: |
-          $perlDir = 'C:\Strawberry\perl\bin'
-          if (-not (Test-Path "$perlDir\perl.exe")) {
-            throw 'Strawberry Perl is required to build vendored OpenSSL.'
-          }
-          $perlDir | Out-File -FilePath $env:GITHUB_PATH -Append
-          "PYTHONUTF8=1" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "PYTHONIOENCODING=utf-8" | Out-File -FilePath $env:GITHUB_ENV -Append
-          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-          if (-not $vs) { throw 'Visual Studio C++ build tools are required.' }
-          & "$vs\Common7\Tools\Launch-VsDevShell.ps1" -Arch amd64 -HostArch amd64 -SkipAutomaticLocation
-          foreach ($name in @('PATH', 'INCLUDE', 'LIB', 'LIBPATH', 'VCINSTALLDIR', 'VCToolsInstallDir', 'WindowsSdkDir', 'WindowsSDKVersion', 'VSCMD_ARG_TGT_ARCH')) {
-            $value = [Environment]::GetEnvironmentVariable($name)
-            if ($value) { "$name=$value" | Out-File -FilePath $env:GITHUB_ENV -Append }
-          }
-          & "$perlDir\perl.exe" -v
-          Get-Command cl, nmake
-
-      - name: Check transport and platform paths before compiling
-        shell: bash
-        run: |
-          python - <<'PY'
-          import sys, unittest
-          sys.path.insert(0, "tests")
-          names = [
-              "test_acceleration_runtime.RuntimeTests.test_cli_temp_and_working_directory_move_out_of_watched_sources",
-              "test_catalog_api_titles.ApiTransportTests.test_cancel_interrupts_waiting_http_body",
-              "test_catalog_api_titles.ApiTransportTests.test_cancel_interrupts_waiting_tls_body",
-          ]
-          result = unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.loadTestsFromNames(names))
-          sys.exit(0 if result.wasSuccessful() else 1)
-          PY
-
-      - name: Build native database
-        run: python scripts/build_native.py
-
-      - name: Check native storage key transitions
-        run: cargo test --manifest-path Services/Cargo.toml --lib --release --locked
-
-      - name: Run tests
-        run: python -m unittest discover -s tests -q
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
+          sudo apt-get install -y build-essential pkg-config perl libgtk-3-dev libwebkit2gtk-4.1-dev libxdo-dev
+      - run: cargo install dioxus-cli --version 0.7.10 --locked
+      - run: ./scripts/build_linux.sh
+      - uses: actions/upload-artifact@v7
         with:
-          flutter-version: "3.44.8"
-          channel: stable
-          cache: true
-
-      - name: Determine version
-        shell: bash
-        run: |
-          TAG="${GITHUB_REF_NAME}"
-
-          if [[ "$GITHUB_REF" != refs/tags/* ]]; then
-            VERSION=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
-            BUILD_TYPE="Dev"
-          elif [[ "$TAG" == dev-* ]]; then
-            VERSION="${TAG#dev-}"
-            BUILD_TYPE="Dev"
-          else
-            VERSION="${TAG#v}"
-            BUILD_TYPE="Release"
-          fi
-
-          VERSION="${VERSION#v}"
-          VERSION_UNDERSCORE="${VERSION//./_}"
-
-          echo "BUILD_TYPE=$BUILD_TYPE" >> "$GITHUB_ENV"
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-          echo "VERSION_UNDERSCORE=$VERSION_UNDERSCORE" >> "$GITHUB_ENV"
-
-      - name: Build Flet
-        shell: bash
-        run: |
-          python scripts/prepare_linux_desktop.py
-          flet build ${{ matrix.platform }} --python-version 3.14 --yes --build-version "$VERSION" --build-number "$((3000 + GITHUB_RUN_NUMBER))"
-
-      - name: Create ZIP - Linux
-        if: matrix.platform == 'linux'
-        run: |
-          ZIP_NAME="Xopilot-${BUILD_TYPE}-${VERSION_UNDERSCORE}-Linux.zip"
-          cd build/linux
-          zip -r "../../${ZIP_NAME}" .
-          echo "ZIP_NAME=${ZIP_NAME}" >> "$GITHUB_ENV"
-
-      - name: Create ZIP - Windows
-        if: matrix.platform == 'windows'
-        shell: pwsh
-        run: |
-          $ZIP_NAME = "Xopilot-$env:BUILD_TYPE-$env:VERSION_UNDERSCORE-Windows.zip"
-
-          Compress-Archive `
-            -Path "build\windows\*" `
-            -DestinationPath $ZIP_NAME
-
-          "ZIP_NAME=$ZIP_NAME" | Out-File -FilePath $env:GITHUB_ENV -Append
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: ${{ matrix.system_name }}
-          path: ${{ env.ZIP_NAME }}
+          name: xopilot-linux-dioxus
+          path: target/dx/xopilot/release/linux/app/
           if-no-files-found: error
 
   android:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    needs: checks
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.14.7"
-      - name: Install packaging dependencies
-        run: |
-          python -m pip install --upgrade pip
-          XOPILOT_FLET_REQUIREMENT=$(python -c 'import tomllib; print(next(d for d in tomllib.load(open("pyproject.toml", "rb"))["project"]["dependencies"] if d.startswith("flet==")).replace("flet==", "flet[cli]=="))')
-          python -m pip install "$XOPILOT_FLET_REQUIREMENT" 'pillow==13.0.0'
-          sudo apt-get update
-          sudo apt-get install -y clang cmake ninja-build perl pkg-config
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android,x86_64-linux-android
+          targets: aarch64-linux-android
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
-          java-version: "21"
-      - uses: subosito/flutter-action@v2
-        with:
-          flutter-version: "3.44.8"
-          channel: stable
-          cache: true
+          java-version: "17"
       - uses: android-actions/setup-android@v4
-        with:
-          cmdline-tools-version: '15859902'
-          packages: 'platform-tools platforms;android-37.0 build-tools;37.0.0 ndk;29.0.14206865'
-      - uses: actions/cache@v6
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            Services/target
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: android-${{ runner.os }}-ndk29-${{ hashFiles('Services/Cargo.lock', 'Services/Cargo.toml', 'scripts/build_android.py') }}
-      - uses: actions/cache@v6
-        with:
-          path: build/android-wheels
-          key: android-patched-wheels-${{ runner.os }}-${{ hashFiles('scripts/build_android_wheels.py', 'scripts/patches/pillow-13-android.patch') }}
-      - name: Build patched Pillow and cryptography Android wheels
-        run: python scripts/build_android_wheels.py --ndk "$ANDROID_HOME/ndk/29.0.14206865"
-      - name: Configure optional persistent APK signing
-        env:
-          APK_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          FLET_ANDROID_SIGNING_KEY_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          FLET_ANDROID_SIGNING_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          FLET_ANDROID_SIGNING_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-        run: python scripts/configure_android_signing.py
-      - name: Build and verify ARM64 and x86_64 APKs
-        env:
-          FLET_ANDROID_SIGNING_KEY_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          FLET_ANDROID_SIGNING_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          FLET_ANDROID_SIGNING_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      - name: Install Android toolchain
         run: |
-          VERSION="${GITHUB_REF_NAME#dev-}"
-          VERSION="${VERSION#v}"
-          if [[ "$GITHUB_REF" != refs/tags/* ]]; then
-            VERSION=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
-          fi
-          python scripts/build_android.py --jdk "$JAVA_HOME" --ndk "$ANDROID_HOME/ndk/29.0.14206865" --build-version "$VERSION" --build-number "$((3000 + GITHUB_RUN_NUMBER))"
-          "$ANDROID_HOME/build-tools/37.0.0/zipalign" -c -P 16 4 build/apk/Xopilot-arm64-v8a.apk
-          "$ANDROID_HOME/build-tools/37.0.0/zipalign" -c -P 16 4 build/apk/Xopilot-x86_64.apk
-          "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify build/apk/Xopilot-arm64-v8a.apk
-          "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify build/apk/Xopilot-x86_64.apk
-          cd build/apk
-          sha256sum Xopilot-*.apk > SHA256SUMS-Android.txt
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+      - run: cargo install dioxus-cli --version 0.7.10 --locked
+      - run: ./scripts/build_android.sh
       - uses: actions/upload-artifact@v7
         with:
-          name: Android
-          path: |
-            build/apk/*.apk
-            build/apk/SHA256SUMS-Android.txt
+          name: xopilot-android-dioxus-debug
+          path: target/dx/xopilot/debug/android/**/*.apk
           if-no-files-found: error
-
-  release:
-    if: startsWith(github.ref, 'refs/tags/')
-    needs: [build, android]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
-    steps:
-      - name: Download Linux
-        uses: actions/download-artifact@v8
-        with:
-          name: Linux
-          path: artifacts
-
-      - name: Download Windows
-        uses: actions/download-artifact@v8
-        with:
-          name: Windows
-          path: artifacts
-
-      - name: Download Android
-        uses: actions/download-artifact@v8
-        with:
-          name: Android
-          path: artifacts
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}
-          prerelease: ${{ startsWith(github.ref_name, 'dev-') }}
-          generate_release_notes: true
-          files: |
-            artifacts/*.zip
-            artifacts/*.apk
-            artifacts/SHA256SUMS-Android.txt

@@ -33,7 +33,8 @@ pub fn get_db_keys(_fallback_dir: &Path, _existing_database: bool) -> Result<Vec
 }
 
 fn resolve_db_keys(
-    dir: &Path, existing_database: bool,
+    dir: &Path,
+    existing_database: bool,
     keyring_key: impl FnOnce(bool) -> Result<String, keyring::Error>,
 ) -> Result<Vec<String>, String> {
     let salt_exists = dir.join(".xopilot_salt").exists();
@@ -47,11 +48,17 @@ fn resolve_db_keys(
     }
     // A database opened with the fallback must keep using that key when the
     // system keyring becomes available. Try existing keys, never rotate them.
-    if let Ok(key) = keyring_key(!existing_database && !salt_exists) {
-        if !keys.contains(&key) { keys.push(key); }
+    if let Ok(key) = keyring_key(!existing_database && !salt_exists)
+        && !keys.contains(&key)
+    {
+        keys.push(key);
     }
-    if !keys.is_empty() { return Ok(keys); }
-    if let Some(error) = salt_error { return Err(error); }
+    if !keys.is_empty() {
+        return Ok(keys);
+    }
+    if let Some(error) = salt_error {
+        return Err(error);
+    }
     if existing_database {
         return Err("Ключ истории недоступен. Разблокируйте системное хранилище ключей и перезапустите Xopilot. Файл истории не изменён.".into());
     }
@@ -144,13 +151,16 @@ mod tests {
     struct TestDir(std::path::PathBuf);
     impl TestDir {
         fn new() -> Self {
-            let path = std::env::temp_dir().join(format!("xopilot-key-test-{}", generate_hex_key()));
+            let path =
+                std::env::temp_dir().join(format!("xopilot-key-test-{}", generate_hex_key()));
             std::fs::create_dir_all(&path).unwrap();
             Self(path)
         }
     }
     impl Drop for TestDir {
-        fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); }
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
     }
 
     #[test]
@@ -161,7 +171,8 @@ mod tests {
         let reopened = resolve_db_keys(&dir.0, true, |allow_create| {
             assert!(!allow_create);
             Ok("existing-system-key".into())
-        }).unwrap();
+        })
+        .unwrap();
         assert_eq!(reopened[0], first[0]);
         assert_eq!(reopened.len(), 2);
         assert_eq!(std::fs::read(dir.0.join(".xopilot_salt")).unwrap(), salt);
@@ -170,10 +181,13 @@ mod tests {
     #[test]
     fn missing_key_never_creates_a_replacement_for_existing_history() {
         let dir = TestDir::new();
-        assert!(resolve_db_keys(&dir.0, true, |allow_create| {
-            assert!(!allow_create);
-            Err(keyring::Error::NoEntry)
-        }).is_err());
+        assert!(
+            resolve_db_keys(&dir.0, true, |allow_create| {
+                assert!(!allow_create);
+                Err(keyring::Error::NoEntry)
+            })
+            .is_err()
+        );
         assert!(!dir.0.join(".xopilot_salt").exists());
     }
 
@@ -190,6 +204,9 @@ mod tests {
     fn existing_keyring_key_remains_an_option_with_a_corrupt_salt() {
         let dir = TestDir::new();
         std::fs::write(dir.0.join(".xopilot_salt"), b"damaged").unwrap();
-        assert_eq!(resolve_db_keys(&dir.0, true, |_| Ok("existing-key".into())).unwrap(), vec!["existing-key"]);
+        assert_eq!(
+            resolve_db_keys(&dir.0, true, |_| Ok("existing-key".into())).unwrap(),
+            vec!["existing-key"]
+        );
     }
 }

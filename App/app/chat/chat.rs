@@ -1,0 +1,107 @@
+// Файл: App/app/chat/chat.rs
+// Описание: Заголовок, лента и ввод повторяют компоновку Flet.
+use super::{composer, messages::message};
+use crate::app::{
+    menu::buttons::brand,
+    shared::icons,
+    state::{self, AppState, Screen},
+};
+use dioxus::prelude::*;
+
+#[component]
+pub fn build_chat() -> Element {
+    let mut state = use_context::<Signal<AppState>>();
+    let mut query = use_signal(String::new);
+    let mut searching = use_signal(|| false);
+    let mut popup = use_signal(|| false);
+    let mut deleting = use_signal(|| false);
+    let value = state.read();
+    let messages = value.messages.clone();
+    let active = value.active;
+    let title = value
+        .chats
+        .iter()
+        .find(|c| Some(c.id) == active)
+        .map(|c| c.title.clone())
+        .unwrap_or_else(|| "Новый чат".into());
+    let workspace = if value.workspace_name.is_empty() {
+        "Все чаты".to_owned()
+    } else {
+        value.workspace_name.clone()
+    };
+    let streaming = value.streaming.clone();
+    let busy = value.busy;
+    drop(value);
+    let needle = query.read().to_lowercase();
+    rsx! {
+        header { class: "chat-header",
+            div { class: "mobile-header-menu", brand::build_brand_button { icon: "menu", label: "Открыть меню", size: 44, onclick: move |_| state.write().sidebar = true } }
+            div { class: "header-title", strong { "{title}" } small { "{workspace}" } }
+            div { class: "desktop-header-actions",
+                brand::build_brand_button { icon: "add_comment_outlined", label: "Новый чат", size: 36, role: "create", disabled: busy,
+                    onclick: move |_| { spawn(async move { let result = state::new_chat(state).await; state::report(state, result); }); } }
+                brand::build_brand_button { icon: "forum_outlined", label: "Все чаты", size: 36, onclick: move |_| state::navigate(state, Screen::Chats) }
+                button { class: "plain-icon", title: "Поиск, закладки и экспорт", "aria-label": "Поиск, закладки и экспорт", "aria-expanded": *popup.read(), onclick: move |_| { let open = *popup.read(); popup.set(!open); }, icons::build_icon { name: "search" } }
+                brand::build_brand_button { icon: "draw_outlined", label: "Canvas", size: 36, role: "ai", onclick: move |_| state::navigate(state, Screen::Canvas) }
+                brand::build_brand_button { icon: "delete_outline", label: "Удалить чат", size: 36, role: "danger", disabled: busy, onclick: move |_| deleting.set(true) }
+            }
+            div { class: "mobile-header-actions",
+                brand::build_brand_button { icon: "more_horiz", label: "Действия чата", size: 44, onclick: move |_| { let open = *popup.read(); popup.set(!open); } }
+            }
+            if *popup.read() {
+                button { class: "popup-scrim", tabindex: -1, title: "Закрыть действия чата", onclick: move |_| popup.set(false) }
+                div { class: "header-popup", role: "menu",
+                    button { class: "popup-item mobile-popup-item", onclick: move |_| { popup.set(false); spawn(async move { let result = state::new_chat(state).await; state::report(state, result); }); }, icons::build_icon { name: "add_comment" } "Новый чат" }
+                    for (icon, label, screen) in [("forum", "Все чаты", Screen::Chats), ("draw", "Canvas", Screen::Canvas), ("library_books", "Материалы", Screen::Materials)] {
+                        button { class: "popup-item mobile-popup-item", onclick: move |_| { popup.set(false); state::navigate(state, screen); }, icons::build_icon { name: icon } "{label}" }
+                    }
+                    button { class: "popup-item", onclick: move |_| { popup.set(false); searching.set(true); }, icons::build_icon { name: "search" } "Поиск в чате" }
+                    button { class: "popup-item", onclick: move |_| { popup.set(false); state::navigate(state, Screen::Templates); }, icons::build_icon { name: "text_snippet" } "Шаблоны запросов" }
+                    button { class: "popup-item", onclick: move |_| { popup.set(false); state.write().notice = Some("Закладки ещё переносятся в новую версию.".into()); }, icons::build_icon { name: "bookmark_border" } "Закладки" }
+                    button { class: "popup-item", onclick: move |_| { popup.set(false); document::eval("const list=document.getElementById('chat-messages');if(list)list.scrollTop=0;"); }, icons::build_icon { name: "arrow_downward" } "К последним сообщениям" }
+                    button { class: "popup-item", onclick: move |_| { popup.set(false); spawn(async move { let result = state::export_chat(state).await; state::report(state, result); }); }, icons::build_icon { name: "download" } "Экспортировать чат" }
+                }
+            }
+        }
+        if *searching.read() {
+            div { class: "message-search",
+                label { class: "outlined-search", icons::build_icon { name: "search" } input { "aria-label": "Поиск по сообщениям", placeholder: "Поиск в чате", value: "{query}", oninput: move |e| query.set(e.value()) } }
+                button { class: "plain-icon", title: "Закрыть поиск", onclick: move |_| { query.set(String::new()); searching.set(false); }, icons::build_icon { name: "close" } }
+            }
+        }
+        div { class: "chat-body",
+            if messages.is_empty() && !busy {
+                div { class: "empty",
+                    icons::build_icon { name: "auto_awesome" }
+                    h1 { "С чего начнём?" }
+                    p { "Напишите вопрос, прикрепите файл или начните голосовой разговор." }
+                }
+            } else {
+                section { class: "messages", id: "chat-messages", "aria-label": "Сообщения",
+                    if busy {
+                        article { class: "message assistant", "aria-live": "polite",
+                            div { class: "message-bubble",
+                                if streaming.is_empty() { span { class: "busy notice", "Готовлю ответ…" } }
+                                else { div { class: "markdown", dangerous_inner_html: message::markdown_html(&streaming) } }
+                            }
+                        }
+                    }
+                    for item in messages.into_iter().rev().filter(|m| m.content.to_lowercase().contains(&needle)) {
+                        message::build_message { key: "{item.id}", message: item }
+                    }
+                }
+            }
+        }
+        composer::prompt::build_prompt {}
+        if *deleting.read() {
+            div { class: "modal-backdrop confirmation-backdrop",
+                section { class: "confirmation", role: "alertdialog", "aria-label": "Удалить чат?", "aria-modal": "true",
+                    h2 { "Удалить чат?" } p { "Чат и его сообщения будут удалены. Остальные чаты сохранятся." }
+                    div { class: "row dialog-actions", button { class: "button", onclick: move |_| deleting.set(false), "Отмена" }
+                        button { class: "button danger", onclick: move |_| { spawn(async move { if let Some(id) = active { let result = state::delete_chat(state, id).await; state::report(state, result); } deleting.set(false); }); }, "Удалить" }
+                    }
+                }
+            }
+        }
+    }
+}

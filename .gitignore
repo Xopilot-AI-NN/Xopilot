@@ -1,25 +1,23 @@
 repomix-output.xml
 Архив*.*
-__pycache__
-*.pyc
-target
+/target/
+/Services/target/
+/App/.flet/
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
 *.sqlite3
 .xopilot_salt
 *.gguf
 *.litertlm
 *.xnnpack_cache
-build
-*.lock
-!Services/Cargo.lock
+build/
 DEV.md
 App/data/models/tts/*.onnx
 App/data/models/tts/*.onnx.json
 App/data/models/tts/*.part
 run.sh
-App/advanced_xopilot*.so
-App/advanced_xopilot*.pyd
 /docs/
 /.idea/
 **/.gradle/
@@ -28,9 +26,13 @@ App/advanced_xopilot*.pyd
 *.env
 key.properties
 
-extensions/flet_xopilot_mobile/src/flutter/flet_xopilot_mobile/android/src/main/jniLibs/
-extensions/**/build/
-extensions/**/*.egg-info/
+# Прежние локальные окружения и кэш не входят в Rust-приложение.
+/python/
+/.venv/
+__pycache__/
+*.pyc
+App/advanced_xopilot*.so
+App/advanced_xopilot*.pyd
 
-# Private server/admin code must never be published.
+# Сервер и панель администратора не публикуются.
 /Server/

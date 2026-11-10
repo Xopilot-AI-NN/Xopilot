@@ -1,22 +1,11 @@
 [package]
 name = "advanced_xopilot"
-version = "1.0.0"
-edition = "2024"
-license = "MIT"
-
-[lib]
-name = "advanced_xopilot"
-# cdylib — компилируется в нативную библиотеку (.so на Linux / .pyd на Windows),
-# которую Python (Flet UI) импортирует напрямую как модуль через PyO3.
-crate-type = ["cdylib"]
+version.workspace = true
+edition.workspace = true
+license.workspace = true
 
 [dependencies]
-# Собираем SQLCipher и статическую libcrypto вместе с модулем: обычный
-# bundled-sqlcipher требует установленный OpenSSL, в частности OPENSSL_DIR на Windows.
 rusqlite = { version = "0.40", features = ["bundled-sqlcipher-vendored-openssl"] }
-pyo3 = { version = "0.29", features = ["extension-module"] }
-
-# хранение ключа шифрования в OS keyring (Windows Credential Manager / Linux Secret Service)
 keyring = "4"
 rand = "0.10"
 sha2 = "0.11"
@@ -24,25 +13,8 @@ hex = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
-# tract-onnx — чистый Rust ONNX-рантайм без внешней C++ библиотеки (как rusqlite bundled) —
-# проще собирать/кросс-компилировать под Linux/Windows, чем ort (обёртка над ONNX Runtime).
-# Используется только тестовым классификатором тональности (пункт 5 плана).
-tract-onnx = { version = "0.22.3", optional = true }
-
-[features]
-default = ["sentiment"]
-sentiment = ["dep:tract-onnx"]
-
-# Рабочий ИИ больше НЕ здесь — переехали на LiteRT-LM (Google), используется через его официальный
-# Python-пакет litert-lm-api напрямую из App/services/llm.py — без Rust-прослойки.
-# (была попытка через candle/candelabra — упёрлись в неподдерживаемый candle-transformers
-# partial-rotary для Phi-4-mini; LiteRT-LM от Google поддерживает Gemma 3n официально и сразу).
-
-# чтение MachineGuid из реестра для fallback-ветки ключа на Windows
 [target.'cfg(windows)'.dependencies]
 winreg = "0.56"
 
-[profile.release]
-lto = true
-strip = true
-opt-level = "z"  # приоритет — размер/память, не пиковая скорость
+[dev-dependencies]
+tempfile = "3"
