@@ -29,6 +29,7 @@ TEXT_EXTENSIONS = {
 }
 
 MAX_TEXT_CHARS = 20000
+MAX_PAGE_CHARS = 24
 MAX_IMAGE_SIDE = 1024
 VIDEO_FRAME_COUNT = 3
 
@@ -60,13 +61,19 @@ def _read_pdf(path: str) -> str:
         return "[PDF: для чтения нужен pypdf — не установлен]"
     try:
         reader = pypdf.PdfReader(path)
-        text = "\n".join((page.extract_text() or "") for page in reader.pages).strip()
+        pages = []
+        for page in reader.pages:
+            text = page.extract_text() or ""
+            if len(text) > MAX_PAGE_CHARS:
+                text = text[:MAX_PAGE_CHARS] + f"\n... [Ограничение {MAX_PAGE_CHARS}]"
+            pages.append(text)
+        text = "\n".join(pages).strip()
     except Exception as exc:
         return f"[Не удалось прочитать PDF: {exc}]"
     if not text:
         return "[PDF без извлекаемого текста — возможно, это скан]"
     if len(text) > MAX_TEXT_CHARS:
-        text = text[:MAX_TEXT_CHARS] + "\n…[обрезано]"
+        text = text[:MAX_TEXT_CHARS] + f"\n…[Обрезано из за ограничения {MAX_TEXT_CHARS}]"
     return text
 
 
