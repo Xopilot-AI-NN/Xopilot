@@ -1,6 +1,6 @@
 # Проверки Rust / Dioxus — 11 ноября 2026
 
-- `cargo test --workspace --no-default-features --locked`: **51 тест**, ошибок нет.
+- `cargo test --workspace --no-default-features --locked`: **53 теста**, ошибок нет.
 - `cargo fmt --all --check`: успешно.
 - `cargo clippy --workspace --all-targets --no-default-features --locked -- -D warnings`: успешно.
 - `cargo clippy --workspace --all-targets --locked -- -D warnings`: успешно с системными GTK3/WebKitGTK/libxdo.
@@ -12,8 +12,8 @@
 
 Настоящий сервер аккаунтов и Google не вызывались. e4b/GPU отдельно не испытывались. Проверка POCO X5 5G описана в [ANDROID_DEVICE.md](ANDROID_DEVICE.md). Подробные команды — [TESTING.md](TESTING.md), ограничения — [MIGRATION.md](../MIGRATION.md).
 
-Android arm64 debug APK пересобран из текущих исходников с JDK 21, NDK 27.2.12479018, платформой SDK 35 и Build Tools 34/35. Через `aapt2` проверены `by.xopilot.app`, versionName 2.0.13, versionCode 1, min SDK 26 / target 35. В APK находятся `lib/arm64-v8a/liblitert-lm.so` и `libmain.so`.
+Linux release упакован в dist/linux.zip и отдельный dist/Xopilot. Исполняемый файл запущен из пустого каталога без папки assets: встроенные шрифты, Material Icons и логотип отобразились правильно. Снимок — [rust-standalone.png](../previews/rust-standalone.png).
 
-Артефакт: `target/dx/xopilot/debug/android/app/app/build/outputs/apk/debug/app-debug.apk`. Это debug-сборка. Отдельный пакет preview установлен на POCO X5 5G: проверены запуск, сохранение профиля/черновика, Insets и клавиатура. Наследование прежней установки и подпись не проверены. Перед выпуском обновления нужен увеличенный versionCode и исходный ключ подписи.
+Android production использует постоянную release-подпись, versionCode 2000013 и отдельный сценарий упаковки. Проверка ./scripts/test.sh apk dist/android.apk проверяет 16 КиБ ELF/ZIP-выравнивание. Проверки телефона, фоновой загрузки и восстановления состояния — в [ANDROID_DEVICE.md](ANDROID_DEVICE.md). Старое приложение с другим сертификатом не заменялось.
 
-`./scripts/test.sh apk` проверяет 16 КиБ ELF/ZIP-выравнивание. После исправления App/build.rs системное предупреждение отсутствует, pageSizeCompat=0. UI-стенд проверяет 3-секундное исчезновение уведомлений и результата задачи.
+Workflow проверен actionlint. Установщик закреплённого DX 0.7.10 скачал официальный архив и проверил SHA-256. Результат Linux/Android-сборки локально не заменяет проверку Windows на GitHub Actions.
