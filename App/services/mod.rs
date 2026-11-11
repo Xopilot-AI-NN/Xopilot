@@ -1,5 +1,6 @@
 // Описание: Прикладные сервисы, независимо от интерфейса Dioxus.
 pub mod account_deletion;
+pub mod agent;
 #[cfg(any(target_os = "android", test))]
 #[cfg_attr(test, allow(dead_code))]
 pub mod android;

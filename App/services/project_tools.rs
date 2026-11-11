@@ -4,6 +4,54 @@ use anyhow::{Result, ensure};
 use sha2::{Digest, Sha256};
 use std::path::Path;
 
+/// Новый файл публикуется без перезаписи появившегося извне файла.
+pub fn create_file(root: &Path, path: &str, content: &str) -> Result<()> {
+    ensure!(
+        content.len() <= super::project_inspection::MAX_FILE as usize,
+        "Файл больше 1 МиБ"
+    );
+    let relative = Path::new(path);
+    ensure!(
+        !relative.is_absolute()
+            && !relative
+                .components()
+                .any(|c| matches!(c, std::path::Component::ParentDir)),
+        "Нужен путь внутри проекта"
+    );
+    let name = relative
+        .file_name()
+        .and_then(|s| s.to_str())
+        .ok_or_else(|| anyhow::anyhow!("Неверное имя файла"))?;
+    ensure!(
+        !name.starts_with('.') || [".gitignore", ".env.example"].contains(&name),
+        "Скрытый личный файл недоступен"
+    );
+    let parent = super::project_inspection::resolve(
+        root,
+        relative
+            .parent()
+            .unwrap_or(Path::new(""))
+            .to_str()
+            .ok_or_else(|| anyhow::anyhow!("Неверный путь"))?,
+    )?;
+    ensure!(parent.is_dir(), "Родительская папка не найдена");
+    let full = parent.join(name);
+    let temporary = parent.join(format!(".xopilot-{}.tmp", uuid::Uuid::new_v4()));
+    let result = (|| -> Result<()> {
+        use std::io::Write;
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)?;
+        file.write_all(content.as_bytes())?;
+        file.sync_all()?;
+        std::fs::hard_link(&temporary, &full)?;
+        Ok(())
+    })();
+    let _ = std::fs::remove_file(temporary);
+    result
+}
+
 pub fn fingerprint(text: &str) -> String {
     hex::encode(Sha256::digest(text.as_bytes()))
 }
