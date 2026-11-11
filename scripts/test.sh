@@ -24,6 +24,7 @@ case "${1:-quick}" in
     export XOPILOT_DATA_DIR="$task_data"
     cargo run -p xopilot --no-default-features --locked --example local_context_smoke -- "$2"
     cargo run -p xopilot --no-default-features --locked --example local_agent_smoke -- "$2"
+    cargo run -p xopilot --no-default-features --locked --example local_canvas_smoke -- "$2"
     ;;
   *) echo 'Режимы: quick | full | ui | model /путь/к/модели' >&2; exit 2 ;;
 esac

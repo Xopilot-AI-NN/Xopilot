@@ -82,6 +82,8 @@ async function check(name, script) {
     console.log('✓ ' + name);
 }
 const close = () => click('Закрыть окно');
+// Снимки снимаются только с окна запущенного стенда.
+const screenshot = name => {if(windowId)execFileSync('niri',['msg','action','screenshot-window','--id',String(windowId),'--path',path.join(root,name+'.png')]);};
 const menu = () => click(windowId && width < 600 ? 'Действия чата' : 'Поиск, закладки и экспорт');
 let width = 1000;
 function resize(next) {
@@ -139,6 +141,10 @@ const server = http.createServer(async (request, response) => {
     if (!response.destroyed) response.end('data: '+JSON.stringify({choices:[{delta:{content:'**Markdown** и окончание ответа.'}}]})+'\n\ndata: [DONE]\n\n');
 });
 
+// При остановке стенда закрываем только запущенное им окно, не оставляя тестовый процесс.
+process.once('SIGTERM',()=>{void stop().finally(()=>{server.close();process.exit(143);});});
+process.once('SIGINT',()=>{void stop().finally(()=>{server.close();process.exit(130);});});
+
 (async () => {
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
     await start();
@@ -148,6 +154,7 @@ const server = http.createServer(async (request, response) => {
     await click('Настройки');
     for (const section of ['Профиль и аккаунт', 'Персонализация', 'Модели', 'История', 'Обновления', 'О программе']) {
         await click(section);
+        await check('Все окна настроек сохраняют общий размер: '+section, "const r=document.querySelector('.dialog').getBoundingClientRect();window.__settingsSize??={width:r.width,height:r.height};return Math.abs(r.width-window.__settingsSize.width)<1&&Math.abs(r.height-window.__settingsSize.height)<1;");
         await check('Открывается раздел: ' + section, `return document.querySelector('#dialog-title').textContent === ${JSON.stringify(section)};`);
         if (section === 'Профиль и аккаунт') {
             await click('Изменить имя');
@@ -282,7 +289,7 @@ const server = http.createServer(async (request, response) => {
         await click('Поиск, закладки и экспорт'); await click('Закладки');
         execFileSync('niri', ['msg', 'action', 'screenshot-window', '--id', String(windowId), '--path', path.join(root, 'desktop-empty-bookmarks.png')]);
     }
-    await require('./check-ui-features.cjs')({root,evaluate,wait,click,input,close,check,until,resize,requests});
+    await require('./check-ui-features.cjs')({root,evaluate,wait,click,input,close,check,until,resize,requests,modelDirectory,screenshot});
     fs.writeFileSync(path.join(root, 'result.json'), JSON.stringify({checks:results, httpRequests:requests.length, viewportWidths:windowId?[1000,390]:[1060], platform:'Linux WebKitGTK; Android device not tested'}, null, 2));
     console.log(`${results.length} проверок пройдено. Артефакты: ${root}`);
 })().catch(async error => {
