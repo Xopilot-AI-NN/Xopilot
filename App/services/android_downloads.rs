@@ -289,26 +289,19 @@ pub fn start(spec: Model) -> Result<()> {
 }
 /// Явная отмена отличается от паузы: DownloadManager не предоставляет публичной ручной паузы.
 pub fn cancel(id: &str) -> Result<()> {
-    ensure!(
-        !state()
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Реестр загрузок занят"))?
-            .verifying
-            .contains(id),
-        "Дождитесь окончания проверки модели"
-    );
-    let ticket = state()
-        .lock()
-        .map_err(|_| anyhow::anyhow!("Реестр загрузок занят"))?
-        .tickets
-        .get(id)
-        .copied();
-    if let Some(ticket) = ticket {
-        remove_system(ticket)?;
-    }
+    // Держим один guard от проверки до удаления квитанции. Иначе monitor может
+    // начать SHA-проверку между двумя lock(), а отмена удалит читаемый им файл.
+    // Системный remove короткий; многогигабайтное копирование под mutex не идёт.
     let mut value = state()
         .lock()
         .map_err(|_| anyhow::anyhow!("Реестр загрузок занят"))?;
+    ensure!(
+        !value.verifying.contains(id),
+        "Дождитесь окончания проверки модели"
+    );
+    if let Some(ticket) = value.tickets.get(id).copied() {
+        remove_system(ticket)?;
+    }
     value.tickets.remove(id);
     value.progress.remove(id);
     save(&value)
