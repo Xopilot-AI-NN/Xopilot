@@ -22,6 +22,14 @@ pub fn build_model_import() -> Element {
         let mut bridge = document::eval(script);
         let mut upload = None::<model_import::Upload>;
         while let Ok(event) = bridge.recv::<UploadEvent>().await {
+            // Сообщение об ошибке JS не является запросом: лишний ack испортит следующий импорт.
+            if let UploadEvent::Error { message } = event {
+                upload = None;
+                working.set(false);
+                model_import::fail(message.clone());
+                state::report(state, Err(anyhow::anyhow!(message)));
+                continue;
+            }
             let result: anyhow::Result<()> = async {
                 match event {
                     UploadEvent::Start { size, .. } => {
@@ -58,14 +66,14 @@ pub fn build_model_import() -> Element {
                         working.set(false);
                         return Ok(());
                     }
-                    UploadEvent::Error { message } => anyhow::bail!("{message}"),
+                    UploadEvent::Error { .. } => unreachable!(),
                 }
                 bridge.send(true)?;
                 Ok(())
             }
             .await;
             if let Err(error) = result {
-                let _ = bridge.send(false);
+                let _ = bridge.send(serde_json::json!({"error": error.to_string()}));
                 upload = None;
                 working.set(false);
                 model_import::fail(error.to_string());

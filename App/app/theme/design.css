@@ -321,3 +321,20 @@ select.preference-select, .field select {
 .activity-corner .activity-dock { max-height:40dvh; margin:0; }
 .activity-corner .activity-item { pointer-events:auto; box-shadow:0 4px 16px #0002; }
 .dialog-body { overscroll-behavior:contain; overflow-anchor:none; }
+/* Системные панели Android занимают реальные Insets; IME уменьшает visualViewport. */
+.app[data-platform=android] {
+    height:var(--app-viewport-height,100dvh);
+    padding:var(--safe-top,0px) var(--safe-right,0px) var(--safe-bottom,0px) var(--safe-left,0px);
+    contain:layout;
+}
+.app[data-platform=android] .modal-backdrop {
+    top:var(--safe-top,0px); right:var(--safe-right,0px);
+    bottom:var(--safe-bottom,0px); left:var(--safe-left,0px);
+}
+.app[data-platform=android] .dialog {
+    height:min(708px,calc(var(--app-viewport-height,100dvh) - var(--safe-top,0px) - var(--safe-bottom,0px) - 48px));
+    max-height:calc(var(--app-viewport-height,100dvh) - var(--safe-top,0px) - var(--safe-bottom,0px) - 48px);
+}
+.app[data-platform=android] .activity-corner {
+    top:calc(var(--safe-top,0px) + 12px); right:calc(var(--safe-right,0px) + 12px);
+}

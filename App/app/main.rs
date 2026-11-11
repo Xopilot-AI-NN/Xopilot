@@ -79,22 +79,6 @@ pub fn build_window() -> Element {
     let approval_open = approval.is_some();
     let outside_chat = value.screen != state::Screen::Chat;
     drop(value);
-    // Обычное уведомление не должно навсегда перекрывать кнопки на телефоне.
-    let notice_value = use_memo(move || state.read().notice.clone());
-    let _notice_timeout = use_resource(move || {
-        let notice = notice_value.read().clone();
-        async move {
-            if notice.is_some() {
-                services::runtime::background(async {
-                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-                })
-                .await;
-                if state.peek().notice == notice {
-                    state.write().notice = None;
-                }
-            }
-        }
-    });
     use_effect(use_reactive(
         (&pending_screen, &pending_section, &approval_open),
         move |(screen, section, approval)| {
@@ -104,6 +88,13 @@ pub fn build_window() -> Element {
         },
     ));
     rsx! {
+        document::Title {
+            "Xopilot"
+        }
+        self::build_mobile_layout {
+        }
+        super::shared::notification_lifetime::build_notification_lifetime {
+        }
         style {
             {
                 format!(
@@ -300,4 +291,16 @@ pub fn build_window() -> Element {
             }
         }
     }
+}
+
+/// Подключает Android-геометрию один раз на окно; на ПК системные панели учитывает WebKit.
+#[component]
+fn build_mobile_layout() -> Element {
+    #[cfg(target_os = "android")]
+    return rsx! {
+        super::shared::mobile_viewport::build_mobile_viewport {
+        }
+    };
+    #[cfg(not(target_os = "android"))]
+    rsx! {}
 }

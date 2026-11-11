@@ -3,6 +3,12 @@ use std::{env, fs, path::PathBuf};
 /// Встраивает runtime целевой платформы и лицензионные уведомления при сборке.
 fn main() {
     let target = env::var("TARGET").unwrap();
+    // NDK 27 и линкер DX по умолчанию могут оставить LOAD-сегменты с шагом 4 КиБ.
+    // Явно собираем Android-библиотеку для устройств со страницами 16 КиБ.
+    if target.contains("android") {
+        println!("cargo:rustc-link-arg=-Wl,-z,max-page-size=16384");
+        println!("cargo:rustc-link-arg=-Wl,-z,common-page-size=16384");
+    }
     let platform = match target.as_str() {
         "x86_64-unknown-linux-gnu" => "linux_x86_64",
         "aarch64-unknown-linux-gnu" => "linux_arm64",

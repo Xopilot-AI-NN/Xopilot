@@ -32,6 +32,83 @@ fn java_string(env: &mut JNIEnv<'_>, object: JObject<'_>) -> Result<Option<Strin
     }
     Ok(Some(env.get_string(&JString::from(object))?.into()))
 }
+
+#[derive(Clone, Copy, Default, PartialEq, serde::Serialize)]
+pub struct WindowInsets {
+    pub top: i32,
+    pub right: i32,
+    pub bottom: i32,
+    pub left: i32,
+}
+
+/// Читает реальные системные отступы окна; не подменяет их фиксированными dp.
+pub fn window_insets() -> Result<Option<WindowInsets>> {
+    with_context(|env, activity| {
+        let window = env
+            .call_method(&activity, "getWindow", "()Landroid/view/Window;", &[])?
+            .l()?;
+        let decor = env
+            .call_method(window, "getDecorView", "()Landroid/view/View;", &[])?
+            .l()?;
+        let insets = env
+            .call_method(
+                decor,
+                "getRootWindowInsets",
+                "()Landroid/view/WindowInsets;",
+                &[],
+            )?
+            .l()?;
+        if insets.is_null() {
+            return Ok(None);
+        }
+        let sdk = env
+            .get_static_field("android/os/Build$VERSION", "SDK_INT", "I")?
+            .i()?;
+        if sdk >= 30 {
+            let bars = env
+                .call_static_method("android/view/WindowInsets$Type", "systemBars", "()I", &[])?
+                .i()?;
+            let cutout = env
+                .call_static_method(
+                    "android/view/WindowInsets$Type",
+                    "displayCutout",
+                    "()I",
+                    &[],
+                )?
+                .i()?;
+            let edges = env
+                .call_method(
+                    insets,
+                    "getInsets",
+                    "(I)Landroid/graphics/Insets;",
+                    &[JValue::Int(bars | cutout)],
+                )?
+                .l()?;
+            Ok(Some(WindowInsets {
+                top: env.get_field(&edges, "top", "I")?.i()?,
+                right: env.get_field(&edges, "right", "I")?.i()?,
+                bottom: env.get_field(&edges, "bottom", "I")?.i()?,
+                left: env.get_field(&edges, "left", "I")?.i()?,
+            }))
+        } else {
+            // API 26–29: стабильные отступы исключают высоту клавиатуры.
+            Ok(Some(WindowInsets {
+                top: env
+                    .call_method(&insets, "getStableInsetTop", "()I", &[])?
+                    .i()?,
+                right: env
+                    .call_method(&insets, "getStableInsetRight", "()I", &[])?
+                    .i()?,
+                bottom: env
+                    .call_method(&insets, "getStableInsetBottom", "()I", &[])?
+                    .i()?,
+                left: env
+                    .call_method(&insets, "getStableInsetLeft", "()I", &[])?
+                    .i()?,
+            }))
+        }
+    })
+}
 /// Открывает проверенную ссылку системным Android Intent.
 pub fn open_url(url: &str) -> Result<()> {
     with_context(|env, activity| {
