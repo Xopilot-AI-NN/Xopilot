@@ -7,9 +7,11 @@ use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 use zeroize::Zeroizing;
 pub const KEY: &str = "cloud_account_v1";
+/// Определяет адрес сервиса для текущего запроса.
 pub fn endpoint() -> String {
     std::env::var("XOPILOT_ACCOUNT_ENDPOINT").unwrap_or_else(|_| "https://xopilot.by".into())
 }
+/// Разрешает HTTPS и локальный тестовый HTTP без credentials и лишнего пути.
 pub fn normalize_endpoint(value: &str) -> Result<String> {
     let url = reqwest::Url::parse(value.trim())?;
     ensure!(
@@ -29,6 +31,7 @@ pub fn normalize_endpoint(value: &str) -> Result<String> {
     );
     Ok(url.as_str().trim_end_matches('/').to_owned())
 }
+/// Читает сохранённую серверную сессию из SQLCipher.
 pub fn state(store: &Store) -> Result<Option<Value>> {
     let value: Value = store.read(KEY)?;
     Ok(value["access_token"]
@@ -36,9 +39,11 @@ pub fn state(store: &Store) -> Result<Option<Value>> {
         .filter(|s| !s.is_empty())
         .map(|_| value.clone()))
 }
+/// Забывает серверную сессию только на этом устройстве.
 pub fn forget(store: &Store) -> Result<()> {
     store.write(KEY, &Value::Null)
 }
+/// Принимает обычный email без привязки к конкретному почтовому провайдеру.
 pub fn validate_email(value: &str) -> Result<String> {
     let value = value.trim().to_ascii_lowercase();
     let parts = value.split('@').collect::<Vec<_>>();
@@ -57,6 +62,7 @@ pub fn validate_email(value: &str) -> Result<String> {
     );
     Ok(value)
 }
+/// Формирует ограниченное имя устройства для серверной сессии.
 fn device() -> String {
     std::env::var("HOSTNAME")
         .unwrap_or_else(|_| std::env::consts::OS.into())
@@ -85,6 +91,7 @@ async fn request(
     })
     .await
 }
+/// Выполняет ограниченный запрос без редиректов и с понятной ошибкой сервера.
 async fn request_inner(
     endpoint: &str,
     path: &str,
@@ -127,6 +134,7 @@ async fn request_inner(
     }
     Ok(value)
 }
+/// Переводит код ошибки аккаунта в сообщение без секретных данных.
 fn error_message(code: &str) -> &str {
     match code {
         "invalid_credentials" => "Неверный email или пароль",
@@ -141,6 +149,7 @@ fn error_message(code: &str) -> &str {
         _ => "Не удалось выполнить операцию аккаунта. Проверьте сервер и введённые данные",
     }
 }
+/// Проверяет профиль, сохраняет токены и отзывает отменённый вход.
 async fn persist_login(
     store: &Store,
     endpoint: &str,
@@ -184,6 +193,7 @@ async fn persist_login(
     object.insert("expires_at".into(), json!(super::canvases::now() + expires));
     store.write(KEY, &session)
 }
+/// Выполняет вход по email через прежний серверный контракт.
 pub async fn sign_in(
     store: Store,
     email: String,
@@ -198,6 +208,7 @@ pub async fn sign_in(
     let tokens=request(&endpoint,"/auth/login",Some(json!({"email":validate_email(&email)?,"password":password.as_str(),"device_name":device()})),None).await?;
     persist_login(&store, &endpoint, tokens, &cancelled).await
 }
+/// Создаёт серверную регистрацию с проверкой имени и совпадения паролей.
 pub async fn register(
     username: String,
     email: String,
@@ -216,6 +227,7 @@ pub async fn register(
     );
     request(&endpoint(),"/auth/register",Some(json!({"username":username.trim(),"email":validate_email(&email)?,"password":password.as_str(),"device_name":device()})),None).await
 }
+/// Подтверждает регистрацию шестизначным кодом из письма.
 pub async fn confirm(
     store: Store,
     registration: String,
@@ -246,6 +258,7 @@ pub struct GoogleFlow {
     proof: Zeroizing<String>,
     pub browser_url: String,
 }
+/// Создаёт временный proof входа и проверяет серверную ссылку браузера.
 pub async fn begin_google(store: &Store) -> Result<GoogleFlow> {
     ensure!(
         state(store)?.is_none(),
@@ -290,6 +303,7 @@ pub async fn begin_google(store: &Store) -> Result<GoogleFlow> {
         browser_url: url.into(),
     })
 }
+/// Ожидает завершения Google-входа и сохраняет только подтверждённую сессию.
 pub async fn poll_google(
     store: &Store,
     flow: &GoogleFlow,
@@ -311,6 +325,7 @@ pub async fn poll_google(
         _ => bail!("Вход Google отменён или истёк"),
     }
 }
+/// Отзывает незавершённый Google-flow, не сохраняя временный proof.
 pub async fn cancel_google(flow: &GoogleFlow) {
     let _ = request(
         &flow.endpoint,

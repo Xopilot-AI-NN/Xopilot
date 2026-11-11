@@ -7,6 +7,7 @@ use crate::{
     services,
 };
 use dioxus::prelude::*;
+/// Показывает изменения сборки и результат ручной проверки релиза.
 #[component]
 pub fn build_updates() -> Element {
     let state = use_context::<Signal<AppState>>();
@@ -14,14 +15,24 @@ pub fn build_updates() -> Element {
     let mut status = use_signal(String::new);
     let mut release = use_signal(|| None::<services::updates::Release>);
     rsx! {
-        div { class: "updates-page",
-            section { class: "update-installed",
-                span { class: "preference-icon tone-navigate",
-                    icons::build_icon { name: "system_update_outlined" }
+        div {
+            class: "updates-page",
+            section {
+                class: "update-installed",
+                span {
+                    class: "preference-icon tone-navigate",
+                    icons::build_icon {
+                        name: "system_update_outlined",
+                    }
                 }
-                div { class: "catalog-copy",
-                    strong { {concat!("Xopilot ", env!("CARGO_PKG_VERSION"))} }
-                    small { "Установлено · Rust / Dioxus" }
+                div {
+                    class: "catalog-copy",
+                    strong {
+                        {concat!("Xopilot ", env!("CARGO_PKG_VERSION"))}
+                    }
+                    small {
+                        "Установлено · Rust / Dioxus"
+                    }
                 }
                 button {
                     class: "button",
@@ -68,11 +79,18 @@ pub fn build_updates() -> Element {
                 }
             }
             if !status.read().is_empty() {
-                p { class: "notice", role: "status", "{status}" }
+                p {
+                    class: "notice",
+                    role: "status",
+                    "{status}"
+                }
             }
             if let Some(found) = release.read().as_ref() {
-                section { class: "release-notes",
-                    h2 { "{found.version}" }
+                section {
+                    class: "release-notes",
+                    h2 {
+                        "{found.version}"
+                    }
                     div {
                         class: "markdown",
                         dangerous_inner_html: crate::app::chat::messages::message::markdown_html(&found.notes),
@@ -87,7 +105,10 @@ pub fn build_updates() -> Element {
                     }
                 }
             }
-            h2 { class: "section-title", "Что нового в этой сборке" }
+            h2 {
+                class: "section-title",
+                "Что нового в этой сборке"
+            }
             for (icon, title, description) in [
                 (
                     "smart_toy_outlined",
@@ -111,15 +132,24 @@ pub fn build_updates() -> Element {
                 ),
             ]
             {
-                section { class: "update-change",
-                    icons::build_icon { name: icon }
+                section {
+                    class: "update-change",
+                    icons::build_icon {
+                        name: icon,
+                    }
                     div {
-                        strong { "{title}" }
-                        p { class: "notice", "{description}" }
+                        strong {
+                            "{title}"
+                        }
+                        p {
+                            class: "notice",
+                            "{description}"
+                        }
                     }
                 }
             }
-            p { class: "notice",
+            p {
+                class: "notice",
                 "Проверка обращается к GitHub. Установка выполняется вручную из опубликованного пакета; переписка не передаётся."
             }
         }

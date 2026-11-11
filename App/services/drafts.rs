@@ -13,10 +13,12 @@ pub struct Draft {
     pub files: Vec<(String, String)>,
 }
 
+/// Восстанавливает текст и пути вложений черновика выбранного чата.
 pub fn read_draft(db: &Database, chat_id: i64) -> Result<Draft> {
     read_json(db, &format!("draft:{chat_id}"))
 }
 
+/// Сохраняет черновик по ID чата, не затрагивая соседние разговоры.
 pub fn write_draft(db: &Database, chat_id: i64, draft: &Draft) -> Result<()> {
     write_json(db, &format!("draft:{chat_id}"), draft)
 }

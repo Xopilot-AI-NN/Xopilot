@@ -15,11 +15,13 @@ struct Command {
     response: tokio::sync::oneshot::Sender<serde_json::Value>,
 }
 
+/// Запускает отдельный проверочный стенд без обращения к личной истории.
 #[cfg(not(target_os = "linux"))]
 fn main() {
     eprintln!("Этот стенд проверяет Linux WebKitGTK. Запускайте его на Linux.");
 }
 
+/// Запускает отдельный проверочный стенд без обращения к личной истории.
 #[cfg(target_os = "linux")]
 fn main() {
     assert!(
@@ -66,6 +68,7 @@ fn main() {
         .launch(build_test_app);
 }
 
+/// Собирает изолированное состояние интерфейса для проверки.
 #[cfg(target_os = "linux")]
 fn build_test_app() -> Element {
     let rx = use_context::<
@@ -91,5 +94,9 @@ fn build_test_app() -> Element {
             }
         }
     });
-    rsx! { xopilot::app::main::build_app_ui {} }
+    rsx! {
+        xopilot::app::main::build_app_ui {
+
+        }
+    }
 }

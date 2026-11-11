@@ -3,6 +3,7 @@
 use anyhow::{Context, Result};
 use std::path::PathBuf;
 
+/// Определяет каталог устройства с учётом тестового переопределения пути.
 pub fn base_data_dir() -> Result<PathBuf> {
     if let Some(path) = std::env::var_os("XOPILOT_DATA_DIR") {
         return Ok(PathBuf::from(path));
@@ -15,24 +16,12 @@ pub fn base_data_dir() -> Result<PathBuf> {
         .join("Xopilot"))
 }
 
-static SESSION: std::sync::RwLock<Option<PathBuf>> = std::sync::RwLock::new(None);
+/// Все данные относятся к автоматически созданному профилю устройства.
 pub fn app_data_dir() -> Result<PathBuf> {
-    if let Some(path) = SESSION
-        .read()
-        .map_err(|_| anyhow::anyhow!("Ошибка локальной сессии"))?
-        .clone()
-    {
-        return Ok(path);
-    }
     base_data_dir()
 }
-pub fn set_session(root: Option<PathBuf>) -> Result<()> {
-    *SESSION
-        .write()
-        .map_err(|_| anyhow::anyhow!("Ошибка локальной сессии"))? = root;
-    Ok(())
-}
 
+/// Выбирает общий каталог весов вне зашифрованной истории.
 pub fn models_dir() -> Result<PathBuf> {
     match std::env::var_os("XOPILOT_MODELS_DIR") {
         Some(path) => Ok(PathBuf::from(path)),

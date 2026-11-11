@@ -3,6 +3,21 @@ use super::db::{Store, read_json, write_json};
 use anyhow::{Result, ensure};
 use serde_json::{Value, json};
 
+/// Создаёт постоянный профиль первого запуска, сохраняя прежнее имя, фото и память.
+pub fn ensure_local(store: &Store) -> Result<()> {
+    store.with(|db|{
+        let mut value:Value=read_json(db,"profile_v1")?;
+        if !value.is_object(){value=json!({"name":db.get_setting("profile_name")?.unwrap_or_else(||"Пользователь".into()),"avatar":""});}
+        if value["id"].as_str().is_none(){value["id"]=uuid::Uuid::new_v4().to_string().into();}
+        if value.get("created_at").is_none(){value["created_at"]=json!(super::canvases::now());}
+        write_json(db,"profile_v1",&value)?;
+        // Один раз заменяем прежний ручной выбор новой автоматической политикой.
+        if db.get_setting("compute_policy_v1")?.is_none(){db.set_setting("llm_backend","auto")?;db.set_setting("compute_policy_v1","1")?;}
+        Ok(())
+    })
+}
+
+/// Читает сохранённое значение без изменения неизвестных полей.
 pub fn read(store: &Store) -> Result<Value> {
     store.with(|db| {
         let value: Value = read_json(db, "profile_v1")?;
@@ -10,6 +25,7 @@ pub fn read(store: &Store) -> Result<Value> {
     })
 }
 
+/// Обновляет существующую запись с сохранением её идентичности.
 pub fn update(store: &Store, name: &str, memory: &str) -> Result<()> {
     ensure!(
         !name.trim().is_empty()
@@ -29,6 +45,7 @@ pub fn update(store: &Store, name: &str, memory: &str) -> Result<()> {
         write_json(db, "profile_v1", &value)
     })
 }
+/// Проверяет имя и обновляет его без изменения памяти пользователя.
 pub fn rename(store: &Store, name: &str) -> Result<()> {
     ensure!(
         !name.trim().is_empty()
@@ -46,6 +63,7 @@ pub fn rename(store: &Store, name: &str) -> Result<()> {
         write_json(db, "profile_v1", &value)
     })
 }
+/// Ограничивает декодирование изображения, обрезает до 256×256 и сохраняет в SQLCipher.
 pub fn avatar(store: &Store, bytes: &[u8]) -> Result<String> {
     use base64::Engine as _;
     ensure!(bytes.len() <= 8 * 1024 * 1024, "Изображение больше 8 МиБ");
@@ -64,6 +82,7 @@ pub fn avatar(store: &Store, bytes: &[u8]) -> Result<String> {
     store.with(|db|{let mut value=read_json::<Value>(db,"profile_v1")?;if !value.is_object(){value=json!({"name":db.get_setting("profile_name")?.unwrap_or_else(||"Пользователь".into())});}value["avatar"]=encoded.clone().into();write_json(db,"profile_v1",&value)})?;
     Ok(encoded)
 }
+/// Читает выбранное изображение с ограничением 8 МиБ и передаёт нормализатору.
 pub fn avatar_file(store: &Store, path: &std::path::Path) -> Result<String> {
     use std::io::Read;
     let mut bytes = Vec::new();
@@ -73,6 +92,7 @@ pub fn avatar_file(store: &Store, path: &std::path::Path) -> Result<String> {
     avatar(store, &bytes)
 }
 
+/// Собирает язык ответа, имя и память пользователя для системного контекста.
 pub fn instructions(store: &Store) -> Result<String> {
     let profile = read(store)?;
     store.with(|db| {

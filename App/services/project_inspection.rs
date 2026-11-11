@@ -39,6 +39,7 @@ pub fn resolve(root: &Path, relative: &str) -> Result<PathBuf> {
     Ok(full)
 }
 
+/// Читает ограниченный текстовый файл внутри выбранного проекта.
 pub fn read_text(root: &Path, relative: &str) -> Result<String> {
     let path = resolve(root, relative)?;
     ensure!(path.metadata()?.len() <= MAX_FILE, "Файл больше 1 МиБ");
@@ -60,6 +61,7 @@ pub struct SearchHit {
     pub text: String,
 }
 
+/// Обходит доступные файлы проекта, исключая служебные и скрытые каталоги.
 pub fn list_files(root: &Path) -> Result<Vec<String>> {
     let root = root.canonicalize()?;
     let mut result = Vec::new();
@@ -104,6 +106,7 @@ pub fn list_files(root: &Path) -> Result<Vec<String>> {
     Ok(result)
 }
 
+/// Ищет текст в разрешённых файлах выбранного проекта.
 pub fn search(root: &Path, query: &str) -> Result<Vec<SearchHit>> {
     ensure!(!query.is_empty(), "Введите текст для поиска");
     let query = query.to_lowercase();
@@ -128,6 +131,7 @@ pub fn search(root: &Path, query: &str) -> Result<Vec<SearchHit>> {
     Ok(hits)
 }
 
+/// Получает состояние Git выбранного проекта без изменения файлов.
 pub async fn git(root: &Path, diff: bool) -> Result<String> {
     let mut command = tokio::process::Command::new("git");
     command
@@ -162,6 +166,7 @@ pub async fn git(root: &Path, diff: bool) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// Проверяет запрет выхода за папку проекта и чтения скрытых секретов.
     #[test]
     fn cannot_read_parent_or_hidden_secret() {
         let dir = tempfile::tempdir().unwrap();
@@ -169,6 +174,7 @@ mod tests {
         assert!(resolve(dir.path(), ".env").is_err());
         assert!(resolve(dir.path(), "../.env").is_err());
     }
+    /// Проверяет защиту от выхода через символическую ссылку.
     #[cfg(unix)]
     #[test]
     fn cannot_escape_through_symlink() {

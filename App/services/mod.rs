@@ -1,6 +1,8 @@
 // Описание: Прикладные сервисы, независимо от интерфейса Dioxus.
 pub mod account_deletion;
 pub mod agent;
+pub mod agent_protocol;
+pub mod agent_session;
 #[cfg(any(target_os = "android", test))]
 #[cfg_attr(test, allow(dead_code))]
 pub mod android;
@@ -9,21 +11,24 @@ pub mod attachments;
 pub mod canvases;
 pub mod chat_store;
 pub mod cloud_account;
+pub mod compute;
 pub mod db;
 pub mod drafts;
 pub mod exports;
 pub mod generation;
 pub mod litert;
-pub mod local_accounts;
 pub mod message_navigation;
 pub mod mobile_documents;
+pub mod model_import;
 pub mod model_installer;
 pub mod paths;
 pub mod platform_links;
 pub mod profile;
+pub mod profiles;
 pub mod project_inspection;
 pub mod project_tools;
 pub mod prompt_templates;
 pub mod runtime;
+pub mod task_history;
 pub mod updates;
 pub mod workspaces;

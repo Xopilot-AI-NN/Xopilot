@@ -9,6 +9,7 @@ use tokio_util::sync::CancellationToken;
 use xopilot::services::{
     agent, api_chat::ApiConfig, db::Store, generation::Configuration, workspaces::Workspace,
 };
+/// Запускает настоящий цикл агента с разрешением или отказом записи.
 async fn scenario(allow: bool) -> Result<()> {
     let project = tempfile::tempdir()?;
     std::fs::write(project.path().join("example.txt"), "old")?;
@@ -138,14 +139,17 @@ async fn scenario(allow: bool) -> Result<()> {
     server.await??;
     Ok(())
 }
+/// Проверяет, что запись начинается только после подтверждения пользователя.
 #[tokio::test]
 async fn agent_waits_for_approval_before_writing() {
     scenario(true).await.unwrap();
 }
+/// Проверяет сохранность файла после отказа инструменту.
 #[tokio::test]
 async fn rejected_action_does_not_modify_the_file() {
     scenario(false).await.unwrap();
 }
+/// Проверяет отмену команды и дочерних процессов до общего таймаута.
 #[tokio::test]
 async fn command_is_cancelled_without_waiting_for_timeout() {
     let root = tempfile::tempdir().unwrap();
@@ -181,6 +185,7 @@ async fn command_is_cancelled_without_waiting_for_timeout() {
     );
 }
 
+/// Проверяет выход из повторных чтений к итогу без инструментов.
 #[tokio::test]
 async fn repeated_read_switches_to_summary_without_an_endless_tool_loop() {
     let root = tempfile::tempdir().unwrap();

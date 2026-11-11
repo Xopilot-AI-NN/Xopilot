@@ -21,6 +21,7 @@ pub struct Document {
     pub extra: BTreeMap<String, serde_json::Value>,
 }
 
+/// Возвращает текущее время для метаданных записей.
 pub fn now() -> f64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -28,10 +29,12 @@ pub fn now() -> f64 {
         .as_secs_f64()
 }
 
+/// Восстанавливает документы Canvas, включая неизвестные поля прежних версий.
 pub fn list_documents(store: &Store) -> Result<Vec<Document>> {
     store.read(KEY)
 }
 
+/// Проверяет и сохраняет документ Canvas с постоянным ID.
 pub fn save_document(store: &Store, mut document: Document) -> Result<Document> {
     ensure!(!document.title.trim().is_empty(), "Введите название Canvas");
     ensure!(
@@ -51,6 +54,7 @@ pub fn save_document(store: &Store, mut document: Document) -> Result<Document> 
     })
 }
 
+/// Удаляет документ по ID после решения пользователя в интерфейсе.
 pub fn delete_document(store: &Store, id: &str) -> Result<()> {
     store.with(|db| {
         let mut docs: Vec<Document> = read_json(db, KEY)?;

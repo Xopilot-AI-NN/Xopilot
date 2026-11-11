@@ -4,6 +4,7 @@ use dioxus::prelude::*;
 
 pub const FONT: Asset = asset!("/assets/fonts/material/MaterialIcons-Regular.otf");
 
+/// Сопоставляет имени иконки символ локального Material-шрифта.
 pub fn glyph(name: &str) -> &'static str {
     match name {
         "add" => "\u{e047}",
@@ -72,7 +73,14 @@ pub fn glyph(name: &str) -> &'static str {
     }
 }
 
+/// Отрисовывает символ локального шрифта без загрузки из сети.
 #[component]
 pub fn build_icon(name: String) -> Element {
-    rsx! { span { class: "material-icons", "aria-hidden": "true", {glyph(&name)} } }
+    rsx! {
+        span {
+            class: "material-icons",
+            "aria-hidden": "true",
+            {glyph(&name)}
+        }
+    }
 }

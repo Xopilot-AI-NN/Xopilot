@@ -6,9 +6,10 @@ use serde::{Serialize, de::DeserializeOwned};
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone)]
-pub struct Store(Arc<Mutex<Database>>, Option<Arc<std::fs::File>>);
+pub struct Store(Arc<Mutex<Database>>);
 
 impl Store {
+    /// Открывает прежнюю SQLCipher с совместимым ключом ОС или Android Keystore.
     pub fn open() -> Result<Self> {
         let root = super::paths::base_data_dir()?;
         super::account_deletion::perform_pending_erasure(&root)?;
@@ -25,18 +26,16 @@ impl Store {
         Ok(Self::new(db))
     }
 
+    /// Создаёт владельца ресурса с исходным состоянием.
     pub fn new(db: Database) -> Self {
-        Self(Arc::new(Mutex::new(db)), None)
+        Self(Arc::new(Mutex::new(db)))
     }
-    pub fn with_lease(mut self, lease: std::fs::File) -> Self {
-        self.1 = Some(Arc::new(lease));
-        self
-    }
-    pub fn retain_lease(mut self, original: &Store) -> Self {
-        self.1 = original.1.clone();
-        self
+    /// Сверяет владельца базы без использования SQL ID, которые повторяются в разных профилях.
+    pub fn same_database(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
     }
 
+    /// Сериализует доступ к базе в пределах одной короткой операции.
     pub fn with<T>(&self, call: impl FnOnce(&Database) -> Result<T>) -> Result<T> {
         let db = self
             .0
@@ -45,6 +44,7 @@ impl Store {
         call(&db)
     }
 
+    /// Переносит блокирующую работу с базой в worker Tokio.
     pub async fn run<T: Send + 'static>(
         &self,
         call: impl FnOnce(&Database) -> Result<T> + Send + 'static,
@@ -53,15 +53,18 @@ impl Store {
         tokio::task::spawn_blocking(move || store.with(call)).await?
     }
 
+    /// Читает сохранённое значение без изменения неизвестных полей.
     pub fn read<T: DeserializeOwned + Default>(&self, key: &str) -> Result<T> {
         self.with(|db| read_json(db, key))
     }
 
+    /// Записывает значение через общее хранилище.
     pub fn write<T: Serialize>(&self, key: &str, value: &T) -> Result<()> {
         self.with(|db| write_json(db, key, value))
     }
 }
 
+/// Читает JSON-настройку, используя значение по умолчанию при её отсутствии.
 pub fn read_json<T: DeserializeOwned + Default>(db: &Database, key: &str) -> Result<T> {
     match db.get_setting(key)? {
         Some(raw) => serde_json::from_str(&raw)
@@ -70,6 +73,7 @@ pub fn read_json<T: DeserializeOwned + Default>(db: &Database, key: &str) -> Res
     }
 }
 
+/// Сериализует значение и сохраняет его под прежним ключом настройки.
 pub fn write_json<T: Serialize>(db: &Database, key: &str, value: &T) -> Result<()> {
     db.set_setting(key, &serde_json::to_string(value)?)?;
     Ok(())

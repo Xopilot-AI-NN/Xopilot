@@ -1,3 +1,4 @@
+// Описание: Объявления модулей tests в общей структуре приложения.
 use advanced_xopilot::db::Database;
 use serde_json::json;
 use xopilot::services::{
@@ -10,10 +11,12 @@ use xopilot::services::{
     workspaces::{self, Workspace},
 };
 
+/// Создаёт или получает хранилище данных текущего контекста.
 fn store() -> Store {
     Store::new(Database::open(":memory:", &"a".repeat(64)).unwrap())
 }
 
+/// Проверяет восстановление нужного чата и его черновика.
 #[test]
 fn chat_and_draft_keep_their_identity_after_reloading() {
     let store = store();
@@ -41,6 +44,7 @@ fn chat_and_draft_keep_their_identity_after_reloading() {
     assert_eq!(restored.draft, draft);
 }
 
+/// Проверяет сохранность неизвестных полей профиля, Canvas и проекта.
 #[test]
 fn migration_preserves_unported_profile_canvas_and_workspace_fields() {
     let store = store();
@@ -70,6 +74,7 @@ fn migration_preserves_unported_profile_canvas_and_workspace_fields() {
     assert_eq!(after["items"][0]["sync_pending_chat_uuids"][0], "uuid");
 }
 
+/// Проверяет, что удаление проекта не удаляет переписку.
 #[test]
 fn deleting_a_workspace_keeps_its_chats() {
     let store = store();
@@ -94,6 +99,7 @@ fn deleting_a_workspace_keeps_its_chats() {
     );
 }
 
+/// Проверяет сохранение шаблонов и документов через SQLCipher.
 #[test]
 fn templates_and_canvas_survive_the_real_store() {
     let store = store();
@@ -119,6 +125,7 @@ fn templates_and_canvas_survive_the_real_store() {
     );
 }
 
+/// Читает полный HTTP-запрос локального тестового сервера.
 async fn read_request(stream: &mut tokio::net::TcpStream) -> serde_json::Value {
     use tokio::io::AsyncReadExt;
     let mut bytes = Vec::new();
@@ -144,6 +151,7 @@ async fn read_request(stream: &mut tokio::net::TcpStream) -> serde_json::Value {
     serde_json::from_slice(&bytes[header_end..]).unwrap()
 }
 
+/// Проверяет потоковые фрагменты и фактически отправленную модель API.
 #[tokio::test]
 async fn real_http_stream_emits_deltas_and_sends_configured_model() {
     use tokio::io::AsyncWriteExt;
@@ -185,6 +193,7 @@ async fn real_http_stream_emits_deltas_and_sends_configured_model() {
     server.await.unwrap();
 }
 
+/// Проверяет отмену ожидания сетевых заголовков.
 #[tokio::test]
 async fn cancellation_interrupts_waiting_response_headers() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -224,6 +233,7 @@ async fn cancellation_interrupts_waiting_response_headers() {
     server.abort();
 }
 
+/// Запрещает неявную отправку локального чата сохранённому внешнему API.
 #[test]
 fn migration_never_sends_a_local_chat_to_a_saved_remote_api_implicitly() {
     let store = store();
@@ -257,6 +267,7 @@ thread_local! {
     static UI_STATE: std::cell::RefCell<Option<dioxus::prelude::Signal<xopilot::app::state::AppState>>> = const { std::cell::RefCell::new(None) };
 }
 
+/// Собирает тестовое состояние отправки сообщения.
 fn action_fixture() -> dioxus::prelude::Element {
     use dioxus::prelude::*;
     let _state = use_context_provider(|| {
@@ -273,9 +284,14 @@ fn action_fixture() -> dioxus::prelude::Element {
         UI_STATE.with(|cell| *cell.borrow_mut() = Some(state));
         state
     });
-    rsx! { div {} }
+    rsx! {
+        div {
+
+        }
+    }
 }
 
+/// Проверяет сохранение вопроса и ответа, времени и очистку черновика.
 #[tokio::test(flavor = "current_thread")]
 async fn send_action_saves_real_user_and_assistant_messages_and_clears_draft() {
     use dioxus::prelude::*;
@@ -339,6 +355,7 @@ async fn send_action_saves_real_user_and_assistant_messages_and_clears_draft() {
     UI_STORE.with(|cell| *cell.borrow_mut() = None);
 }
 
+/// Проверяет возврат из вложенного окна без потери черновика.
 #[test]
 fn nested_dialogs_return_to_the_same_settings_section_and_keep_draft() {
     use dioxus::prelude::*;
@@ -366,6 +383,7 @@ fn nested_dialogs_return_to_the_same_settings_section_and_keep_draft() {
     UI_STORE.with(|cell| *cell.borrow_mut() = None);
 }
 
+/// Проверяет защиту изменённой формы при переходе назад.
 #[test]
 fn unsaved_settings_require_a_decision_before_returning_to_the_list() {
     use dioxus::prelude::*;
@@ -387,6 +405,7 @@ fn unsaved_settings_require_a_decision_before_returning_to_the_list() {
     UI_STORE.with(|cell| *cell.borrow_mut() = None);
 }
 
+/// Проверяет совместимость ID закладок и их привязку к чату.
 #[test]
 fn bookmarks_keep_legacy_identifiers_and_are_scoped_to_their_chat() {
     use xopilot::services::message_navigation;
@@ -416,6 +435,7 @@ fn bookmarks_keep_legacy_identifiers_and_are_scoped_to_their_chat() {
     assert!(!message_navigation::toggle(&store, first, message).unwrap());
 }
 
+/// Проверяет изменение имени и аватара без потери инструкций и памяти.
 #[test]
 fn profile_avatar_and_name_preserve_memory_and_unknown_fields() {
     use base64::Engine as _;

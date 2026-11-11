@@ -3,6 +3,7 @@ use advanced_xopilot::db::StoredMessage;
 use anyhow::Result;
 use std::path::PathBuf;
 
+/// Формирует переносимую Markdown-переписку с ролями и вложениями.
 pub fn markdown(title: &str, messages: &[StoredMessage]) -> String {
     let mut out = format!("# {title}\n\n");
     for message in messages {
@@ -20,9 +21,11 @@ pub fn markdown(title: &str, messages: &[StoredMessage]) -> String {
     out
 }
 
+/// Сохраняет экспорт в каталоге текущего профиля.
 pub fn save_markdown(title: &str, messages: &[StoredMessage]) -> Result<PathBuf> {
     save_markdown_at(&super::paths::app_data_dir()?, title, messages)
 }
+/// Пишет экспорт в заранее выбранный каталог, не следуя смене профиля.
 pub fn save_markdown_at(
     root: &std::path::Path,
     title: &str,

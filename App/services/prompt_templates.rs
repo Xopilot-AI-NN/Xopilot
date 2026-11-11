@@ -13,10 +13,12 @@ pub struct Template {
     pub updated: f64,
 }
 
+/// Восстанавливает список пользовательских шаблонов.
 pub fn list_templates(store: &Store) -> Result<Vec<Template>> {
     store.read(KEY)
 }
 
+/// Проверяет и сохраняет новую запись в хранилище.
 pub fn save(store: &Store, title: &str, body: &str) -> Result<()> {
     ensure!(
         !title.trim().is_empty() && title.chars().count() <= 80,
@@ -38,6 +40,7 @@ pub fn save(store: &Store, title: &str, body: &str) -> Result<()> {
     })
 }
 
+/// Удаляет только выбранную запись, сохраняя остальные данные.
 pub fn delete(store: &Store, id: &str) -> Result<()> {
     store.with(|db| {
         let mut items: Vec<Template> = read_json(db, KEY)?;
@@ -46,6 +49,7 @@ pub fn delete(store: &Store, id: &str) -> Result<()> {
     })
 }
 
+/// Обновляет существующую запись с сохранением её идентичности.
 pub fn update(store: &Store, id: &str, title: &str, body: &str) -> Result<()> {
     ensure!(
         !title.trim().is_empty() && title.chars().count() <= 80,

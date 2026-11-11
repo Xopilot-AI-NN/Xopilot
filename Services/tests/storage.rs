@@ -1,6 +1,7 @@
 // Проверки совместимости SQLCipher при переходе с нативного расширения на библиотеку.
 use advanced_xopilot::db::Database;
 
+/// Проверяет повторное открытие зашифрованной истории со связанными полями.
 #[test]
 fn encrypted_history_reopens_with_attachments_quotes_and_duration() {
     let dir = tempfile::tempdir().unwrap();
@@ -42,6 +43,7 @@ fn encrypted_history_reopens_with_attachments_quotes_and_duration() {
     );
 }
 
+/// Проверяет каскадное удаление сообщений и вложений вместе с чатом.
 #[test]
 fn deleting_chat_cascades_messages_and_attachments() {
     let db = Database::open(":memory:", &"a".repeat(64)).unwrap();
@@ -61,6 +63,7 @@ fn deleting_chat_cascades_messages_and_attachments() {
     assert_eq!(db.total_message_count().unwrap(), 0);
 }
 
+/// Проверяет сохранность более новой схемы и неизвестных настроек.
 #[test]
 fn newer_schema_and_unknown_settings_are_not_downgraded() {
     let dir = tempfile::tempdir().unwrap();

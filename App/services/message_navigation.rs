@@ -6,10 +6,12 @@ use std::collections::{BTreeMap, HashSet};
 
 pub const KEY: &str = "message_bookmarks_v1";
 
+/// Читает множество сохранённых ID закладок.
 pub fn marked(store: &Store, chat: i64) -> Result<HashSet<i64>> {
     store.with(|db| marked_in(db, chat))
 }
 
+/// Оставляет закладки, относящиеся к выбранному чату.
 pub fn marked_in(db: &advanced_xopilot::db::Database, chat: i64) -> Result<HashSet<i64>> {
     let marks: BTreeMap<String, Value> = read_json(db, KEY)?;
     Ok(marks
@@ -19,6 +21,7 @@ pub fn marked_in(db: &advanced_xopilot::db::Database, chat: i64) -> Result<HashS
         .collect())
 }
 
+/// Меняет отметку выбранного сообщения, сохраняя остальные закладки.
 pub fn toggle(store: &Store, chat: i64, message: i64) -> Result<bool> {
     store.with(|db| {
         ensure!(

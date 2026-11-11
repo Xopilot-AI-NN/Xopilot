@@ -1,13 +1,23 @@
 // Описание: Общая строка состояния задачи и сохранённый журнал действий агента.
 use crate::app::state::AppState;
 use dioxus::prelude::*;
+/// Показывает реальный этап агента и управление паузой над вводом.
 #[component]
 pub fn build_task_messages() -> Element {
     let mut state = use_context::<Signal<AppState>>();
     rsx! {
         if state.read().busy && state.read().agent.enabled {
-            div { class: "row agent-status", role: "status",
-                span { class: "notice", "{state.read().agent_progress}" }
+            div {
+                class: "activity-item agent-status",
+                role: "status",
+                crate::app::shared::progress::build_progress_bar {
+                    value: None,
+                    label: "Работа агента",
+                }
+                span {
+                    class: "notice",
+                    "{state.read().agent_progress}"
+                }
                 if let Some(control) = state.read().agent_control.clone() {
                     button {
                         class: "button",
@@ -28,12 +38,6 @@ pub fn build_task_messages() -> Element {
                         }
                     }
                 }
-            }
-        }
-        if !state.read().agent_log.is_empty() {
-            details { class: "agent-trace",
-                summary { "Действия агента · {state.read().agent_log.len()}" }
-                pre { {state.read().agent_log.join("\n\n")} }
             }
         }
     }

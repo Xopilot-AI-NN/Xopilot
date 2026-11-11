@@ -5,6 +5,7 @@ use crate::app::{
 };
 use dioxus::prelude::*;
 
+/// Ищет вложения текущего профиля по названиям.
 #[component]
 pub fn build_materials() -> Element {
     let state = use_context::<Signal<AppState>>();
@@ -35,27 +36,40 @@ pub fn build_materials() -> Element {
     });
     let needle = query.read().to_lowercase();
     rsx! {
-        label { class: "outlined-search",
-            icons::build_icon { name: "search" }
+        label {
+            class: "outlined-search",
+            icons::build_icon {
+                name: "search",
+            }
             input {
                 placeholder: "Поиск материалов",
                 value: "{query}",
                 oninput: move |e| query.set(e.value()),
             }
         }
-        div { class: "catalog-list",
+        div {
+            class: "catalog-list",
             for (name, path) in materials.read().iter().filter(|(name, _)| name.to_lowercase().contains(&needle)) {
-                div { class: "catalog-row",
-                    icons::build_icon { name: "description" }
-                    span { class: "catalog-copy",
-                        strong { "{name}" }
-                        small { "{path}" }
+                div {
+                    class: "catalog-row",
+                    icons::build_icon {
+                        name: "description",
+                    }
+                    span {
+                        class: "catalog-copy",
+                        strong {
+                            "{name}"
+                        }
+                        small {
+                            "{path}"
+                        }
                     }
                 }
             }
         }
         if materials.read().is_empty() {
-            p { class: "notice dialog-empty",
+            p {
+                class: "notice dialog-empty",
                 "Здесь появятся ваши материалы. Прикрепите файл к сообщению."
             }
         }

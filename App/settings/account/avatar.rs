@@ -7,6 +7,7 @@ use crate::{
     services,
 };
 use dioxus::prelude::*;
+/// Открывает системный выбор изображения и сохраняет нормализованный аватар.
 #[component]
 pub fn build_avatar(value: String, onchange: EventHandler<String>) -> Element {
     let mut state = use_context::<Signal<AppState>>();
@@ -83,8 +84,11 @@ pub fn build_avatar(value: String, onchange: EventHandler<String>) -> Element {
             title: "Изменить аватар",
             "aria-label": "Изменить аватар",
             if value.is_empty() {
-                span { class: "profile-avatar",
-                    icons::build_icon { name: "person" }
+                span {
+                    class: "profile-avatar",
+                    icons::build_icon {
+                        name: "person",
+                    }
                 }
             } else {
                 img {
@@ -93,8 +97,11 @@ pub fn build_avatar(value: String, onchange: EventHandler<String>) -> Element {
                     alt: "Аватар пользователя",
                 }
             }
-            span { class: "avatar-edit",
-                icons::build_icon { name: if *working.read() { "hourglass_empty" } else { "edit" } }
+            span {
+                class: "avatar-edit",
+                icons::build_icon {
+                    name: if *working.read() { "hourglass_empty" } else { "edit" },
+                }
             }
             input {
                 id: "profile-avatar-file",

@@ -45,7 +45,9 @@ pub struct AppState {
     pub agent: services::agent::Settings,
     pub agent_control: Option<services::agent::Control>,
     pub agent_progress: String,
-    pub agent_log: Vec<String>,
+    pub action_history: std::collections::HashMap<i64, Vec<services::task_history::Action>>,
+    pub task_completion: Option<(String, bool)>,
+    pub dismissed_downloads: std::collections::HashSet<String>,
     pub approval: Option<services::agent::Approval>,
     pub busy: bool,
     pub uploading: bool,
@@ -63,6 +65,7 @@ pub struct AppState {
 }
 
 impl AppState {
+    /// Применяет снимок текущего чата к сигналам окна.
     pub fn apply(&mut self, snapshot: Snapshot) {
         self.chats = snapshot.chats;
         self.active = Some(snapshot.active);
@@ -74,12 +77,14 @@ impl AppState {
     }
 }
 
+/// Передаёт ошибку действия в общий блок уведомлений над вводом.
 pub fn report(mut state: Signal<AppState>, result: Result<()>) {
     if let Err(error) = result {
         state.write().error = Some(format!("{error:#}"));
     }
 }
 
+/// Создаёт или получает хранилище данных текущего контекста.
 pub fn store(state: Signal<AppState>) -> Result<Store> {
     state
         .read()
@@ -88,6 +93,7 @@ pub fn store(state: Signal<AppState>) -> Result<Store> {
         .context("Хранилище ещё не открыто")
 }
 
+/// Открывает раздел с учётом несохранённой формы и истории возврата.
 pub fn navigate(mut state: Signal<AppState>, screen: Screen) {
     let mut value = state.write();
     if value.uploading {
@@ -111,6 +117,7 @@ pub fn navigate(mut state: Signal<AppState>, screen: Screen) {
     }
 }
 
+/// Возвращается к предыдущему окну, не теряя изменённую форму.
 pub fn dismiss(mut state: Signal<AppState>) {
     let mut value = state.write();
     let target = value.dialog_history.last().copied().unwrap_or(Screen::Chat);
@@ -121,6 +128,7 @@ pub fn dismiss(mut state: Signal<AppState>) {
     }
 }
 
+/// Подтверждает отложенный переход и снимает признак несохранённых изменений.
 pub fn discard_pending(mut state: Signal<AppState>) {
     let mut value = state.write();
     if let Some(section) = value.pending_section.take() {
@@ -150,23 +158,27 @@ pub fn select_settings_section(mut state: Signal<AppState>, section: Option<usiz
     }
 }
 
+/// Открывает защищённую базу и восстанавливает профиль, чат и настройки.
 pub async fn initialize(mut state: Signal<AppState>) {
     let result = services::runtime::background(async move {
         tokio::task::spawn_blocking(|| -> Result<_> {
             let store = Store::open()?;
+            services::profile::ensure_local(&store)?;
             let snapshot = store.with(|db| services::chat_store::load(db, None))?;
             let model = services::generation::label(&store);
             let agent = services::agent::settings(&store, snapshot.active)?;
-            Ok((store, snapshot, model, agent))
+            let actions = services::task_history::load(&store, &snapshot.messages)?;
+            Ok((store, snapshot, model, agent, actions))
         })
         .await?
     })
     .await;
     match result {
-        Ok((store, snapshot, model, agent)) => {
+        Ok((store, snapshot, model, agent, actions)) => {
             let mut value = state.write();
             value.store = Some(store);
             value.agent = agent;
+            value.action_history = actions;
             value.apply(snapshot);
             value.error = None;
             match model {
@@ -186,72 +198,30 @@ pub async fn initialize(mut state: Signal<AppState>) {
     }
 }
 
-/// Смена аккаунта пересоздаёт UI, чтобы одинаковые SQL ID разных баз не разделяли состояние.
-pub async fn activate_session(
-    mut state: Signal<AppState>,
-    session: services::local_accounts::Session,
-) -> Result<()> {
-    ensure_session_change(state)?;
-    let store = session.store.clone();
-    let (snapshot, model, agent) = services::runtime::blocking(move || {
-        services::litert::unload()?;
-        let snapshot = store.with(|db| services::chat_store::load(db, None))?;
-        let model = services::generation::label(&store)?;
-        let agent = services::agent::settings(&store, snapshot.active)?;
-        Ok((snapshot, model, agent))
-    })
-    .await?;
-    services::paths::set_session(session.root)?;
-    let revision = state.peek().session_revision + 1;
-    let mut next = AppState {
-        store: Some(session.store),
-        ready: true,
-        session_revision: revision,
-        model: model.0,
-        model_local: model.1,
-        agent,
-        ..Default::default()
-    };
-    next.apply(snapshot);
-    *state.write() = next;
-    Ok(())
-}
-pub fn ensure_session_change(state: Signal<AppState>) -> Result<()> {
-    let value = state.read();
-    anyhow::ensure!(
-        !value.busy && !value.uploading,
-        "Дождитесь завершения текущей операции"
-    );
-    anyhow::ensure!(
-        !value.unsaved,
-        "Сохраните изменения профиля перед сменой аккаунта"
-    );
-    Ok(())
-}
-
+/// Обновляет сообщения и действия текущего чата, сохраняя набираемый черновик.
 pub async fn refresh(mut state: Signal<AppState>, requested: Option<i64>) -> Result<()> {
     let store = store(state)?;
     let snapshot = services::runtime::background(async move {
         let snapshot = services::chat_store::snapshot(&store, requested).await?;
         let agent = services::agent::settings(&store, snapshot.active)?;
-        Ok::<_, anyhow::Error>((snapshot, agent))
+        let actions = services::task_history::load(&store, &snapshot.messages)?;
+        Ok::<_, anyhow::Error>((snapshot, agent, actions))
     })
     .await?;
-    let (snapshot, agent) = snapshot;
+    let (snapshot, agent, actions) = snapshot;
     let mut value = state.write();
     // Обновление заголовка/истории не должно затирать ещё набираемый текст.
     let draft = (value.active == Some(snapshot.active)).then(|| value.draft.clone());
-    if value.active != Some(snapshot.active) {
-        value.agent_log.clear();
-    }
     value.apply(snapshot);
     value.agent = agent;
+    value.action_history = actions;
     if let Some(draft) = draft {
         value.draft = draft;
     }
     Ok(())
 }
 
+/// Сохраняет текст и вложения перед переключением чата.
 pub async fn persist_draft(state: Signal<AppState>) -> Result<()> {
     let store = store(state)?;
     let (active, draft) = {
@@ -269,6 +239,7 @@ pub async fn persist_draft(state: Signal<AppState>) -> Result<()> {
     Ok(())
 }
 
+/// Переключает чат после проверки занятости и сбрасывает контекст модели.
 pub async fn switch_chat(mut state: Signal<AppState>, id: i64) -> Result<()> {
     anyhow::ensure!(!state.read().uploading, "Дождитесь чтения вложений");
     anyhow::ensure!(
@@ -288,6 +259,7 @@ pub async fn switch_chat(mut state: Signal<AppState>, id: i64) -> Result<()> {
     Ok(())
 }
 
+/// Создаёт пустой чат, предварительно сохранив предыдущий черновик.
 pub async fn new_chat(mut state: Signal<AppState>) -> Result<()> {
     anyhow::ensure!(!state.read().uploading, "Дождитесь чтения вложений");
     anyhow::ensure!(
@@ -311,6 +283,7 @@ pub async fn new_chat(mut state: Signal<AppState>) -> Result<()> {
     Ok(())
 }
 
+/// Удаляет выбранный чат и обновляет доступную историю.
 pub async fn delete_chat(state: Signal<AppState>, id: i64) -> Result<()> {
     anyhow::ensure!(!state.read().uploading, "Дождитесь чтения вложений");
     if state.read().busy {
@@ -330,6 +303,7 @@ pub async fn delete_chat(state: Signal<AppState>, id: i64) -> Result<()> {
     refresh(state, None).await
 }
 
+/// Сохраняет запрос, принимает поток ответа и результаты инструментов, затем обновляет историю.
 pub async fn send(mut state: Signal<AppState>) -> Result<()> {
     anyhow::ensure!(!state.read().uploading, "Дождитесь чтения вложений");
     if state.read().busy {
@@ -351,7 +325,7 @@ pub async fn send(mut state: Signal<AppState>) -> Result<()> {
         value.streaming.clear();
         value.cancelled = Some(token.clone());
         value.error = None;
-        value.agent_log.clear();
+        value.task_completion = None;
     }
     let started = std::time::Instant::now();
     let worker_store = store.clone();
@@ -368,7 +342,8 @@ pub async fn send(mut state: Signal<AppState>) -> Result<()> {
                 workspace.instructions
             );
             let history = worker_store.with(|db| {
-                db.add_message_full(id, "user", &draft.text, None, None, &draft.files, None)?;
+                let request_id =
+                    db.add_message_full(id, "user", &draft.text, None, None, &draft.files, None)?;
                 let history = db.get_messages(id)?;
                 if history.len() == 1 {
                     let title = if draft.text.trim().is_empty() {
@@ -383,42 +358,94 @@ pub async fn send(mut state: Signal<AppState>) -> Result<()> {
                     db.rename_chat(id, &title.chars().take(50).collect::<String>())?;
                 }
                 services::drafts::write_draft(db, id, &Draft::default())?;
-                Ok(history)
+                Ok((history, request_id))
             })?;
             // PDF и изображения читаются без удержания блокировки хранилища.
-            let messages = services::api_chat::build_messages(&history, &instructions);
-            Ok((config, messages, workspace))
+            let messages = services::api_chat::build_messages(&history.0, &instructions);
+            Ok((config, messages, workspace, history.1))
         })
         .await?
     })
     .await;
     let result = async {
-        let (config, messages,workspace) = prepared?;
-        // После сохранения запроса очищаем редактор. При ошибке настройки черновик остаётся.
+        let (config, messages, workspace, request_id) = prepared?;
+        // После сохранения запроса очищаем редактор; при ошибке настроек черновик остаётся.
         state.write().draft = Draft::default();
         refresh(state, Some(id)).await?;
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let request_token = token.clone();
-        let (events,mut event_rx)=tokio::sync::mpsc::unbounded_channel();
-        let context=services::agent::ContextData{store:store.clone(),chat:id,workspace,settings:agent_settings.clone(),control,events};
+        let (events, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
+        let worker_settings = agent_settings.clone();
+        let context = services::agent::ContextData {
+            store: store.clone(),
+            chat: id,
+            workspace,
+            settings: worker_settings.clone(),
+            control,
+            events,
+        };
         let task = services::runtime::runtime().spawn(async move {
-            if agent_settings.enabled {services::agent::run(config,messages,request_token,tx,context).await}
-            else {drop(context);services::generation::reply(config, messages, request_token, tx).await}
+            if worker_settings.enabled {
+                services::agent::run(config, messages, request_token, tx, context).await
+            } else {
+                drop(context);
+                services::generation::reply(config, messages, request_token, tx).await
+            }
         });
-        let (mut text_open,mut events_open)=(true,true);
-        while text_open||events_open {
-            tokio::select!{
-                delta=rx.recv(),if text_open=>match delta{Some(delta)=>state.write().streaming.push_str(&delta),None=>text_open=false},
-                event=event_rx.recv(),if events_open=>match event{
-                    Some(services::agent::Event::Progress(progress))=>state.write().agent_progress=progress,
-                    Some(services::agent::Event::Approval(approval))=>state.write().approval=Some(approval),
-                    Some(services::agent::Event::ToolResult{tool,output})=>state.write().agent_log.push(format!("{tool}\n{output}")),
-                    None=>events_open=false,
+        let (mut text_open, mut events_open) = (true, true);
+        while text_open || events_open {
+            tokio::select! {
+                delta = rx.recv(), if text_open => {
+                    match delta {
+                        Some(delta) => state.write().streaming.push_str(&delta),
+                        None => text_open = false,
+                    }
+                }
+                event = event_rx.recv(), if events_open => {
+                    match event {
+                        Some(services::agent::Event::Progress(progress)) => {
+                            state.write().agent_progress = progress;
+                        }
+                        Some(services::agent::Event::Approval(approval)) => {
+                            let mut value = state.write();
+                            if let Some(action) = value.action_history.entry(request_id).or_default().last_mut() {
+                                action.state = "approval".into();
+                            }
+                            value.approval = Some(approval);
+                        }
+                        Some(services::agent::Event::ToolResult { .. }) => {}
+                        Some(services::agent::Event::ToolStarted { id, tool, arguments }) => {
+                            state.write().action_history.entry(request_id).or_default().push(
+                                services::task_history::Action {
+                                    id,
+                                    tool,
+                                    arguments,
+                                    state: "running".into(),
+                                    ..Default::default()
+                                },
+                            );
+                        }
+                        Some(services::agent::Event::ToolFinished { id, output, seconds }) => {
+                            if let Some(action) = state.write().action_history.entry(request_id)
+                                .or_default().iter_mut().find(|action| action.id == id)
+                            {
+                                action.state = if output["ok"] == true { "completed" } else { "failed" }.into();
+                                action.output = output;
+                                action.seconds = seconds;
+                            }
+                        }
+                        None => events_open = false,
+                    }
                 }
             }
         }
-        let log=state.peek().agent_log.clone();
-        if !log.is_empty(){let store=store.clone();services::runtime::blocking(move||store.write(&format!("agent_trace:{id}"),&log)).await?;}
+        let actions = state.peek().action_history.get(&request_id).cloned().unwrap_or_default();
+        if !actions.is_empty() {
+            let store = store.clone();
+            services::runtime::blocking(move || {
+                services::task_history::save(&store, request_id, &actions)
+            }).await?;
+        }
         let answer = task.await??;
         let elapsed = started.elapsed().as_secs_f64();
         services::runtime::background(async move {
@@ -442,16 +469,56 @@ pub async fn send(mut state: Signal<AppState>) -> Result<()> {
         value.agent_progress.clear();
         value.approval = None;
         value.streaming.clear();
+        if agent_settings.enabled {
+            let actions = value
+                .messages
+                .iter()
+                .rev()
+                .find(|m| m.role == "user")
+                .and_then(|m| value.action_history.get(&m.id));
+            let tools_ok =
+                actions.is_none_or(|actions| actions.iter().all(|a| a.state == "completed"));
+            let count = actions.map_or(0, Vec::len);
+            value.task_completion = Some(if token.is_cancelled() {
+                ("Задача остановлена".into(), false)
+            } else if result.is_ok() && tools_ok {
+                (
+                    if count == 0 {
+                        "Ответ готов".into()
+                    } else {
+                        format!("Работа агента завершена · {count} действий")
+                    },
+                    true,
+                )
+            } else {
+                ("Есть невыполненные действия".into(), false)
+            });
+        }
     }
     if token.is_cancelled() { Ok(()) } else { result }
 }
 
+/// Отмечает ожидание решения в карточке и однократно отвечает запросу подтверждения.
+pub fn answer_action(mut state: Signal<AppState>, accepted: bool) {
+    let mut value = state.write();
+    for action in value.action_history.values_mut().flatten() {
+        if action.state == "approval" {
+            action.state = if accepted { "running" } else { "failed" }.into();
+        }
+    }
+    if let Some(approval) = value.approval.take() {
+        approval.answer(accepted);
+    }
+}
+
+/// Отменяет активную генерацию и выполняемые инструменты через общий токен.
 pub fn cancel(state: Signal<AppState>) {
     if let Some(token) = &state.read().cancelled {
         token.cancel();
     }
 }
 
+/// Записывает переписку выбранного чата в Markdown.
 pub async fn export_chat(mut state: Signal<AppState>) -> Result<()> {
     let store = store(state)?;
     let root = services::paths::app_data_dir()?;

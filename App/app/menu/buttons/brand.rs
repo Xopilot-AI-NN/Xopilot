@@ -3,6 +3,7 @@
 use crate::app::shared::icons;
 use dioxus::prelude::*;
 
+/// Применяет общую геометрию и цветовую роль к кнопке навигации.
 #[component]
 pub fn build_brand_button(
     icon: String,
@@ -13,10 +14,17 @@ pub fn build_brand_button(
     onclick: EventHandler<MouseEvent>,
 ) -> Element {
     rsx! {
-        button { class: "brand-button tone-{role}", style: "--button-size:{size}px",
-            r#type: "button", title: "{label}", "aria-label": "{label}", disabled,
+        button {
+            class: "brand-button tone-{role}",
+            style: "--button-size:{size}px",
+            r#type: "button",
+            title: "{label}",
+            "aria-label": "{label}",
+            disabled,
             onclick: move |event| onclick.call(event),
-            icons::build_icon { name: icon }
+            icons::build_icon {
+                name: icon,
+            }
         }
     }
 }

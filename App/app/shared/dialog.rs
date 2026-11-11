@@ -5,6 +5,7 @@ use crate::app::{
 };
 use dioxus::prelude::*;
 
+/// Собирает общее окно с заголовком, возвратом и прокруткой содержимого.
 #[component]
 pub fn build_dialog(
     title: String,
@@ -23,25 +24,78 @@ pub fn build_dialog(
         document::eval("document.getElementById('chat-prompt')?.focus({preventScroll:true});");
     });
     rsx! {
-        div { class: "modal-backdrop", onclick: move |_| state::dismiss(state),
-            section { class: format!("dialog dialog-{variant} {}", if settings { "settings-dialog" } else if narrow { "narrow-dialog" } else { "" }),
-                role: "dialog", "aria-modal": "true", "aria-labelledby": "dialog-title", tabindex: -1,
+        div {
+            class: "modal-backdrop",
+            onclick: move |_| state::dismiss(state),
+            section {
+                class: format!(
+                    "dialog dialog-{variant} {}",
+                    if settings { "settings-dialog" } else if narrow { "narrow-dialog" } else { "" },
+                ),
+                role: "dialog",
+                "aria-modal": "true",
+                "aria-labelledby": "dialog-title",
+                tabindex: -1,
                 onclick: move |event| event.stop_propagation(),
-                onkeydown: move |event| { if event.key() == Key::Escape { event.stop_propagation(); state::dismiss(state); } },
-                header { class: "dialog-header",
-                    div { class: "dialog-title-row",
-                        if let Some(back) = back {
-                            button { class: "plain-icon", title: "Назад к настройкам", onclick: move |event| back.call(event), icons::build_icon { name: "arrow_back" } }
-                        }
-                        div { class: "dialog-heading",
-                            if settings { span { class: "dialog-eyebrow", "Xopilot" } }
-                            h1 { id: "dialog-title", "{title}" }
-                        }
-                        button { class: "plain-icon dialog-close", title: "Закрыть окно", "aria-label": "Закрыть окно", onclick: move |_| state::dismiss(state), icons::build_icon { name: "close" } }
+                onkeydown: move |event| {
+                    if event.key() == Key::Escape {
+                        event.stop_propagation();
+                        state::dismiss(state);
                     }
-                    if settings { p { class: "dialog-status", if immediate { "Изменения применяются сразу" } else { "Сохраните изменения перед закрытием" } } }
+                },
+                header {
+                    class: "dialog-header",
+                    div {
+                        class: "dialog-title-row",
+                        if let Some(back) = back {
+                            button {
+                                class: "plain-icon",
+                                title: "Назад к настройкам",
+                                onclick: move |event| back.call(event),
+                                icons::build_icon {
+                                    name: "arrow_back",
+                                }
+                            }
+                        }
+                        div {
+                            class: "dialog-heading",
+                            if settings {
+                                span {
+                                    class: "dialog-eyebrow",
+                                    "Xopilot"
+                                }
+                            }
+                            h1 {
+                                id: "dialog-title",
+                                "{title}"
+                            }
+                        }
+                        button {
+                            class: "plain-icon dialog-close",
+                            title: "Закрыть окно",
+                            "aria-label": "Закрыть окно",
+                            onclick: move |_| state::dismiss(state),
+                            icons::build_icon {
+                                name: "close",
+                            }
+                        }
+                    }
+                    if settings {
+                        p {
+                            class: "dialog-status",
+                            if immediate {
+                                "Изменения применяются сразу"
+                            } else {
+                                "Сохраните изменения перед закрытием"
+                            }
+                        }
+                    }
                 }
-                div { class: "dialog-body", {children} }
+                div {
+                    class: "dialog-body",
+                    {children}
+                }
+                super::activity_dock::build_activity_dock {}
             }
         }
     }

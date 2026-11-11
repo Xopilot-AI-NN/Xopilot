@@ -1,6 +1,7 @@
 // Описание: Проверяем настоящий KV-кеш и его сброс на локальной модели, без сети.
 use serde_json::json;
 use xopilot::services::litert;
+/// Запускает отдельный проверочный стенд без обращения к личной истории.
 fn main() -> anyhow::Result<()> {
     let path = std::env::args()
         .nth(1)

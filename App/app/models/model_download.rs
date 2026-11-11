@@ -11,6 +11,7 @@ use crate::{
 };
 use dioxus::prelude::*;
 
+/// Показывает состояние модели и действия справа внутри карточки.
 #[component]
 pub fn build_model_row(id: String, progress: Progress) -> Element {
     let mut state = use_context::<Signal<AppState>>();
@@ -32,21 +33,32 @@ pub fn build_model_row(id: String, progress: Progress) -> Element {
             }
         }
     };
-    let mib = progress.downloaded as f64 / 1048576.0;
     rsx! {
-        section { class: "model-card",
-            div { class: "model-card-main",
-                span { class: "model-icon tone-ai",
-                    icons::build_icon { name: "smart_toy_outlined" }
+        section {
+            class: "model-card",
+            div {
+                class: "model-card-main",
+                span {
+                    class: "model-icon tone-ai",
+                    icons::build_icon {
+                        name: "smart_toy_outlined",
+                    }
                 }
-                span { class: "catalog-copy",
-                    strong { "{spec.name}" }
-                    small { "{spec.size} · LiteRT-LM" }
-                    span { class: if installed { "model-state installed" } else { "model-state" },
+                span {
+                    class: "catalog-copy",
+                    strong {
+                        "{spec.name}"
+                    }
+                    small {
+                        "{spec.size} · LiteRT-LM"
+                    }
+                    span {
+                        class: if installed { "model-state installed" } else { "model-state" },
                         "{status}"
                     }
                 }
-                div { class: "model-card-actions",
+                div {
+                    class: "model-card-actions",
                     if running {
                         button {
                             class: "button",
@@ -100,22 +112,30 @@ pub fn build_model_row(id: String, progress: Progress) -> Element {
                 }
             }
             if running || progress.phase == "paused" {
-                progress {
-                    class: "download-progress",
-                    value: progress.downloaded,
-                    max: progress.total.unwrap_or(progress.downloaded.max(1)),
+                crate::app::shared::progress::build_progress_bar {
+                    value: progress.total.filter(|total|*total>0).map(|total|progress.downloaded as f64/total as f64),
+                    label: "Загрузка модели",
                 }
-                p { class: "notice", role: "status", "{mib:.1} МиБ" }
+                p {
+                    class: "notice",
+                    role: "status",
+                    {crate::app::shared::progress::byte_progress(progress.downloaded,progress.total)}
+                }
             }
             if !progress.error.is_empty() {
-                p { class: "notice error-text", "{progress.error}" }
+                p {
+                    class: "notice error-text",
+                    "{progress.error}"
+                }
             }
             if *deleting.read() {
-                div { role: "alert",
+                div {
+                    role: "alert",
                     p {
                         "Удалить файл модели с устройства? Чаты сохранятся."
                     }
-                    div { class: "row",
+                    div {
+                        class: "row",
                         button {
                             class: "button",
                             onclick: move |_| deleting.set(false),

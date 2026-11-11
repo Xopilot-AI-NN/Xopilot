@@ -40,6 +40,7 @@ const SECTIONS: &[(&str, &str, &str)] = &[
     ),
 ];
 
+/// Сохраняет единый размер и возврат между разделами настроек.
 #[component]
 pub fn build_settings_dialog() -> Element {
     let state = use_context::<Signal<AppState>>();
@@ -50,25 +51,70 @@ pub fn build_settings_dialog() -> Element {
     let back =
         selected.map(|_| EventHandler::new(move |_| state::select_settings_section(state, None)));
     rsx! {
-        dialog::build_dialog { title, settings: true, immediate: true, back,
+        dialog::build_dialog {
+            title,
+            settings: true,
+            immediate: true,
+            back,
             if let Some(index) = selected {
                 match index {
-                    0 => rsx! { crate::settings::account::main::build_account_page {} },
-                    1 => rsx! { personalizations::main::build_personalizations {} },
-                    2 => rsx! { dialogs::build_model_catalog {} },
-                    3 => rsx! { chats::build_chats_dialog {} },
-                    4 => rsx! { crate::settings::updates::main::build_updates {} },
-                    _ => rsx! { abaut::info::build_info {} },
+                    0 => rsx! {
+                        crate::settings::account::main::build_account_page {
+                        }
+                    },
+                    1 => rsx! {
+                        personalizations::main::build_personalizations {
+                        }
+                    },
+                    2 => rsx! {
+                        dialogs::build_model_catalog {
+                        }
+                    },
+                    3 => rsx! {
+                        chats::build_chats_dialog {
+                        }
+                    },
+                    4 => rsx! {
+                        crate::settings::updates::main::build_updates {
+                        }
+                    },
+                    _ => rsx! {
+                        abaut::info::build_info {
+                        }
+                    },
                 }
             } else {
-                h2 { class: "section-title", "Параметры приложения" }
-                nav { class: "settings-navigation", for (index, &(icon, label, subtitle)) in SECTIONS.iter().enumerate() {
-                    button { class: "settings-navigation-row", onclick: move |_| state::select_settings_section(state, Some(index)),
-                        span { class: "settings-badge tone-navigate", icons::build_icon { name: icon } }
-                        span { class: "settings-row-copy", strong { "{label}" } small { "{subtitle}" } }
-                        icons::build_icon { name: "chevron_right" }
+                h2 {
+                    class: "section-title",
+                    "Параметры приложения"
+                }
+                nav {
+                    class: "settings-navigation",
+                    for (index, &(icon, label, subtitle)) in SECTIONS.iter().enumerate() {
+                        button {
+                            class: "settings-navigation-row",
+                            onclick: move |_| state::select_settings_section(state, Some(index)),
+                            span {
+                                class: "settings-badge tone-navigate",
+                                icons::build_icon {
+                                    name: icon,
+                                }
+                            }
+                            span {
+                                class: "settings-row-copy",
+                                strong {
+                                    "{label}"
+                                }
+                                small {
+                                    "{subtitle}"
+                                }
+                            }
+                            icons::build_icon {
+                                name: "chevron_right",
+                            }
+                        }
                     }
-                } }
+                }
             }
         }
     }

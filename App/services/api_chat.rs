@@ -21,6 +21,7 @@ pub struct ApiConfig {
 }
 
 impl ApiConfig {
+    /// Проверяет обязательные параметры до сохранения или сетевого обращения.
     pub fn validate(&self) -> Result<Self> {
         let url = reqwest::Url::parse(self.url.trim())
             .context("Введите URL API: https://example.com/v1")?;
@@ -51,10 +52,12 @@ impl ApiConfig {
     }
 }
 
+/// Читает выбранные параметры API из защищённой базы.
 pub fn configuration(store: &Store) -> Result<ApiConfig> {
     store.read(KEY)
 }
 
+/// Проверяет явный выбор API, не переключая локальный чат по наличию ключа.
 pub fn is_api_selected(store: &Store) -> Result<bool> {
     store.with(|db| Ok(db.get_setting("chat_provider")?.as_deref() == Some("api")))
 }
@@ -68,6 +71,7 @@ pub fn selected_configuration(store: &Store) -> Result<ApiConfig> {
     configuration(store)?.validate()
 }
 
+/// Проверяет адрес и сохраняет провайдера, модель и ключ API.
 pub fn save_configuration(store: &Store, config: &ApiConfig) -> Result<()> {
     store.write(KEY, &config.validate()?)?;
     store.with(|db| {
@@ -76,6 +80,7 @@ pub fn save_configuration(store: &Store, config: &ApiConfig) -> Result<()> {
     })
 }
 
+/// Определяет адрес сервиса для текущего запроса.
 pub fn endpoint(config: &ApiConfig) -> String {
     format!("{}/chat/completions", config.url.trim_end_matches('/'))
 }
@@ -136,6 +141,7 @@ impl EventDecoder {
         Ok(lines)
     }
 
+    /// Завершает разбор оставшейся SSE-строки после конца сетевого потока.
     pub fn finish(&mut self) -> Result<Vec<String>> {
         if self.buffer.is_empty() {
             return Ok(vec![]);
@@ -144,6 +150,7 @@ impl EventDecoder {
     }
 }
 
+/// Разбирает SSE-событие, отличая текст, завершение и ошибку провайдера.
 fn decode_line(line: &str) -> Result<(Option<String>, bool)> {
     let Some(data) = line.strip_prefix("data:") else {
         return Ok((None, false));
@@ -169,6 +176,7 @@ fn decode_line(line: &str) -> Result<(Option<String>, bool)> {
     Ok((delta.as_str().map(str::to_owned), false))
 }
 
+/// Принимает поток Chat Completions с отменой и сетевыми таймаутами.
 pub async fn generate_reply(
     config: ApiConfig,
     messages: Vec<Value>,
@@ -259,6 +267,7 @@ pub async fn generate_reply(
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// Проверяет ограничения адреса API и запрет credentials в URL.
     #[test]
     fn url_rejects_remote_http_credentials_and_query() {
         for url in [
@@ -286,6 +295,7 @@ mod tests {
             .is_ok()
         );
     }
+    /// Проверяет разбор фрагментированного UTF-8 и переводов CRLF в SSE.
     #[test]
     fn stream_survives_fragmented_unicode_and_crlf() {
         let raw = "data: {\"choices\":[{\"delta\":{\"content\":\"Привет\"}}]}\r\n\r\ndata: [DONE]";

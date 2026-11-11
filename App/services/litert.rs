@@ -12,6 +12,7 @@ use std::{
     sync::{Mutex, OnceLock},
 };
 use tokio_util::sync::CancellationToken;
+static ENGINE_LOADS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 type Handle = *mut c_void;
 type Callback = unsafe extern "C" fn(Handle, *const c_void);
 
@@ -19,6 +20,7 @@ macro_rules! api {
     ($($field:ident: $kind:ty => $symbol:literal),* $(,)?) => {
         struct Api { _library: Library, $($field: $kind),* }
         impl Api {
+            /// Загружает закреплённые символы C API и удерживает библиотеку живой.
             unsafe fn load(path: &Path) -> Result<Self> {
                 // Все функции копируются, но Library живёт дольше любого указателя.
                 let library = unsafe { Library::new(path) }.context("Не удалось открыть LiteRT")?;
@@ -53,9 +55,14 @@ api! {
     text: unsafe extern "C" fn(*const c_void,*mut *const c_char)->c_int => "litert_lm_stream_chunk_get_text",
     chunk_error: unsafe extern "C" fn(*const c_void,*mut *const c_char)->c_int => "litert_lm_stream_chunk_get_error",
     final_chunk: unsafe extern "C" fn(*const c_void,*mut bool)->c_int => "litert_lm_stream_chunk_is_final",
+    sampler: unsafe extern "C" fn(c_int,*mut Handle)->c_int => "litert_lm_sampler_params_create",
+    sampler_top_k: unsafe extern "C" fn(Handle,c_int)->c_int => "litert_lm_sampler_params_set_top_k",
+    sampler_delete: unsafe extern "C" fn(Handle)->() => "litert_lm_sampler_params_delete",
+    set_sampler: unsafe extern "C" fn(Handle,Handle)->c_int => "litert_lm_session_config_set_sampler_params",
     token_count: unsafe extern "C" fn(Handle,*mut usize)->c_int => "litert_lm_conversation_get_token_count",
 }
 impl Api {
+    /// Преобразует статус C API в ошибку на том же worker-потоке.
     fn check(&self, code: c_int) -> Result<()> {
         if code == 0 {
             return Ok(());
@@ -78,6 +85,7 @@ struct Owned<'a> {
     _api: &'a Api,
 }
 impl Owned<'_> {
+    /// Передаёт владение указателем из RAII-guard в долгоживущий кеш.
     fn into_raw(self) -> Handle {
         let pointer = self.pointer;
         std::mem::forget(self);
@@ -85,10 +93,12 @@ impl Owned<'_> {
     }
 }
 impl Drop for Owned<'_> {
+    /// Освобождает принадлежащие владельцу ресурсы в порядке RAII.
     fn drop(&mut self) {
         unsafe { (self.delete)(self.pointer) }
     }
 }
+/// Создаёт проверенный C-объект и связывает его с функцией освобождения.
 fn owned(
     api: &Api,
     create: impl FnOnce(*mut Handle) -> c_int,
@@ -107,9 +117,11 @@ fn owned(
 #[cfg(not(target_os = "android"))]
 const EMBEDDED: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/liblitert-lm.so"));
 const NOTICES: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/runtime-licenses.zip"));
+/// Проверяет, включён ли нативный runtime в данную сборку.
 pub fn available() -> bool {
     env!("XOPILOT_LITERT_BUNDLED") == "1"
 }
+/// Возвращает упакованный runtime и сохраняет его лицензионные уведомления.
 #[cfg(target_os = "android")]
 fn library_path() -> Result<PathBuf> {
     ensure!(available(), "В APK отсутствует LiteRT");
@@ -120,6 +132,7 @@ fn library_path() -> Result<PathBuf> {
     }
     Ok(PathBuf::from("liblitert-lm.so"))
 }
+/// Возвращает упакованный runtime и сохраняет его лицензионные уведомления.
 #[cfg(not(target_os = "android"))]
 fn library_path() -> Result<PathBuf> {
     ensure!(
@@ -162,12 +175,14 @@ struct CachedConversation {
     pointer: Handle,
     config: Handle,
     session: Handle,
+    sampler: Handle,
     history: Vec<Value>,
     images: tempfile::TempDir,
     output_limit: i32,
 }
 #[derive(Clone, Copy, Default, Debug)]
 pub struct ContextStats {
+    pub engine_loads: usize,
     pub reused: usize,
     pub rebuilt: usize,
     pub tokens: usize,
@@ -176,12 +191,14 @@ pub struct ContextStats {
 // Единственный Mutex ниже сериализует загрузку, генерацию и выгрузку.
 unsafe impl Send for Engine {}
 impl Drop for Engine {
+    /// Освобождает принадлежащие владельцу ресурсы в порядке RAII.
     fn drop(&mut self) {
         self.clear_context();
         unsafe { (self.api.engine_delete)(self.engine) }
     }
 }
 impl Engine {
+    /// Создаёт engine выбранного устройства с ограничением контекста и числа потоков.
     fn open(path: &Path, backend: &str) -> Result<Self> {
         let api = unsafe { Api::load(&library_path()?)? };
         let (mut major, mut minor, mut patch) = (0, 0, 0);
@@ -221,19 +238,25 @@ impl Engine {
             path: path.to_owned(),
             backend: backend.into(),
             cached: None,
-            statistics: ContextStats::default(),
+            statistics: ContextStats {
+                engine_loads: ENGINE_LOADS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1,
+                ..Default::default()
+            },
         })
     }
+    /// Освобождает conversation, конфигурации и временные изображения, сохраняя веса.
     fn clear_context(&mut self) {
         if let Some(cache) = self.cached.take() {
             unsafe {
                 (self.api.conversation_delete)(cache.pointer);
                 (self.api.config_delete)(cache.config);
                 (self.api.session_delete)(cache.session);
+                (self.api.sampler_delete)(cache.sampler);
             }
         }
         self.statistics.tokens = 0;
     }
+    /// Выполняет запрос выбранной модели и возвращает итоговый текст.
     fn reply(
         &mut self,
         messages: Vec<Value>,
@@ -262,6 +285,14 @@ impl Engine {
             api.check(unsafe {
                 (api.output_tokens)(session.pointer, output_limit.clamp(1, 2048))
             })?;
+            // Top-K=1 снижает случайные изменения аргументов и лишних знаков в точных данных.
+            let sampler = owned(
+                api,
+                |out| unsafe { (api.sampler)(2, out) },
+                api.sampler_delete,
+            )?;
+            api.check(unsafe { (api.sampler_top_k)(sampler.pointer, 1) })?;
+            api.check(unsafe { (api.set_sampler)(session.pointer, sampler.pointer) })?;
             let config = owned(api, |out| unsafe { (api.config)(out) }, api.config_delete)?;
             api.check(unsafe { (api.set_session)(config.pointer, session.pointer) })?;
             let history = CString::new(serde_json::to_string(&initial)?)?;
@@ -282,6 +313,7 @@ impl Engine {
                 pointer,
                 config,
                 session,
+                sampler: sampler.into_raw(),
                 history: Vec::new(),
                 images,
                 output_limit,
@@ -321,6 +353,7 @@ impl Engine {
         }
     }
 }
+/// Разрешает дополнение KV-кеша только для точного продолжения прежней истории.
 pub fn can_extend(previous: &[Value], incoming: &[Value]) -> bool {
     incoming.len() > previous.len()
         && incoming.starts_with(previous)
@@ -328,6 +361,7 @@ pub fn can_extend(previous: &[Value], incoming: &[Value]) -> bool {
             .iter()
             .all(|m| m["role"] == "user")
 }
+/// Объединяет новые пользовательские данные в один допустимый запрос LiteRT.
 fn merge_new_messages(mut messages: Vec<Value>) -> Result<Value> {
     ensure!(!messages.is_empty(), "Нет новых данных для модели");
     if messages.len() == 1 {
@@ -346,6 +380,7 @@ fn merge_new_messages(mut messages: Vec<Value>) -> Result<Value> {
     }
     Ok(serde_json::json!({"role":"user","content":parts}))
 }
+/// Дожидается окончания callback перед освобождением потокового запроса.
 fn stream_reply(
     api: &Api,
     conversation: Handle,
@@ -392,6 +427,7 @@ struct Stream<'a> {
     answer: String,
     error: Option<String>,
 }
+/// Накапливает текст и обрабатывает отмену, не выпуская panic через C ABI.
 unsafe extern "C" fn on_chunk(data: Handle, chunk: *const c_void) {
     // В single-threaded режиме callback вызывается только внутри wait этого worker.
     // Через FFI никогда не выпускаем panic.
@@ -458,6 +494,7 @@ pub fn decode_chunk(raw: &str) -> Result<String> {
         .unwrap_or_default())
 }
 
+/// Заменяет подготовленные JPEG-данные временными файлами для LiteRT.
 fn convert_images(messages: &mut [Value], root: &Path) -> Result<()> {
     use base64::Engine as _;
     for message in messages {
@@ -483,6 +520,17 @@ fn convert_images(messages: &mut [Value], root: &Path) -> Result<()> {
     Ok(())
 }
 static ENGINE: OnceLock<Mutex<Option<Engine>>> = OnceLock::new();
+/// Не пересчитываем свободную VRAM для уже загруженной модели: её память уже занята нами.
+pub fn loaded_backend(path: &Path) -> Option<String> {
+    ENGINE
+        .get()?
+        .try_lock()
+        .ok()?
+        .as_ref()
+        .filter(|engine| engine.path == path)
+        .map(|engine| engine.backend.clone())
+}
+/// Сбрасывает conversation при смене чата, не выгружая веса модели.
 pub fn reset_context() -> Result<()> {
     let mut engine = ENGINE
         .get_or_init(|| Mutex::new(None))
@@ -493,6 +541,7 @@ pub fn reset_context() -> Result<()> {
     }
     Ok(())
 }
+/// Возвращает фактическое число дополнений, пересозданий и токенов кеша.
 pub fn context_stats() -> Result<ContextStats> {
     let engine = ENGINE
         .get_or_init(|| Mutex::new(None))
@@ -500,6 +549,7 @@ pub fn context_stats() -> Result<ContextStats> {
         .map_err(|_| anyhow::anyhow!("Модель сейчас отвечает"))?;
     Ok(engine.as_ref().map(|e| e.statistics).unwrap_or_default())
 }
+/// Освобождает engine, кеш и память выбранной локальной модели.
 pub fn unload() -> Result<()> {
     let mut engine = ENGINE
         .get_or_init(|| Mutex::new(None))
@@ -508,6 +558,7 @@ pub fn unload() -> Result<()> {
     *engine = None;
     Ok(())
 }
+/// Сериализует обращения к одному engine и повторно использует подходящий контекст.
 pub fn generate(
     path: PathBuf,
     backend: String,
@@ -536,6 +587,7 @@ pub fn generate(
 
 #[cfg(test)]
 mod chunk_tests {
+    /// Проверяет извлечение текста без JSON-оболочки и скрытых рассуждений.
     #[test]
     fn conversation_chunks_expose_text_instead_of_the_json_envelope() {
         assert_eq!(super::decode_chunk(r#"{"role":"assistant","content":[{"type":"text","text":"Привет"},{"type":"text","text":"!"}]}"#).unwrap(),"Привет!");

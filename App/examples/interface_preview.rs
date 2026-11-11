@@ -11,6 +11,7 @@ use xopilot::{
     services::{chat_store, db::Store},
 };
 
+/// Запускает отдельный проверочный стенд без обращения к личной истории.
 fn main() {
     let mobile = std::env::args().any(|s| s.starts_with("mobile"));
     dioxus::LaunchBuilder::desktop()
@@ -28,6 +29,7 @@ fn main() {
         .launch(preview);
 }
 
+/// Собирает изолированное состояние интерфейса для проверки.
 #[component]
 fn preview() -> Element {
     let scenario = use_hook(|| std::env::args().nth(1).unwrap_or_else(|| "empty".into()));
@@ -96,5 +98,9 @@ fn preview() -> Element {
             };
         }
     });
-    rsx! { build_window {} }
+    rsx! {
+        build_window {
+
+        }
+    }
 }

@@ -18,6 +18,7 @@ pub struct AttachmentParts {
     pub images: Vec<Vec<u8>>,
 }
 
+/// Ограничивает текст по символам, не разрезая UTF-8.
 pub fn truncate(text: &str, limit: usize) -> String {
     let mut chars = text.chars();
     let mut value: String = chars.by_ref().take(limit).collect();
@@ -27,6 +28,7 @@ pub fn truncate(text: &str, limit: usize) -> String {
     value
 }
 
+/// Декодирует ограниченное изображение и уменьшает его перед передачей модели.
 pub fn downscale_image_bytes(raw: &[u8]) -> Result<Vec<u8>> {
     let mut reader = ImageReader::new(Cursor::new(raw)).with_guessed_format()?;
     let mut limits = image::Limits::default();
@@ -43,6 +45,7 @@ pub fn downscale_image_bytes(raw: &[u8]) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
+/// Извлекает текст DOCX из XML внутри архива без выполнения содержимого.
 fn read_docx(raw: &[u8]) -> Result<String> {
     let mut archive = zip::ZipArchive::new(Cursor::new(raw))?;
     let mut document = archive.by_name("word/document.xml")?;
@@ -83,6 +86,7 @@ fn read_docx(raw: &[u8]) -> Result<String> {
     Ok(truncate(text.trim(), MAX_TEXT_CHARS))
 }
 
+/// Подготавливает содержимое вложения по его типу и ограничениям размера.
 fn read_attachment(path: &Path) -> Result<AttachmentParts> {
     ensure!(path.is_file(), "Файл недоступен на диске");
     ensure!(
@@ -172,6 +176,7 @@ pub fn store_material(name: &str, bytes: &[u8]) -> Result<(String, String)> {
     Ok((name, path.to_string_lossy().into_owned()))
 }
 
+/// Копирует выбранный материал в каталог данных текущего профиля.
 pub fn import_material(name: &str, path: &Path) -> Result<(String, String)> {
     ensure!(
         path.is_file() && path.metadata()?.len() <= MAX_FILE_BYTES,
@@ -187,10 +192,12 @@ pub fn import_material(name: &str, path: &Path) -> Result<(String, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// Проверяет корректную границу UTF-8 при ограничении текста.
     #[test]
     fn unicode_limit_does_not_cut_a_codepoint() {
         assert_eq!(truncate("Привет", 3), "При\n…[обрезано]");
     }
+    /// Проверяет обработку отсутствующего файла без потери остальных вложений.
     #[test]
     fn missing_file_does_not_hide_other_attachments() {
         let dir = tempfile::tempdir().unwrap();
@@ -203,6 +210,7 @@ mod tests {
         assert_eq!(result.text_notes.len(), 2);
         assert!(result.text_notes[1].contains("fn main"));
     }
+    /// Проверяет отказ от отправки повреждённого изображения модели.
     #[test]
     fn invalid_image_is_not_sent_to_a_model() {
         assert!(downscale_image_bytes(b"not an image").is_err());

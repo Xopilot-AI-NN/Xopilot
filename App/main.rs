@@ -7,6 +7,7 @@ fn main() {
     eprintln!("Для запуска: cargo run -p xopilot --features desktop");
 }
 
+/// Настраивает платформенное окно и запускает Dioxus.
 #[cfg(any(feature = "desktop", feature = "mobile"))]
 fn main() {
     tracing_subscriber::fmt()

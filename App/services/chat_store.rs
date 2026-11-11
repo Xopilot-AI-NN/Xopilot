@@ -25,6 +25,7 @@ pub struct Snapshot {
     pub bookmarks: std::collections::HashSet<i64>,
 }
 
+/// Собирает элементы истории с названиями и привязками к проектам.
 pub fn list_chat_items(db: &Database) -> Result<Vec<Chat>> {
     Ok(db
         .list_chat_summaries()?
@@ -33,6 +34,7 @@ pub fn list_chat_items(db: &Database) -> Result<Vec<Chat>> {
         .collect())
 }
 
+/// Восстанавливает нужный снимок данных из хранилища.
 pub fn load(db: &Database, requested: Option<i64>) -> Result<Snapshot> {
     let mut chats = list_chat_items(db)?;
     if chats.is_empty() {
@@ -65,6 +67,7 @@ pub fn load(db: &Database, requested: Option<i64>) -> Result<Snapshot> {
     })
 }
 
+/// Получает снимок чата в фоновой задаче.
 pub async fn snapshot(store: &Store, requested: Option<i64>) -> Result<Snapshot> {
     store.run(move |db| load(db, requested)).await
 }

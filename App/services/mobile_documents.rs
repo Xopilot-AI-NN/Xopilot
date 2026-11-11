@@ -26,6 +26,7 @@ pub struct Upload {
 }
 
 impl Upload {
+    /// Проверяет объявленный размер выбранного Android-документа.
     pub fn start(&mut self, name: String, size: usize) -> Result<()> {
         ensure!(self.expected.is_none(), "Предыдущий файл ещё передаётся");
         ensure!(
@@ -38,6 +39,7 @@ impl Upload {
         Ok(())
     }
 
+    /// Принимает ограниченный блок выбранного Android-документа.
     pub fn chunk(&mut self, data: &str) -> Result<()> {
         let expected = self
             .expected
@@ -52,6 +54,7 @@ impl Upload {
         Ok(())
     }
 
+    /// Возвращает файл только после получения всего заявленного содержимого.
     pub fn finish(&mut self) -> Result<(String, Vec<u8>)> {
         ensure!(
             self.expected == Some(self.bytes.len()),
@@ -68,6 +71,7 @@ impl Upload {
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// Проверяет размер и блоки файла с многобайтовым текстом.
     #[test]
     fn upload_requires_declared_size_and_accepts_chunked_unicode_file() {
         let mut upload = Upload::default();
@@ -88,6 +92,7 @@ mod tests {
                 .is_err()
         );
     }
+    /// Проверяет отказ от неполного и слишком большого файла.
     #[test]
     fn truncated_and_oversized_payloads_are_rejected() {
         let mut upload = Upload::default();

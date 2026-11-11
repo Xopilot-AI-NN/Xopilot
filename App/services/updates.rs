@@ -6,6 +6,7 @@ pub struct Release {
     pub notes: String,
     pub url: String,
 }
+/// Проверяет опубликованный стабильный релиз по действию пользователя.
 pub async fn latest() -> Result<Option<Release>> {
     let response = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(20))

@@ -1,5 +1,6 @@
 // Описание: Встраиваем нативную библиотеку целевой платформы в приложение.
 use std::{env, fs, path::PathBuf};
+/// Встраивает runtime целевой платформы и лицензионные уведомления при сборке.
 fn main() {
     let target = env::var("TARGET").unwrap();
     let platform = match target.as_str() {

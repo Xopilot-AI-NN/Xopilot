@@ -32,6 +32,7 @@ pub struct Workspaces {
 }
 
 impl Default for Workspaces {
+    /// Задаёт исходное состояние без запущенных действий.
     fn default() -> Self {
         Self {
             items: vec![],
@@ -42,6 +43,7 @@ impl Default for Workspaces {
     }
 }
 
+/// Читает проекты, сохраняя поля прежних записей.
 pub fn list_workspaces(store: &Store) -> Result<Workspaces> {
     store.with(|db| {
         let mut state: Workspaces = read_json(db, KEY)?;
@@ -58,6 +60,7 @@ pub fn list_workspaces(store: &Store) -> Result<Workspaces> {
     })
 }
 
+/// Проверяет и сохраняет проект вместе с инструкциями и папкой.
 pub fn save_workspace(store: &Store, mut item: Workspace) -> Result<()> {
     item.name = item.name.trim().into();
     ensure!(!item.name.is_empty(), "Введите название пространства");
@@ -85,6 +88,7 @@ pub fn save_workspace(store: &Store, mut item: Workspace) -> Result<()> {
     })
 }
 
+/// Удаляет пространство, сохраняя его файлы и переписку.
 pub fn delete_workspace(store: &Store, id: &str) -> Result<()> {
     store.with(|db| {
         let mut state: Workspaces = read_json(db, KEY)?;
@@ -97,6 +101,7 @@ pub fn delete_workspace(store: &Store, id: &str) -> Result<()> {
     })
 }
 
+/// Меняет привязку чата к проекту.
 pub fn assign_chat(store: &Store, chat_id: i64, workspace_id: &str) -> Result<()> {
     store.with(|db| {
         let mut state: Workspaces = read_json(db, KEY)?;
@@ -109,6 +114,7 @@ pub fn assign_chat(store: &Store, chat_id: i64, workspace_id: &str) -> Result<()
     })
 }
 
+/// Возвращает инструкции и папку проекта выбранного разговора.
 pub fn chat_workspace(store: &Store, chat_id: i64) -> Result<Workspace> {
     let state = list_workspaces(store)?;
     Ok(state

@@ -39,6 +39,7 @@ pub const MODELS: &[Model] = &[
         sha256: "0b2a8980ce155fd97673d8e820b4d29d9c7d99b8fa6806f425d969b145bd52e0",
     },
 ];
+/// Находит поддерживаемую модель по ID или имени файла.
 pub fn model(id: &str) -> Result<Model> {
     MODELS
         .iter()
@@ -46,6 +47,7 @@ pub fn model(id: &str) -> Result<Model> {
         .copied()
         .context("Модель отсутствует в каталоге")
 }
+/// Находит установленный файл, включая совместимый прежний каталог.
 pub fn installed_path(spec: Model) -> Result<PathBuf> {
     let path = super::paths::models_dir()?.join(spec.filename);
     if path.is_file() {
@@ -59,6 +61,7 @@ pub fn installed_path(spec: Model) -> Result<PathBuf> {
     }
     anyhow::bail!("Сначала скачайте {}", spec.name)
 }
+/// Вычисляет SHA-256 потоком, проверяя отмену между блоками.
 pub fn digest_file(path: &Path, token: &CancellationToken) -> Result<String> {
     let mut source = std::fs::File::open(path)?;
     let mut hash = Sha256::new();
@@ -85,9 +88,11 @@ struct Job {
     token: CancellationToken,
 }
 static JOBS: OnceLock<Mutex<HashMap<String, Job>>> = OnceLock::new();
+/// Лениво создаёт общий реестр фоновых загрузок.
 fn jobs() -> &'static Mutex<HashMap<String, Job>> {
     JOBS.get_or_init(|| Mutex::new(HashMap::new()))
 }
+/// Публикует снимок прогресса для окна и общей полосы состояния.
 fn notify(id: &str, phase: &str, downloaded: u64, total: Option<u64>, error: String) {
     if let Ok(mut jobs) = jobs().lock()
         && let Some(job) = jobs.get_mut(id)
@@ -100,6 +105,7 @@ fn notify(id: &str, phase: &str, downloaded: u64, total: Option<u64>, error: Str
         };
     }
 }
+/// Возвращает текущую фазу, объём и ошибку операции.
 pub fn progress(id: &str) -> Progress {
     if let Ok(jobs) = jobs().lock()
         && let Some(job) = jobs.get(id)
@@ -119,6 +125,7 @@ pub fn progress(id: &str) -> Progress {
     }
     result
 }
+/// Запрашивает остановку загрузки с сохранением частичного файла.
 pub fn pause(id: &str) {
     if let Ok(jobs) = jobs().lock()
         && let Some(job) = jobs.get(id)
@@ -126,6 +133,7 @@ pub fn pause(id: &str) {
         job.token.cancel();
     }
 }
+/// Начинает операцию после проверки размера и исключения параллельной записи.
 pub fn start(id: &str) -> Result<()> {
     let spec = model(id)?;
     let token = CancellationToken::new();
@@ -173,6 +181,7 @@ pub fn start(id: &str) -> Result<()> {
     });
     Ok(())
 }
+/// Не допускает одновременной установки одной модели несколькими процессами.
 fn lock(root: &Path, spec: Model) -> Result<std::fs::File> {
     std::fs::create_dir_all(root)?;
     let lock = std::fs::OpenOptions::new()
@@ -184,10 +193,12 @@ fn lock(root: &Path, spec: Model) -> Result<std::fs::File> {
     fs2::FileExt::try_lock_exclusive(&lock).context("Модель занята другим процессом")?;
     Ok(lock)
 }
+/// Запускает сетевую загрузку и отражает её завершение в реестре.
 async fn download(spec: Model, token: CancellationToken) -> Result<()> {
     let root = super::paths::models_dir()?;
     download_to(spec, token, root).await
 }
+/// Продолжает частичный файл и публикует его только после проверки SHA-256.
 async fn download_to(spec: Model, token: CancellationToken, root: PathBuf) -> Result<()> {
     let _lease = lock(&root, spec)?;
     let part = root.join(format!("{}.part", spec.filename));
@@ -282,6 +293,7 @@ async fn download_to(spec: Model, token: CancellationToken, root: PathBuf) -> Re
     notify(spec.id, "installed", offset, total, String::new());
     Ok(())
 }
+/// Копирует оригинальный файл и проверяет его до атомарной установки.
 pub fn import(spec: Model, source: &Path) -> Result<()> {
     let root = super::paths::models_dir()?;
     let _lease = lock(&root, spec)?;
@@ -308,6 +320,17 @@ pub fn import(spec: Model, source: &Path) -> Result<()> {
     }
     result
 }
+/// Принимает уже проверенный поток импорта, не создавая вторую гигабайтную копию.
+pub(crate) fn install_staged(spec: Model, file: tempfile::NamedTempFile) -> Result<()> {
+    let root = super::paths::models_dir()?;
+    let _lease = lock(&root, spec)?;
+    file.persist(root.join(spec.filename))
+        .map_err(|e| e.error)?;
+    let size = root.join(spec.filename).metadata()?.len();
+    notify(spec.id, "installed", size, Some(size), String::new());
+    Ok(())
+}
+/// Сохраняет явный выбор установленной локальной модели.
 pub fn select(store: &Store, id: &str) -> Result<String> {
     let spec = model(id)?;
     installed_path(spec)?;
@@ -319,6 +342,7 @@ pub fn select(store: &Store, id: &str) -> Result<String> {
     })?;
     Ok(spec.name.into())
 }
+/// Выгружает модель и удаляет только файлы выбранных весов.
 pub fn remove(id: &str) -> Result<()> {
     let spec = model(id)?;
     super::litert::unload()?;
@@ -343,6 +367,7 @@ pub fn remove(id: &str) -> Result<()> {
 mod tests {
     use super::*;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    /// Проверяет Range-продолжение и SHA-256 до публикации файла.
     #[tokio::test]
     async fn resume_checks_range_and_hash_before_publishing() {
         let directory = tempfile::tempdir().unwrap();
@@ -392,6 +417,7 @@ mod tests {
         );
         assert!(!directory.path().join("test.litertlm.part").exists());
     }
+    /// Запрещает выбор недокачанных или повреждённых весов.
     #[tokio::test]
     async fn incomplete_or_corrupt_download_cannot_be_selected() {
         let directory = tempfile::tempdir().unwrap();

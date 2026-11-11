@@ -7,6 +7,7 @@ use crate::{
     services,
 };
 use dioxus::prelude::*;
+/// Меняет режим агента только по явному решению пользователя.
 #[component]
 pub fn build_agent_controls() -> Element {
     let mut state = use_context::<Signal<AppState>>();
@@ -31,8 +32,12 @@ pub fn build_agent_controls() -> Element {
                 let next = !*open.peek();
                 open.set(next);
             },
-            icons::build_icon { name: "fact_check_outlined" }
-            span { "{label}" }
+            icons::build_icon {
+                name: "fact_check_outlined",
+            }
+            span {
+                "{label}"
+            }
         }
         if *open.read() {
             popover::build_popover {
@@ -78,7 +83,8 @@ pub fn build_agent_controls() -> Element {
                         "{label}"
                     }
                 }
-                p { class: "notice popover-description",
+                p {
+                    class: "notice popover-description",
                     "Авто разрешает агенту изменять файлы выбранного проекта и запускать команды без отдельного вопроса. Сохранение личной памяти подтверждается всегда."
                 }
             }

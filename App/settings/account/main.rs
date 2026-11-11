@@ -4,9 +4,10 @@ use crate::{
         shared::icons,
         state::{self, AppState},
     },
-    services::{self, local_accounts::Usage},
+    services::{self, profiles::Usage},
 };
 use dioxus::prelude::*;
+/// Объединяет автоматически созданный профиль, редактирование и серверный вход.
 #[component]
 pub fn build_account_page() -> Element {
     let state = use_context::<Signal<AppState>>();
@@ -15,7 +16,6 @@ pub fn build_account_page() -> Element {
     let mut draft = use_signal(String::new);
     let mut editing = use_signal(|| false);
     let mut dirty = use_signal(|| false);
-    let mut locals = use_signal(|| false);
     let mut usage = use_signal(Usage::default);
     let mut revision = use_signal(|| 0u64);
     crate::app::shared::unsaved::use_unsaved(dirty);
@@ -28,7 +28,7 @@ pub fn build_account_page() -> Element {
                 let (profile, stats) = services::runtime::blocking(move || {
                     Ok((
                         services::profile::read(&store)?,
-                        services::local_accounts::usage(&store, &root)?,
+                        services::profiles::usage(&store, &root)?,
                     ))
                 })
                 .await?;
@@ -43,23 +43,119 @@ pub fn build_account_page() -> Element {
     });
     let mib = usage.read().bytes as f64 / 1048576.0;
     rsx! {
-        div{class:"account-page",
-            section{class:"profile-identity",
-                super::avatar::build_avatar{value:avatar.read().clone(),onchange:move|value|avatar.set(value)}
-                div{class:"profile-identity-copy",
-                    button{class:"profile-name",title:"Изменить имя",onclick:move|_|{draft.set(name.peek().clone());editing.set(true);},span{"{name}"}icons::build_icon{name:"edit"}}
-                    p{class:"notice","Ваш профиль Xopilot"}
+        div {
+            class: "account-page",
+            section {
+                class: "profile-identity",
+                super::avatar::build_avatar {
+                    value: avatar.read().clone(),
+                    onchange: move |value| avatar.set(value),
+                }
+                div {
+                    class: "profile-identity-copy",
+                    button {
+                        class: "profile-name",
+                        title: "Изменить имя",
+                        onclick: move |_| {
+                            draft.set(name.peek().clone());
+                            editing.set(true);
+                        },
+                        span {
+                            "{name}"
+                        }
+                        icons::build_icon {
+                            name: "edit",
+                        }
+                    }
+                    p {
+                        class: "notice",
+                        "Профиль создан автоматически на этом устройстве"
+                    }
                 }
             }
-            if *editing.read(){section{class:"profile-name-editor",
-                label{class:"field","Имя пользователя",input{value:"{draft}",maxlength:50,autofocus:true,oninput:move|e|{draft.set(e.value());dirty.set(true);}}}
-                div{class:"row",button{class:"button",onclick:move|_|{editing.set(false);dirty.set(false);},"Отмена"}button{class:"button primary",onclick:move|_|{spawn(async move{let result=async{let store=state::store(state)?;let requested=draft.peek().clone();let value=requested.clone();services::runtime::blocking(move||services::profile::rename(&store,&value)).await?;name.set(requested.trim().to_owned());editing.set(false);dirty.set(false);Ok(())}.await;state::report(state,result);});},"Сохранить имя"}}
-            }}
-            super::cloud::build_cloud_card{onchange:move|_|revision+=1}
-            h2{class:"section-title","Статистика использования"}
-            div{class:"profile-statistics",for(icon,label,value)in[("forum_outlined","Чаты",usage.read().chats.to_string()),("chat_bubble_outline","Сообщения",usage.read().messages.to_string()),("storage","Данные",format!("{mib:.1} МиБ"))]{div{class:"profile-stat",icons::build_icon{name:icon}small{"{label}"}strong{"{value}"}}}}
-            button{class:"account-local-trigger",onclick:move|_|{let next=!*locals.peek();locals.set(next);},icons::build_icon{name:"person_outline"}span{"Локальные профили"}icons::build_icon{name:if *locals.read(){"expand_less"}else{"expand_more"}}}
-            if *locals.read(){super::local::build_local_accounts{}}
+            if *editing.read() {
+                section {
+                    class: "profile-name-editor",
+                    label {
+                        class: "field",
+                        "Имя пользователя"
+                        input {
+                            value: "{draft}",
+                            maxlength: 50,
+                            autofocus: true,
+                            oninput: move |e| {
+                                draft.set(e.value());
+                                dirty.set(true);
+                            },
+                        }
+                    }
+                    div {
+                        class: "row",
+                        button {
+                            class: "button",
+                            onclick: move |_| {
+                                editing.set(false);
+                                dirty.set(false);
+                            },
+                            "Отмена"
+                        }
+                        button {
+                            class: "button primary",
+                            onclick: move |_| {
+                                spawn(async move {
+                                    let result = async {
+                                        let store = state::store(state)?;
+                                        let requested = draft.peek().clone();
+                                        let value = requested.clone();
+                                        services::runtime::blocking(move || services::profile::rename(
+                                                &store,
+                                                &value,
+                                            ))
+                                            .await?;
+                                        name.set(requested.trim().to_owned());
+                                        editing.set(false);
+                                        dirty.set(false);
+                                        Ok(())
+                                    }
+                                        .await;
+                                    state::report(state, result);
+                                });
+                            },
+                            "Сохранить имя"
+                        }
+                    }
+                }
+            }
+            super::cloud::build_cloud_card {
+                onchange: move |_| revision += 1,
+            }
+            h2 {
+                class: "section-title",
+                "Статистика использования"
+            }
+            div {
+                class: "profile-statistics",
+                for (icon, label, value) in [
+                    ("forum_outlined", "Чаты", usage.read().chats.to_string()),
+                    ("chat_bubble_outline", "Сообщения", usage.read().messages.to_string()),
+                    ("storage", "Данные", format!("{mib:.1} МиБ")),
+                ]
+                {
+                    div {
+                        class: "profile-stat",
+                        icons::build_icon {
+                            name: icon,
+                        }
+                        small {
+                            "{label}"
+                        }
+                        strong {
+                            "{value}"
+                        }
+                    }
+                }
+            }
+
         }
     }
 }

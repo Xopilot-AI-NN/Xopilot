@@ -6,6 +6,7 @@ use crate::{
 };
 use dioxus::prelude::*;
 
+/// Открывает проводник и добавляет выбранные материалы в черновик.
 #[component]
 pub fn build_add_material_button() -> Element {
     let mut state = use_context::<Signal<AppState>>();
@@ -16,9 +17,17 @@ pub fn build_add_material_button() -> Element {
         }
     });
     rsx! {
-        label { class: "file-button brand-button tone-create", title: "Добавить материал", "aria-label": "Добавить материал",
-            icons::build_icon { name: if *loading.read() { "hourglass_empty" } else { "add" } }
-            input { r#type: "file", multiple: true, disabled: *loading.read() || state.read().busy,
+        label {
+            class: "file-button brand-button tone-create",
+            title: "Добавить материал",
+            "aria-label": "Добавить материал",
+            icons::build_icon {
+                name: if *loading.read() { "hourglass_empty" } else { "add" },
+            }
+            input {
+                r#type: "file",
+                multiple: true,
+                disabled: *loading.read() || state.read().busy,
                 onchange: move |event| {
                     let files = event.files();
                     let active = state.read().active;
@@ -26,22 +35,34 @@ pub fn build_add_material_button() -> Element {
                     state.write().uploading = true;
                     spawn(async move {
                         let result = async {
-                            anyhow::ensure!(state.read().draft.files.len() + files.len() <= 10, "К сообщению можно прикрепить до 10 файлов");
+                            anyhow::ensure!(
+                                state.read().draft.files.len() + files.len() <= 10,
+                                "К сообщению можно прикрепить до 10 файлов"
+                            ); // Поздний ответ файлового диалога не прикрепляется к другому чату.
                             for file in files {
-                                anyhow::ensure!(file.size() <= services::attachments::MAX_FILE_BYTES, "Размер файла превышает 32 МиБ");
+                                anyhow::ensure!(
+                                    file.size() <= services::attachments::MAX_FILE_BYTES,
+                                    "Размер файла превышает 32 МиБ"
+                                );
                                 let name = file.name();
                                 let path = file.path();
-                                let material = services::runtime::blocking(move || services::attachments::import_material(&name, &path)).await?;
-                                // Поздний ответ файлового диалога не прикрепляется к другому чату.
-                                if state.read().active == active { state.write().draft.files.push(material); }
+                                let material = services::runtime::blocking(move || services::attachments::import_material(
+                                        &name,
+                                        &path,
+                                    ))
+                                    .await?;
+                                if state.read().active == active {
+                                    state.write().draft.files.push(material);
+                                }
                             }
                             state::persist_draft(state).await
-                        }.await;
+                        }
+                            .await;
                         loading.set(false);
                         state.write().uploading = false;
                         state::report(state, result);
                     });
-                }
+                },
             }
         }
     }
@@ -118,9 +139,19 @@ pub fn build_android_material_button() -> Element {
         state.write().uploading = false;
     });
     rsx! {
-        label { class: "file-button brand-button tone-create", title: "Добавить материал", "aria-label": "Добавить материал",
-            icons::build_icon { name: if state.read().uploading { "hourglass_empty" } else { "add" } }
-            input { id: "xopilot-android-materials", r#type: "file", multiple: true, disabled: state.read().busy || state.read().uploading }
+        label {
+            class: "file-button brand-button tone-create",
+            title: "Добавить материал",
+            "aria-label": "Добавить материал",
+            icons::build_icon {
+                name: if state.read().uploading { "hourglass_empty" } else { "add" },
+            }
+            input {
+                id: "xopilot-android-materials",
+                r#type: "file",
+                multiple: true,
+                disabled: state.read().busy || state.read().uploading,
+            }
         }
     }
 }

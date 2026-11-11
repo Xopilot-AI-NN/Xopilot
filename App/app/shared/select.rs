@@ -1,6 +1,7 @@
 // Описание: Тематический список вместо системного select с чужой палитрой.
 use super::{icons, popover};
 use dioxus::prelude::*;
+/// Отрисовывает тематический список с выбранным значением и доступной навигацией.
 #[component]
 pub fn build_select(
     id: String,
@@ -38,8 +39,12 @@ pub fn build_select(
                     open.set(true);
                 }
             },
-            span { "{title}" }
-            icons::build_icon { name: "expand_more" }
+            span {
+                "{title}"
+            }
+            icons::build_icon {
+                name: "expand_more",
+            }
         }
         if *open.read() {
             popover::build_popover {
@@ -56,9 +61,13 @@ pub fn build_select(
                             onchange.call(key.clone());
                             open.set(false);
                         },
-                        span { "{title}" }
+                        span {
+                            "{title}"
+                        }
                         if key == value {
-                            icons::build_icon { name: "check" }
+                            icons::build_icon {
+                                name: "check",
+                            }
                         }
                     }
                 }

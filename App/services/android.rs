@@ -9,6 +9,7 @@ use jni::{
 };
 use std::path::{Path, PathBuf};
 
+/// Подключает текущий поток к Android JVM на время JNI-вызова.
 fn with_context<T>(call: impl FnOnce(&mut JNIEnv<'_>, JObject<'_>) -> Result<T>) -> Result<T> {
     let context = ndk_context::android_context();
     // VM и Activity принадлежат Dioxus/wry и живут до завершения Activity.
@@ -24,12 +25,14 @@ fn with_context<T>(call: impl FnOnce(&mut JNIEnv<'_>, JObject<'_>) -> Result<T>)
     result
 }
 
+/// Преобразует Java String в Rust с проверкой JNI-ошибок.
 fn java_string(env: &mut JNIEnv<'_>, object: JObject<'_>) -> Result<Option<String>> {
     if object.is_null() {
         return Ok(None);
     }
     Ok(Some(env.get_string(&JString::from(object))?.into()))
 }
+/// Открывает проверенную ссылку системным Android Intent.
 pub fn open_url(url: &str) -> Result<()> {
     with_context(|env, activity| {
         let text = env.new_string(url)?;
@@ -57,6 +60,7 @@ pub fn open_url(url: &str) -> Result<()> {
     })
 }
 
+/// Находит приватный каталог Android с сохранением прежней истории.
 pub fn data_dir() -> Result<PathBuf> {
     with_context(|env, activity| {
         let files = env
@@ -78,6 +82,7 @@ pub fn data_dir() -> Result<PathBuf> {
     })
 }
 
+/// Ищет существующую историю в совместимых каталогах приложения.
 fn find_history(dir: &Path, depth: usize, found: &mut Vec<PathBuf>) -> Result<()> {
     if dir.join("xopilot.db").is_file() {
         found.push(dir.to_owned());
@@ -98,6 +103,7 @@ fn find_history(dir: &Path, depth: usize, found: &mut Vec<PathBuf>) -> Result<()
     Ok(())
 }
 
+/// Получает прежний ключ Android Keystore; при утрате не подменяет историю новой.
 pub fn database_key(existing: bool) -> Result<String> {
     with_context(|env, activity| {
         let prefs_name = env.new_string("xopilot_keys")?;

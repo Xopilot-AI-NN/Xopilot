@@ -52,10 +52,12 @@ pub fn create_file(root: &Path, path: &str, content: &str) -> Result<()> {
     result
 }
 
+/// Вычисляет отпечаток содержимого для защиты от внешней правки.
 pub fn fingerprint(text: &str) -> String {
     hex::encode(Sha256::digest(text.as_bytes()))
 }
 
+/// Сверяет отпечаток и сохраняет файл, сохраняя конфликтующую внешнюю версию.
 pub fn save_existing(root: &Path, path: &str, content: &str, original: &str) -> Result<String> {
     let full = resolve(root, path)?;
     ensure!(
@@ -95,6 +97,7 @@ pub fn save_existing(root: &Path, path: &str, content: &str, original: &str) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// Проверяет сохранность внешней правки при конфликте редактора.
     #[test]
     fn external_change_is_preserved() {
         let dir = tempfile::tempdir().unwrap();

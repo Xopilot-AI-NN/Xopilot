@@ -2,6 +2,7 @@
 use anyhow::{Result, ensure};
 use std::path::Path;
 
+/// Исполняет ранее подтверждённый локальный маркер удаления до открытия базы.
 pub fn perform_pending_erasure(root: &Path) -> Result<bool> {
     let marker = root.join(".erase-personal-data");
     if !marker.is_file() {
@@ -30,6 +31,7 @@ pub fn perform_pending_erasure(root: &Path) -> Result<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// Проверяет маркер удаления и сохранность файлов вне данных приложения.
     #[test]
     fn erasure_requires_a_previous_marker_and_keeps_external_files() {
         let temp = tempfile::tempdir().unwrap();

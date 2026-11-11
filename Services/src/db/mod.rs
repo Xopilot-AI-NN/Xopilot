@@ -162,6 +162,7 @@ impl Database {
         Ok(())
     }
 
+    /// Читает настройку по ключу без изменения схемы.
     pub fn get_setting(&self, key: &str) -> Result<Option<String>> {
         self.conn
             .query_row(
@@ -172,6 +173,7 @@ impl Database {
             .optional()
     }
 
+    /// Возвращает сохранённые настройки для совместимого экспорта.
     pub fn all_settings(&self) -> Result<Vec<(String, String, i64)>> {
         let mut stmt = self
             .conn
@@ -251,6 +253,7 @@ impl Database {
         Ok(affected > 0)
     }
 
+    /// Обновляет текст и связанные поля сообщения, сохраняя его ID.
     pub fn update_message_full(
         &self,
         message_id: i64,
@@ -279,6 +282,7 @@ impl Database {
         Ok(true)
     }
 
+    /// Записывает длительность ответа после завершения генерации.
     pub fn set_message_elapsed(&self, message_id: i64, seconds: f64) -> Result<bool> {
         if !seconds.is_finite() || seconds < 0.0 {
             return Err(rusqlite::Error::InvalidQuery);
@@ -289,6 +293,7 @@ impl Database {
         )? > 0)
     }
 
+    /// Загружает сообщения чата в порядке истории со всеми вложениями.
     pub fn get_messages(&self, chat_id: i64) -> Result<Vec<StoredMessage>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, role, content, quote, reply_to, created_at, elapsed_seconds FROM messages WHERE chat_id = ?1 ORDER BY id ASC",
@@ -321,6 +326,7 @@ impl Database {
         Ok(messages)
     }
 
+    /// Возвращает доступные ID, названия и даты разговоров.
     pub fn list_chats(&self) -> Result<Vec<(i64, String, i64)>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, COALESCE(title, ''), created_at FROM chats ORDER BY created_at DESC",
@@ -329,6 +335,7 @@ impl Database {
         rows.collect()
     }
 
+    /// Меняет название чата, не создавая новую историю.
     pub fn rename_chat(&self, chat_id: i64, title: &str) -> Result<bool> {
         Ok(self.conn.execute(
             "UPDATE chats SET title = ?1 WHERE id = ?2",
@@ -336,6 +343,7 @@ impl Database {
         )? > 0)
     }
 
+    /// Собирает краткие сведения о разговорах для навигации.
     pub fn list_chat_summaries(&self) -> Result<Vec<(i64, String, i64)>> {
         let mut stmt = self.conn.prepare(
             "SELECT c.id, COALESCE(c.title, ''), COUNT(m.id) FROM chats c
@@ -348,27 +356,32 @@ impl Database {
 
     /// Удаляет все сообщения чата (вложения удаляются каскадно через FK). Сам чат остаётся.
     pub fn clear_chat_messages(&self, chat_id: i64) -> Result<()> {
-        self.conn
-            .execute("DELETE FROM messages WHERE chat_id = ?1", params![chat_id])?;
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute("DELETE FROM settings WHERE key IN (SELECT 'agent_actions_v1:' || id FROM messages WHERE chat_id=?1) OR key='agent_trace:' || ?1",params![chat_id])?;
+        tx.execute("DELETE FROM messages WHERE chat_id=?1", params![chat_id])?;
+        tx.commit()?;
         Ok(())
     }
 
-    /// Удаляет ровно одно сообщение; связанные вложения удаляются через FK.
+    /// Удаляет сообщение вместе с его карточками агента в одной транзакции.
     pub fn delete_message(&self, message_id: i64) -> Result<bool> {
-        Ok(self
-            .conn
-            .execute("DELETE FROM messages WHERE id = ?1", params![message_id])?
-            > 0)
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute(
+            "DELETE FROM settings WHERE key='agent_actions_v1:' || ?1",
+            params![message_id],
+        )?;
+        let deleted = tx.execute("DELETE FROM messages WHERE id=?1", params![message_id])? > 0;
+        tx.commit()?;
+        Ok(deleted)
     }
 
-    /// Удаляет чат целиком: связанные сообщения и их вложения удаляются каскадно через FK
-    /// (ON DELETE CASCADE на messages.chat_id и message_attachments.message_id).
-    /// Возвращает Ok(false), если чата с таким id не было.
+    /// Каскадно удаляет чат и его действия; освободившийся ID не унаследует старый журнал.
     pub fn delete_chat(&self, chat_id: i64) -> Result<bool> {
-        Ok(self
-            .conn
-            .execute("DELETE FROM chats WHERE id = ?1", params![chat_id])?
-            > 0)
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute("DELETE FROM settings WHERE key IN (SELECT 'agent_actions_v1:' || id FROM messages WHERE chat_id=?1) OR key='agent_trace:' || ?1",params![chat_id])?;
+        let deleted = tx.execute("DELETE FROM chats WHERE id=?1", params![chat_id])? > 0;
+        tx.commit()?;
+        Ok(deleted)
     }
 
     /// Общее число сообщений во всех чатах — для статистики на странице «Аккаунт».
@@ -473,6 +486,7 @@ impl Database {
         tx.commit()?;
         Ok(Some(id))
     }
+    /// Применяет разрешённые поля синхронизации, сохраняя локальные настройки.
     pub fn apply_sync_settings(
         &self,
         expected: &[(String, Option<String>)],
@@ -496,6 +510,7 @@ impl Database {
         Ok(true)
     }
 
+    /// Подсчитывает сообщения в зашифрованной базе.
     pub fn total_message_count(&self) -> Result<i64> {
         self.conn
             .query_row("SELECT COUNT(*) FROM messages", [], |row| row.get(0))
@@ -508,6 +523,7 @@ impl Database {
     }
 }
 
+/// Возвращает текущее время для метаданных записей.
 fn now() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)

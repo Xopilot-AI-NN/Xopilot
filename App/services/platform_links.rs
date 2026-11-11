@@ -1,5 +1,6 @@
 // Описание: Открываем проверенные HTTPS/локальные ссылки в системном браузере.
 use anyhow::{Result, ensure};
+/// Открывает разрешённую HTTPS-ссылку системным браузером.
 pub fn open(url: &str) -> Result<()> {
     let parsed = reqwest::Url::parse(url)?;
     ensure!(

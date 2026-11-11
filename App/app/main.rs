@@ -14,6 +14,7 @@ use dioxus::prelude::*;
 
 const FONT: Asset = asset!("/assets/fonts/GoogleSans-Regular.ttf");
 
+/// Инициализирует приложение и фоновое сохранение черновика.
 #[component]
 pub fn build_app_ui() -> Element {
     let state = use_context_provider(|| {
@@ -55,7 +56,11 @@ pub fn build_app_ui() -> Element {
             }
         }
     });
-    rsx! { self::build_window { key:"{state.read().session_revision}" } }
+    rsx! {
+        self::build_window {
+            key: "{state.read().session_revision}",
+        }
+    }
 }
 
 /// Компоновка отдельно от инициализации: её можно проверить на тестовой базе.
@@ -98,60 +103,189 @@ pub fn build_window() -> Element {
         },
     ));
     rsx! {
-        style { {format!("@font-face{{font-family:GoogleSans;src:url('{FONT}')}}@font-face{{font-family:MaterialIcons;src:url('{}')}}{}", icons::FONT, palette::STYLES)} }
-        document::Link { rel: "icon", href: asset!("/assets/icon.png") }
-        div { class: "app", "data-theme": theme, "data-platform": if cfg!(target_os = "android") { "android" } else { "desktop" },
+        style {
+            {
+                format!(
+                    "@font-face{{font-family:GoogleSans;src:url('{FONT}')}}@font-face{{font-family:MaterialIcons;src:url('{}')}}{}",
+                    icons::FONT,
+                    palette::STYLES,
+                )
+            }
+        }
+        document::Link {
+            rel: "icon",
+            href: asset!("/assets/icon.png"),
+        }
+        div {
+            class: "app",
+            "data-theme": theme,
+            "data-platform": if cfg!(target_os = "android") { "android" } else { "desktop" },
             if !ready {
-                div { class: "empty", role: "status", "Открываем защищённую историю…" }
+                div {
+                    class: "empty",
+                    role: "status",
+                    "Открываем защищённую историю…"
+                }
             } else if !has_store {
-                div { class: "empty",
-                    icons::build_icon { name: "lock_outline" }
-                    h1 { "История недоступна" }
-                    p { "Проверьте системное хранилище ключей. Данные не перезаписывались." }
-                    button { class: "button", onclick: move |_| { state.write().ready = false; spawn(async move { state::initialize(state).await; }); }, "Повторить" }
+                div {
+                    class: "empty",
+                    icons::build_icon {
+                        name: "lock_outline",
+                    }
+                    h1 {
+                        "История недоступна"
+                    }
+                    p {
+                        "Проверьте системное хранилище ключей. Данные не перезаписывались."
+                    }
+                    button {
+                        class: "button",
+                        onclick: move |_| {
+                            state.write().ready = false;
+                            spawn(async move {
+                                state::initialize(state).await;
+                            });
+                        },
+                        "Повторить"
+                    }
                 }
             } else {
-                div { class: "layout",
-                    menu::menu::build_menu {}
-                    main { class: "main", chat::chat::build_chat {} }
-                    menu::menu::build_menu_overlay {}
+                div {
+                    class: "layout",
+                    menu::menu::build_menu {
+                    }
+                    main {
+                        class: "main",
+                        chat::chat::build_chat {
+                        }
+                    }
+                    menu::menu::build_menu_overlay {
+                    }
                 }
-                dialogs::build_overlay {}
-            }
-            if let Some(error) = error {
-                div { class: "snackbar error", role: "alert",
-                    span { "{error}" }
-                    button { class: "plain-icon", title: "Закрыть сообщение", onclick: move |_| state.write().error = None, icons::build_icon { name: "close" } }
-                }
-            } else if let Some(notice) = notice {
-                div { class: "snackbar", role: "status",
-                    span { "{notice}" }
-                    button { class: "plain-icon", title: "Закрыть сообщение", onclick: move |_| state.write().notice = None, icons::build_icon { name: "close" } }
+                dialogs::build_overlay {
                 }
             }
-            if pending_screen.is_some() || pending_section.is_some() {
-                div { class: "modal-backdrop confirmation-backdrop",
-                    section { class: "confirmation", role: "alertdialog", "aria-modal": "true", "aria-label": "Несохранённые изменения", tabindex: -1,
-                        onkeydown: move |event| { if event.key() == Key::Escape { event.stop_propagation(); state.write().pending_screen = None; state.write().pending_section = None; } },
-                        h2 { "Отбросить изменения?" }
-                        p { "В форме есть несохранённые изменения." }
-                        div { class: "row dialog-actions",
-                            button { class: "button", onclick: move |_| { state.write().pending_screen = None; state.write().pending_section = None; document::eval(include_str!("shared/dialog_focus.js")); }, "Остаться" }
-                            button { class: "button danger", onclick: move |_| state::discard_pending(state), "Отбросить и перейти" }
+            if !has_store {
+                if let Some(error) = error {
+                    div {
+                        class: "snackbar error",
+                        role: "alert",
+                        span {
+                            "{error}"
+                        }
+                        button {
+                            class: "plain-icon",
+                            title: "Закрыть сообщение",
+                            onclick: move |_| state.write().error = None,
+                            icons::build_icon {
+                                name: "close",
+                            }
+                        }
+                    }
+                } else if let Some(notice) = notice {
+                    div {
+                        class: "snackbar",
+                        role: "status",
+                        span {
+                            "{notice}"
+                        }
+                        button {
+                            class: "plain-icon",
+                            title: "Закрыть сообщение",
+                            onclick: move |_| state.write().notice = None,
+                            icons::build_icon {
+                                name: "close",
+                            }
                         }
                     }
                 }
             }
-            if let Some(approval)=approval{
-                div{class:"modal-backdrop confirmation-backdrop",
-                    section{class:"confirmation agent-approval",role:"alertdialog","aria-modal":"true","aria-label":"Подтверждение действия агента",tabindex:-1,
-                        onkeydown:{let approval=approval.clone();move|event:KeyboardEvent|{if event.key()==Key::Escape{event.stop_propagation();approval.answer(false);state.write().approval=None;}}},
-                        h2{"{approval.title}"}
-                        pre{class:"approval-details","{approval.details}"}
-                        div{class:"row dialog-actions",
-                            button{class:"button",onclick:{let approval=approval.clone();move|_|{approval.answer(false);state.write().approval=None;}},"Отклонить"}
-                            button{class:"button primary",onclick:move|_|{approval.answer(true);state.write().approval=None;},"Разрешить действие"}
-                            button{class:"button danger",onclick:move|_|{state::cancel(state);state.write().approval=None;},"Остановить задачу"}
+            if pending_screen.is_some() || pending_section.is_some() {
+                div {
+                    class: "modal-backdrop confirmation-backdrop",
+                    section {
+                        class: "confirmation",
+                        role: "alertdialog",
+                        "aria-modal": "true",
+                        "aria-label": "Несохранённые изменения",
+                        tabindex: -1,
+                        onkeydown: move |event| {
+                            if event.key() == Key::Escape {
+                                event.stop_propagation();
+                                state.write().pending_screen = None;
+                                state.write().pending_section = None;
+                            }
+                        },
+                        h2 {
+                            "Отбросить изменения?"
+                        }
+                        p {
+                            "В форме есть несохранённые изменения."
+                        }
+                        div {
+                            class: "row dialog-actions",
+                            button {
+                                class: "button",
+                                onclick: move |_| {
+                                    state.write().pending_screen = None;
+                                    state.write().pending_section = None;
+                                    document::eval(include_str!("shared/dialog_focus.js"));
+                                },
+                                "Остаться"
+                            }
+                            button {
+                                class: "button danger",
+                                onclick: move |_| state::discard_pending(state),
+                                "Отбросить и перейти"
+                            }
+                        }
+                    }
+                }
+            }
+            if let Some(approval) = approval {
+                div {
+                    class: "modal-backdrop confirmation-backdrop",
+                    section {
+                        class: "confirmation agent-approval",
+                        role: "alertdialog",
+                        "aria-modal": "true",
+                        "aria-label": "Подтверждение действия агента",
+                        tabindex: -1,
+                        onkeydown: move |event: KeyboardEvent| {
+                            if event.key() == Key::Escape {
+                                event.stop_propagation();
+                                state::answer_action(state, false);
+                            }
+                        },
+                        h2 {
+                            "{approval.title}"
+                        }
+                        pre {
+                            class: "approval-details",
+                            "{approval.details}"
+                        }
+                        div {
+                            class: "row dialog-actions",
+                            button {
+                                class: "button",
+                                onclick: move |_| state::answer_action(state, false),
+                                "Отклонить"
+                            }
+                            button {
+                                class: "button primary",
+                                onclick: move |_| {
+                                    state::answer_action(state, true);
+                                },
+                                "Разрешить действие"
+                            }
+                            button {
+                                class: "button danger",
+                                onclick: move |_| {
+                                    state::cancel(state);
+                                    state.write().approval = None;
+                                },
+                                "Остановить задачу"
+                            }
                         }
                     }
                 }
