@@ -17,6 +17,9 @@ fn main() -> Result<()> {
         "Привет!",
         "Сколько у меня канвасов? Проверь список.",
         r#"Создай канвас с содержимым "Привет мир"."#,
+        r#"Создай файл с содержимым "Привет!" в ~/Desktop."#,
+        "создай canvas",
+        "тоже самое",
     ];
     services::runtime::runtime().block_on(async {
         let config = Configuration::Local {
@@ -84,6 +87,11 @@ fn main() -> Result<()> {
                 && doc.kind == "text"
                 && doc.content.trim() == "Привет мир"),
             "Canvas не создан с запрошенным содержимым"
+        );
+        anyhow::ensure!(
+            docs.iter()
+                .any(|doc| doc.kind == "text" && doc.content == "Привет!"),
+            "Агент потерял содержимое предыдущей просьбы при переходе к Canvas"
         );
         let stats = services::litert::context_stats()?;
         println!("CANVAS_CONTEXT {stats:?}");

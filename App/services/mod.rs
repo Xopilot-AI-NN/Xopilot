@@ -1,6 +1,7 @@
 // Описание: Прикладные сервисы, независимо от интерфейса Dioxus.
 pub mod account_deletion;
 pub mod agent;
+pub mod agent_intent;
 pub mod agent_protocol;
 pub mod agent_session;
 #[cfg(any(target_os = "android", test))]

@@ -3,6 +3,59 @@ use super::agent::{Call, Reply};
 use anyhow::{Context, Result, bail, ensure};
 use serde_json::Value;
 
+/// Замечает заявления об изменениях: без успешного инструмента их нельзя выдавать за результат.
+pub fn claims_change(text: &str) -> bool {
+    let text = text.to_lowercase();
+    let first = text
+        .split_whitespace()
+        .next()
+        .unwrap_or("")
+        .trim_matches(['.', ',', ':', '!']);
+    if [
+        "создан",
+        "создана",
+        "создано",
+        "созданы",
+        "сохранён",
+        "сохранен",
+        "сохранена",
+        "сохранено",
+        "сохранены",
+        "обновлён",
+        "удалён",
+    ]
+    .contains(&first)
+    {
+        return true;
+    }
+    [
+        "создаю",
+        "создал",
+        "успешно создан",
+        "был создан",
+        "была создана",
+        "сохранил",
+        "успешно сохран",
+        "записал",
+        "обновил",
+        "удалил",
+        "i created",
+        "i have created",
+        "i saved",
+        "successfully created",
+        "has been created",
+        "i updated",
+        "i deleted",
+    ]
+    .iter()
+    .any(|phrase| {
+        text.match_indices(phrase).any(|(offset, _)| {
+            let before = &text[..offset];
+            !before.ends_with("не ") && !before.ends_with("not ")
+        })
+    })
+}
+
 /// Находит только полные объекты управляющего протокола и не исполняет обрывки JSON.
 fn embedded(text: &str) -> Result<Vec<Value>> {
     let mut values = Vec::new();
@@ -113,6 +166,19 @@ pub fn parse(text: &str) -> Result<Reply> {
 }
 #[cfg(test)]
 mod tests {
+    /// Отличает обещание выполнить действие от описания отсутствующих документов.
+    #[test]
+    fn change_claim_requires_receipt() {
+        assert!(super::claims_change("Создаю Canvas с названием «Привет!»"));
+        assert!(super::claims_change("Я создал документ."));
+        assert!(super::claims_change("Создан новый канвас."));
+        assert!(!super::claims_change("У вас пока нет созданных канвасов."));
+        assert!(!super::claims_change("Какое содержимое добавить?"));
+        assert!(!super::claims_change("Я не создал документ."));
+        assert!(!super::claims_change(
+            "Создание документа доступно через Canvas."
+        ));
+    }
     /// Пояснение перед командой не превращает команду в показанный пользователю текст.
     #[test]
     fn prose_and_final_markers_do_not_leak_protocol() {

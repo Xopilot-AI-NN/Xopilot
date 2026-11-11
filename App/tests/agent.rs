@@ -10,13 +10,14 @@ use xopilot::services::{
     agent, api_chat::ApiConfig, db::Store, generation::Configuration, workspaces::Workspace,
 };
 /// Запускает настоящий цикл агента с разрешением или отказом записи.
-async fn scenario(allow: bool) -> Result<()> {
+async fn scenario(allow: bool, premature_success: bool) -> Result<()> {
     let project = tempfile::tempdir()?;
     std::fs::write(project.path().join("example.txt"), "old")?;
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let address = listener.local_addr()?;
     let server = tokio::spawn(async move {
-        for step in 0..3 {
+        for turn in 0..(3 + usize::from(premature_success)) {
+            let step = turn.saturating_sub(usize::from(premature_success));
             let (mut stream, _) = listener.accept().await?;
             let mut bytes = Vec::new();
             let mut buffer = [0; 1024];
@@ -41,6 +42,13 @@ async fn scenario(allow: bool) -> Result<()> {
                     }
                 }
             };
+            if premature_success && turn == 1 {
+                assert!(
+                    body["messages"]
+                        .to_string()
+                        .contains("Нет успешного результата")
+                );
+            }
             if step == 1 {
                 assert!(
                     body["messages"].as_array().unwrap().last().unwrap()["content"]
@@ -61,12 +69,16 @@ async fn scenario(allow: bool) -> Result<()> {
                         })
                 );
             }
-            let answer = match step {
-                0 => json!({"tool":"read_project_file","arguments":{"path":"example.txt"}}),
-                1 => {
-                    json!({"tool":"write_project_file","arguments":{"path":"example.txt","content":"new"}})
+            let answer = if premature_success && turn == 0 {
+                json!({"final":"Я создал файл с новым содержимым."})
+            } else {
+                match step {
+                    0 => json!({"tool":"read_project_file","arguments":{"path":"example.txt"}}),
+                    1 => {
+                        json!({"tool":"write_project_file","arguments":{"path":"example.txt","content":"new"}})
+                    }
+                    _ => json!({"final":if allow{"Файл изменён"}else{"Действие отклонено"}}),
                 }
-                _ => json!({"final":if allow{"Файл изменён"}else{"Действие отклонено"}}),
             };
             let response =
                 json!({"choices":[{"message":{"content":answer.to_string()}}]}).to_string();
@@ -142,12 +154,17 @@ async fn scenario(allow: bool) -> Result<()> {
 /// Проверяет, что запись начинается только после подтверждения пользователя.
 #[tokio::test]
 async fn agent_waits_for_approval_before_writing() {
-    scenario(true).await.unwrap();
+    scenario(true, false).await.unwrap();
 }
 /// Проверяет сохранность файла после отказа инструменту.
 #[tokio::test]
 async fn rejected_action_does_not_modify_the_file() {
-    scenario(false).await.unwrap();
+    scenario(false, false).await.unwrap();
+}
+/// Ложное сообщение об успехе заменяется настоящим выполнением с подтверждённой записью.
+#[tokio::test]
+async fn premature_success_is_repaired_before_final_answer() {
+    scenario(true, true).await.unwrap();
 }
 /// Проверяет отмену команды и дочерних процессов до общего таймаута.
 #[tokio::test]
