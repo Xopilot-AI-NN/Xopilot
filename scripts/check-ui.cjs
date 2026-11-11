@@ -184,6 +184,16 @@ process.once('SIGINT',()=>{void stop().finally(()=>{server.close();process.exit(
         if(windowId)execFileSync('niri',['msg','action','screenshot-window','--id',String(windowId),'--path',path.join(root,'desktop-section-'+['Профиль и аккаунт','Персонализация','Модели','История','Обновления','О программе'].indexOf(section)+'.png')]);
         await click('Назад к настройкам');
     }
+    // Проверяем независимость реальных scrollTop, а не только наличие нового заголовка.
+    await evaluate("const b=document.querySelector('.dialog-body');b.scrollTop=b.scrollHeight;return true;");
+    await wait(100);
+    const settingsScroll = await evaluate("return document.querySelector('.dialog-body').scrollTop;");
+    await click('О программе');
+    await check('О программе не наследует прокрутку настроек', "return document.querySelector('.dialog-body').scrollTop===0;");
+    await evaluate("const b=document.querySelector('.dialog-body');b.scrollTop=b.scrollHeight;return true;");
+    await wait(100);
+    await click('Назад к настройкам');
+    await check('Возврат сохраняет собственную прокрутку настроек', `return Math.abs(document.querySelector('.dialog-body').scrollTop-${settingsScroll})<1;`);
     await close();
     await check('Настройки сохраняют черновик чата', "return document.querySelector('#chat-prompt').value === 'Черновик первого чата';");
     const project = path.join(root, 'project');
@@ -205,6 +215,7 @@ process.once('SIGINT',()=>{void stop().finally(()=>{server.close();process.exit(
     fs.writeFileSync(path.join(project, 'example.txt'), 'Внешняя правка');
     await click('Сохранить файл');
     await check('Конфликт файла показан пользователю', "return !!document.querySelector('.snackbar.error');");
+    await check('Вне чата уведомление находится сверху справа, вне диалога', "const item=document.querySelector('.activity-corner .snackbar.error'),r=item?.getBoundingClientRect();return !!r&&!item.closest('.dialog')&&r.top<100&&r.right<=innerWidth&&r.left>innerWidth/2;");
     assert.equal(fs.readFileSync(path.join(project, 'example.txt'), 'utf8'), 'Внешняя правка');
     await evaluate("setTimeout(()=>document.querySelector('.snackbar button').click(),0);return true;");
     await click('Закрыть редактор'); await click('Отбросить');

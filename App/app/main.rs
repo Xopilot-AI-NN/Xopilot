@@ -77,6 +77,7 @@ pub fn build_window() -> Element {
     let pending_section = value.pending_section;
     let approval = value.approval.clone();
     let approval_open = approval.is_some();
+    let outside_chat = value.screen != state::Screen::Chat;
     drop(value);
     // Обычное уведомление не должно навсегда перекрывать кнопки на телефоне.
     let notice_value = use_memo(move || state.read().notice.clone());
@@ -163,6 +164,13 @@ pub fn build_window() -> Element {
                     }
                 }
                 dialogs::build_overlay {
+                }
+                if outside_chat {
+                    aside {
+                        class: "activity-corner",
+                        "aria-label": "Уведомления приложения",
+                        super::shared::activity_dock::build_activity_dock {}
+                    }
                 }
             }
             if !has_store {

@@ -316,3 +316,8 @@ select.preference-select, .field select {
 @media(prefers-reduced-motion:reduce){.progress-fill{transition:none}.progress-fill.indeterminate{animation:none;transform:translateX(90%)}}
 .activity-item[data-state=error] { border-color:var(--danger-edge); }
 .activity-item[data-state=error] .progress-fill { background:var(--danger-ink); }
+/* Вне чата уведомления закреплены в углу приложения, отдельно от прокрутки окон. */
+.activity-corner { position:fixed; top:12px; right:12px; width:min(380px,calc(100vw - 24px)); z-index:90; pointer-events:none; }
+.activity-corner .activity-dock { max-height:40dvh; margin:0; }
+.activity-corner .activity-item { pointer-events:auto; box-shadow:0 4px 16px #0002; }
+.dialog-body { overscroll-behavior:contain; overflow-anchor:none; }

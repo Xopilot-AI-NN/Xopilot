@@ -18,6 +18,7 @@ pub fn build_dialog(
 ) -> Element {
     let state = use_context::<Signal<AppState>>();
     use_effect(use_reactive((&title,), move |_| {
+        document::eval(include_str!("dialog_scroll.js"));
         document::eval(include_str!("dialog_focus.js"));
     }));
     use_drop(move || {
@@ -92,10 +93,11 @@ pub fn build_dialog(
                     }
                 }
                 div {
+                    key: "{title}",
                     class: "dialog-body",
+                    "data-scroll-page": title.clone(),
                     {children}
                 }
-                super::activity_dock::build_activity_dock {}
             }
         }
     }
