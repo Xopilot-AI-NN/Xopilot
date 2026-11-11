@@ -6912,7 +6912,7 @@ dependencies = [
  "advanced_xopilot",
  "ammonia",
  "anyhow",
- "base64 0.22.1",
+ "base64 0.23.1",
  "dioxus",
  "dioxus-ssr",
  "dirs",
