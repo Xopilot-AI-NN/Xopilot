@@ -30,6 +30,32 @@ fn java_string(env: &mut JNIEnv<'_>, object: JObject<'_>) -> Result<Option<Strin
     }
     Ok(Some(env.get_string(&JString::from(object))?.into()))
 }
+pub fn open_url(url: &str) -> Result<()> {
+    with_context(|env, activity| {
+        let text = env.new_string(url)?;
+        let uri = env
+            .call_static_method(
+                "android/net/Uri",
+                "parse",
+                "(Ljava/lang/String;)Landroid/net/Uri;",
+                &[JValue::Object(&text)],
+            )?
+            .l()?;
+        let action = env.new_string("android.intent.action.VIEW")?;
+        let intent = env.new_object(
+            "android/content/Intent",
+            "(Ljava/lang/String;Landroid/net/Uri;)V",
+            &[JValue::Object(&action), JValue::Object(&uri)],
+        )?;
+        env.call_method(
+            &activity,
+            "startActivity",
+            "(Landroid/content/Intent;)V",
+            &[JValue::Object(&intent)],
+        )?;
+        Ok(())
+    })
+}
 
 pub fn data_dir() -> Result<PathBuf> {
     with_context(|env, activity| {
@@ -41,7 +67,7 @@ pub fn data_dir() -> Result<PathBuf> {
             .l()?;
         let files =
             PathBuf::from(java_string(env, absolute)?.context("Android не предоставил filesDir")?);
-        // В старых Flet-сборках private root мог лежать глубже filesDir.
+        // В прежних сборках private root мог лежать глубже filesDir.
         let mut histories = Vec::new();
         find_history(&files, 0, &mut histories)?;
         ensure!(

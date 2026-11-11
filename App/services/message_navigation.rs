@@ -1,4 +1,4 @@
-// Описание: Закладки совместимы с Flet; в настройках хранятся ID, а не копии переписки.
+// Описание: Сохраняем прежний формат закладок; в настройках хранятся ID, а не копии переписки.
 use super::db::{Store, read_json, write_json};
 use anyhow::{Result, ensure};
 use serde_json::{Value, json};

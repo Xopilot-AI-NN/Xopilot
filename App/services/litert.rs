@@ -1,5 +1,5 @@
 // Описание: Официальный C API LiteRT-LM 1.0.0. Владение указателями ограничено RAII.
-// ABI закреплён по v0.19.1/include/{engine,conversation}.h, не Python-обёртка.
+// ABI закреплён по v0.19.1/include/{engine,conversation}.h.
 use anyhow::{Context, Result, bail, ensure};
 use libloading::Library;
 use serde_json::Value;
@@ -53,6 +53,7 @@ api! {
     text: unsafe extern "C" fn(*const c_void,*mut *const c_char)->c_int => "litert_lm_stream_chunk_get_text",
     chunk_error: unsafe extern "C" fn(*const c_void,*mut *const c_char)->c_int => "litert_lm_stream_chunk_get_error",
     final_chunk: unsafe extern "C" fn(*const c_void,*mut bool)->c_int => "litert_lm_stream_chunk_is_final",
+    token_count: unsafe extern "C" fn(Handle,*mut usize)->c_int => "litert_lm_conversation_get_token_count",
 }
 impl Api {
     fn check(&self, code: c_int) -> Result<()> {
@@ -75,6 +76,13 @@ struct Owned<'a> {
     pointer: Handle,
     delete: unsafe extern "C" fn(Handle),
     _api: &'a Api,
+}
+impl Owned<'_> {
+    fn into_raw(self) -> Handle {
+        let pointer = self.pointer;
+        std::mem::forget(self);
+        pointer
+    }
 }
 impl Drop for Owned<'_> {
     fn drop(&mut self) {
@@ -147,12 +155,29 @@ struct Engine {
     engine: Handle,
     path: PathBuf,
     backend: String,
+    cached: Option<CachedConversation>,
+    statistics: ContextStats,
+}
+struct CachedConversation {
+    pointer: Handle,
+    config: Handle,
+    session: Handle,
+    history: Vec<Value>,
+    images: tempfile::TempDir,
+    output_limit: i32,
+}
+#[derive(Clone, Copy, Default, Debug)]
+pub struct ContextStats {
+    pub reused: usize,
+    pub rebuilt: usize,
+    pub tokens: usize,
 }
 // C API допускает перенос handle между потоками, но не параллельные вызовы.
 // Единственный Mutex ниже сериализует загрузку, генерацию и выгрузку.
 unsafe impl Send for Engine {}
 impl Drop for Engine {
     fn drop(&mut self) {
+        self.clear_context();
         unsafe { (self.api.engine_delete)(self.engine) }
     }
 }
@@ -195,64 +220,169 @@ impl Engine {
             engine,
             path: path.to_owned(),
             backend: backend.into(),
+            cached: None,
+            statistics: ContextStats::default(),
         })
     }
+    fn clear_context(&mut self) {
+        if let Some(cache) = self.cached.take() {
+            unsafe {
+                (self.api.conversation_delete)(cache.pointer);
+                (self.api.config_delete)(cache.config);
+                (self.api.session_delete)(cache.session);
+            }
+        }
+        self.statistics.tokens = 0;
+    }
     fn reply(
-        &self,
-        mut messages: Vec<Value>,
+        &mut self,
+        messages: Vec<Value>,
         token: CancellationToken,
         updates: tokio::sync::mpsc::UnboundedSender<String>,
         output_limit: i32,
     ) -> Result<String> {
         ensure!(!token.is_cancelled(), "Запрос отменён");
-        // C API читает изображения по пути; временные JPEG живут до конца prefill/stream.
-        let image_root = tempfile::tempdir()?;
-        convert_images(&mut messages, image_root.path())?;
-        let last = messages.pop().context("Нет сообщения пользователя")?;
-        let history = CString::new(serde_json::to_string(&messages)?)?;
-        let message = CString::new(serde_json::to_string(&last)?)?;
-        let api = &self.api;
-        let session = owned(api, |out| unsafe { (api.session)(out) }, api.session_delete)?;
-        api.check(unsafe { (api.output_tokens)(session.pointer, output_limit.clamp(1, 2048)) })?;
-        let config = owned(api, |out| unsafe { (api.config)(out) }, api.config_delete)?;
-        api.check(unsafe { (api.set_session)(config.pointer, session.pointer) })?;
-        api.check(unsafe { (api.messages)(config.pointer, history.as_ptr()) })?;
-        let conversation = owned(
-            api,
-            |out| unsafe { (api.conversation)(self.engine, config.pointer, out) },
-            api.conversation_delete,
-        )?;
-        let mut context = Stream {
-            api,
-            conversation: conversation.pointer,
-            token,
-            updates,
-            answer: String::new(),
-            error: None,
+        ensure!(!messages.is_empty(), "Нет сообщения пользователя");
+        let reusable = self.cached.as_ref().is_some_and(|cache| {
+            cache.output_limit == output_limit && can_extend(&cache.history, &messages)
+        });
+        let suffix = if reusable {
+            self.cached.as_ref().unwrap().history.len()
+        } else {
+            0
         };
-        api.check(unsafe {
-            (api.stream)(
-                conversation.pointer,
-                message.as_ptr(),
-                ptr::null(),
-                ptr::null(),
-                on_chunk,
-                (&mut context as *mut Stream<'_>).cast(),
-            )
-        })?;
-        // Даже при отмене ждём завершения callback перед освобождением context/изображений.
-        let result = unsafe { (api.wait)(conversation.pointer) };
-        ensure!(!context.token.is_cancelled(), "Запрос отменён");
-        api.check(result)?;
-        if let Some(error) = context.error {
-            bail!("{error}");
+        if !reusable {
+            self.clear_context();
+            let mut initial = messages.clone();
+            let _last = initial.pop();
+            let images = tempfile::tempdir()?;
+            convert_images(&mut initial, images.path())?;
+            let api = &self.api;
+            let session = owned(api, |out| unsafe { (api.session)(out) }, api.session_delete)?;
+            api.check(unsafe {
+                (api.output_tokens)(session.pointer, output_limit.clamp(1, 2048))
+            })?;
+            let config = owned(api, |out| unsafe { (api.config)(out) }, api.config_delete)?;
+            api.check(unsafe { (api.set_session)(config.pointer, session.pointer) })?;
+            let history = CString::new(serde_json::to_string(&initial)?)?;
+            api.check(unsafe { (api.messages)(config.pointer, history.as_ptr()) })?;
+            let conversation = owned(
+                api,
+                |out| unsafe { (api.conversation)(self.engine, config.pointer, out) },
+                api.conversation_delete,
+            )?;
+            let (pointer, config, session) = (
+                conversation.into_raw(),
+                config.into_raw(),
+                session.into_raw(),
+            );
+            // Все конфигурации живут до уничтожения conversation, как и её изображения.
+            // Передаём их из краткоживущих RAII-guard в единый кеш Engine.
+            self.cached = Some(CachedConversation {
+                pointer,
+                config,
+                session,
+                history: Vec::new(),
+                images,
+                output_limit,
+            });
         }
-        ensure!(
-            !context.answer.trim().is_empty(),
-            "Локальная модель вернула пустой ответ"
-        );
-        Ok(context.answer)
+        let cache = self.cached.as_mut().unwrap();
+        let mut new_messages = if reusable {
+            messages[suffix..].to_vec()
+        } else {
+            vec![messages.last().unwrap().clone()]
+        };
+        convert_images(&mut new_messages, cache.images.path())?;
+        let message = merge_new_messages(new_messages)?;
+        let message = CString::new(serde_json::to_string(&message)?)?;
+        let result = stream_reply(&self.api, cache.pointer, &message, token, updates);
+        match result {
+            Ok(answer) => {
+                let cache = self.cached.as_mut().unwrap();
+                cache.history = messages;
+                cache
+                    .history
+                    .push(serde_json::json!({"role":"assistant","content":answer}));
+                let mut tokens = 0;
+                let _ = unsafe { (self.api.token_count)(cache.pointer, &mut tokens) };
+                self.statistics.tokens = tokens;
+                if reusable {
+                    self.statistics.reused += 1;
+                } else {
+                    self.statistics.rebuilt += 1;
+                }
+                Ok(answer)
+            }
+            Err(error) => {
+                self.clear_context();
+                Err(error)
+            }
+        }
     }
+}
+pub fn can_extend(previous: &[Value], incoming: &[Value]) -> bool {
+    incoming.len() > previous.len()
+        && incoming.starts_with(previous)
+        && incoming[previous.len()..]
+            .iter()
+            .all(|m| m["role"] == "user")
+}
+fn merge_new_messages(mut messages: Vec<Value>) -> Result<Value> {
+    ensure!(!messages.is_empty(), "Нет новых данных для модели");
+    if messages.len() == 1 {
+        return Ok(messages.pop().unwrap());
+    }
+    let mut parts = Vec::new();
+    for message in messages {
+        if !parts.is_empty() {
+            parts.push(serde_json::json!({"type":"text","text":"\n"}));
+        }
+        match &message["content"] {
+            Value::String(text) => parts.push(serde_json::json!({"type":"text","text":text})),
+            Value::Array(content) => parts.extend(content.clone()),
+            _ => bail!("Неверное содержимое сообщения"),
+        }
+    }
+    Ok(serde_json::json!({"role":"user","content":parts}))
+}
+fn stream_reply(
+    api: &Api,
+    conversation: Handle,
+    message: &CString,
+    token: CancellationToken,
+    updates: tokio::sync::mpsc::UnboundedSender<String>,
+) -> Result<String> {
+    let mut context = Stream {
+        api,
+        conversation,
+        token,
+        updates,
+        answer: String::new(),
+        error: None,
+    };
+    api.check(unsafe {
+        (api.stream)(
+            conversation,
+            message.as_ptr(),
+            ptr::null(),
+            ptr::null(),
+            on_chunk,
+            (&mut context as *mut Stream<'_>).cast(),
+        )
+    })?;
+    // После cancel callback всё ещё может выполняться. Освобождаем данные лишь после wait.
+    let code = unsafe { (api.wait)(conversation) };
+    ensure!(!context.token.is_cancelled(), "Запрос отменён");
+    api.check(code)?;
+    if let Some(error) = context.error {
+        bail!("{error}");
+    }
+    ensure!(
+        !context.answer.trim().is_empty(),
+        "Локальная модель вернула пустой ответ"
+    );
+    Ok(context.answer)
 }
 struct Stream<'a> {
     api: &'a Api,
@@ -328,18 +458,6 @@ pub fn decode_chunk(raw: &str) -> Result<String> {
         .unwrap_or_default())
 }
 
-#[cfg(test)]
-mod chunk_tests {
-    #[test]
-    fn conversation_chunks_expose_text_instead_of_the_json_envelope() {
-        assert_eq!(super::decode_chunk(r#"{"role":"assistant","content":[{"type":"text","text":"Привет"},{"type":"text","text":"!"}]}"#).unwrap(),"Привет!");
-        assert_eq!(
-            super::decode_chunk(r#"{"content":[{"type":"thought","text":"internal"}]}"#).unwrap(),
-            ""
-        );
-        assert!(super::decode_chunk("{broken").is_err());
-    }
-}
 fn convert_images(messages: &mut [Value], root: &Path) -> Result<()> {
     use base64::Engine as _;
     for message in messages {
@@ -365,6 +483,23 @@ fn convert_images(messages: &mut [Value], root: &Path) -> Result<()> {
     Ok(())
 }
 static ENGINE: OnceLock<Mutex<Option<Engine>>> = OnceLock::new();
+pub fn reset_context() -> Result<()> {
+    let mut engine = ENGINE
+        .get_or_init(|| Mutex::new(None))
+        .try_lock()
+        .map_err(|_| anyhow::anyhow!("Модель сейчас отвечает"))?;
+    if let Some(engine) = engine.as_mut() {
+        engine.clear_context();
+    }
+    Ok(())
+}
+pub fn context_stats() -> Result<ContextStats> {
+    let engine = ENGINE
+        .get_or_init(|| Mutex::new(None))
+        .try_lock()
+        .map_err(|_| anyhow::anyhow!("Модель сейчас отвечает"))?;
+    Ok(engine.as_ref().map(|e| e.statistics).unwrap_or_default())
+}
 pub fn unload() -> Result<()> {
     let mut engine = ENGINE
         .get_or_init(|| Mutex::new(None))
@@ -394,7 +529,20 @@ pub fn generate(
         *engine = Some(Engine::open(&path, &backend)?);
     }
     engine
-        .as_ref()
+        .as_mut()
         .unwrap()
         .reply(messages, token, updates, output_limit)
+}
+
+#[cfg(test)]
+mod chunk_tests {
+    #[test]
+    fn conversation_chunks_expose_text_instead_of_the_json_envelope() {
+        assert_eq!(super::decode_chunk(r#"{"role":"assistant","content":[{"type":"text","text":"Привет"},{"type":"text","text":"!"}]}"#).unwrap(),"Привет!");
+        assert_eq!(
+            super::decode_chunk(r#"{"content":[{"type":"thought","text":"internal"}]}"#).unwrap(),
+            ""
+        );
+        assert!(super::decode_chunk("{broken").is_err());
+    }
 }

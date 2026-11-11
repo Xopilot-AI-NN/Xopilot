@@ -1,4 +1,4 @@
-// Описание: Те же glyph и font asset Material Icons, что в Flutter/Flet 1.0.5.
+// Описание: Именованные символы из локального шрифта Material Icons.
 // Codepoints: flutter/flutter, packages/flutter/lib/src/material/icons.dart.
 use dioxus::prelude::*;
 
@@ -14,6 +14,10 @@ pub fn glyph(name: &str) -> &'static str {
         "arrow_downward" => "\u{e097}",
         "auto_awesome" => "\u{e0b7}",
         "bookmark_border" => "\u{e0f4}",
+        "check" => "\u{e156}",
+        "storage" => "\u{e609}",
+        "palette_outlined" => "\u{f24f}",
+        "expand_less" => "\u{e245}",
         "chat_bubble_outline" => "\u{e155}",
         "chevron_right" => "\u{e15f}",
         "close" => "\u{e16a}",

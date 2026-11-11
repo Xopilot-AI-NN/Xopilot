@@ -82,9 +82,9 @@ pub fn build_message(message: StoredMessage) -> Element {
                     });
                 }, icons::build_icon { name: "content_copy" } }
                 div { class: "message-action-menu",
-                    button { class: "message-action", title: "Действия сообщения", "aria-label": "Действия сообщения", onclick: move |_| { let open = *actions.read(); actions.set(!open); }, icons::build_icon { name: "more_horiz" } }
+                    button { id:format!("message-action-{id}"),class: "message-action", title: "Действия сообщения", "aria-label": "Действия сообщения", "aria-haspopup":"menu","aria-expanded":*actions.read(),onclick: move |_| { let open = *actions.read(); actions.set(!open); }, icons::build_icon { name: "more_horiz" } }
                     if *actions.read() {
-                        div { class: "message-popup",
+                        crate::app::shared::popover::build_popover {id:format!("message-popup-{id}"),anchor:format!("message-action-{id}"),onclose:move|_|actions.set(false),
                             button { class: "popup-item", onclick: { let content = message.content.clone(); move |_| { actions.set(false); let mut value = state.write(); if !value.draft.text.is_empty() { value.draft.text.push_str("\n\n"); } value.draft.text.push_str(&format!("> {}\n\n", content.replace('\n', "\n> "))); } }, icons::build_icon { name: "format_quote" } "Цитировать" }
                             button { class: "popup-item", onclick: move |_| {
                                 actions.set(false);

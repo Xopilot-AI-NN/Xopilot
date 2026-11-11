@@ -388,7 +388,7 @@ fn unsaved_settings_require_a_decision_before_returning_to_the_list() {
 }
 
 #[test]
-fn bookmarks_keep_flet_identifiers_and_are_scoped_to_their_chat() {
+fn bookmarks_keep_legacy_identifiers_and_are_scoped_to_their_chat() {
     use xopilot::services::message_navigation;
     let store = store();
     let (first, second, message) = store
@@ -414,4 +414,41 @@ fn bookmarks_keep_flet_identifiers_and_are_scoped_to_their_chat() {
     );
     assert!(message_navigation::toggle(&store, second, message).is_err());
     assert!(!message_navigation::toggle(&store, first, message).unwrap());
+}
+
+#[test]
+fn profile_avatar_and_name_preserve_memory_and_unknown_fields() {
+    use base64::Engine as _;
+    let store = store();
+    store
+        .write(
+            "profile_v1",
+            &json!({"name":"Old","memory":{"fact":"Keep"},"future_field":42}),
+        )
+        .unwrap();
+    store
+        .with(|db| {
+            db.set_setting("personal_instructions", "Keep instructions")?;
+            Ok(())
+        })
+        .unwrap();
+    let image = image::DynamicImage::new_rgb8(640, 320);
+    let mut file = std::io::Cursor::new(Vec::new());
+    image.write_to(&mut file, image::ImageFormat::Png).unwrap();
+    let avatar = profile::avatar(&store, &file.into_inner()).unwrap();
+    let decoded = base64::prelude::BASE64_STANDARD.decode(avatar).unwrap();
+    let image = image::load_from_memory(&decoded).unwrap();
+    assert_eq!((image.width(), image.height()), (256, 256));
+    profile::rename(&store, "New name").unwrap();
+    let saved = profile::read(&store).unwrap();
+    assert_eq!(saved["name"], "New name");
+    assert_eq!(saved["memory"]["fact"], "Keep");
+    assert_eq!(saved["future_field"], 42);
+    assert!(
+        profile::instructions(&store)
+            .unwrap()
+            .contains("Keep instructions")
+    );
+    assert!(profile::avatar(&store, b"not a picture").is_err());
+    assert!(profile::rename(&store, " ").is_err());
 }

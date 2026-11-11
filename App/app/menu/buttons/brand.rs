@@ -1,5 +1,5 @@
 // Файл: App/app/menu/buttons/brand.rs
-// Описание: Геометрия и роли тональных кнопок из Flet-версии.
+// Описание: Геометрия и роли тональных кнопок навигации.
 use crate::app::shared::icons;
 use dioxus::prelude::*;
 

@@ -76,13 +76,17 @@ fn build_test_app() -> Element {
         async move {
             while let Some(command) = receiver.recv().await {
                 let script = format!(
-                    "try {{ {} }} catch (error) {{ return {{__ui_error:String(error),stack:error.stack}}; }}",
+                    "const result=await(async()=>{{try {{ {} }} catch (error) {{ return {{__ui_error:String(error),stack:error.stack}}; }} }})();dioxus.send(result);await dioxus.recv();",
                     command.script
                 );
-                let value = match document::eval(&script).await {
+                // Держим JS-query до подтверждения Rust. Иначе GC WebKit может
+                // освободить завершённый eval до пробуждения его Rust future.
+                let mut evaluation = document::eval(&script);
+                let value = match evaluation.recv::<serde_json::Value>().await {
                     Ok(value) => serde_json::json!({"value": value}),
                     Err(error) => serde_json::json!({"error": format!("{error:?}")}),
                 };
+                let _ = evaluation.send(true);
                 let _ = command.response.send(value);
             }
         }

@@ -36,7 +36,7 @@ fn build_fixture() -> Element {
         app::chat::chat::build_chat {}
         xopilot::settings::main::build_settings_dialog {}
         app::settings::api_settings::build_api_settings {}
-        xopilot::settings::personalizations::main::build_personalizations { account: true }
+        xopilot::settings::account::main::build_account_page {}
         app::canvas::canvas_editor::build_canvas_dialog {}
         app::workspace::workspace_browser::build_workspaces_dialog {}
         app::chat::composer::prompt_templates::build_templates {}
@@ -53,7 +53,7 @@ fn all_migrated_screens_render_with_real_store_context() {
         "Сообщение пользователя",
         "<strong>Настоящий Markdown</strong>",
         "Сохранить модель",
-        "Сохранить профиль",
+        "Продолжить с Google",
         "Новое пространство",
         "Сохранить",
         "Поиск шаблонов",

@@ -1,5 +1,5 @@
 // Файл: App/app/menu/menu.rs
-// Описание: Rail 76px и выезжающая панель 280px из исходной Flet-версии.
+// Описание: Rail 76px и выезжающая панель 280px с общей палитрой приложения.
 use crate::app::{
     menu::buttons::brand,
     shared::icons,

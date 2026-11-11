@@ -28,14 +28,14 @@ pub fn build_app_ui() -> Element {
     let draft_revision = use_hook(|| std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)));
     let draft_to_save = use_memo(move || {
         let value = state.read();
-        (value.active, value.draft.clone())
+        (value.session_revision, value.active, value.draft.clone())
     });
     // Отменяем ожидание предыдущего черновика, когда пользователь продолжает ввод.
     let _draft_writer = use_resource(move || {
         use std::sync::atomic::Ordering;
         let revision = draft_revision.fetch_add(1, Ordering::SeqCst) + 1;
         let current_revision = draft_revision.clone();
-        let (active, draft) = draft_to_save.read().clone();
+        let (_session, active, draft) = draft_to_save.read().clone();
         let store = state.peek().store.clone();
         async move {
             if let (Some(store), Some(id)) = (store, active) {
@@ -55,7 +55,7 @@ pub fn build_app_ui() -> Element {
             }
         }
     });
-    rsx! { self::build_window {} }
+    rsx! { self::build_window { key:"{state.read().session_revision}" } }
 }
 
 /// Компоновка отдельно от инициализации: её можно проверить на тестовой базе.
@@ -70,6 +70,8 @@ pub fn build_window() -> Element {
     let notice = value.notice.clone();
     let pending_screen = value.pending_screen;
     let pending_section = value.pending_section;
+    let approval = value.approval.clone();
+    let approval_open = approval.is_some();
     drop(value);
     // Обычное уведомление не должно навсегда перекрывать кнопки на телефоне.
     let notice_value = use_memo(move || state.read().notice.clone());
@@ -88,9 +90,9 @@ pub fn build_window() -> Element {
         }
     });
     use_effect(use_reactive(
-        (&pending_screen, &pending_section),
-        move |(screen, section)| {
-            if screen.is_some() || section.is_some() {
+        (&pending_screen, &pending_section, &approval_open),
+        move |(screen, section, approval)| {
+            if screen.is_some() || section.is_some() || approval {
                 document::eval(include_str!("shared/dialog_focus.js"));
             }
         },
@@ -136,6 +138,20 @@ pub fn build_window() -> Element {
                         div { class: "row dialog-actions",
                             button { class: "button", onclick: move |_| { state.write().pending_screen = None; state.write().pending_section = None; document::eval(include_str!("shared/dialog_focus.js")); }, "Остаться" }
                             button { class: "button danger", onclick: move |_| state::discard_pending(state), "Отбросить и перейти" }
+                        }
+                    }
+                }
+            }
+            if let Some(approval)=approval{
+                div{class:"modal-backdrop confirmation-backdrop",
+                    section{class:"confirmation agent-approval",role:"alertdialog","aria-modal":"true","aria-label":"Подтверждение действия агента",tabindex:-1,
+                        onkeydown:{let approval=approval.clone();move|event:KeyboardEvent|{if event.key()==Key::Escape{event.stop_propagation();approval.answer(false);state.write().approval=None;}}},
+                        h2{"{approval.title}"}
+                        pre{class:"approval-details","{approval.details}"}
+                        div{class:"row dialog-actions",
+                            button{class:"button",onclick:{let approval=approval.clone();move|_|{approval.answer(false);state.write().approval=None;}},"Отклонить"}
+                            button{class:"button primary",onclick:move|_|{approval.answer(true);state.write().approval=None;},"Разрешить действие"}
+                            button{class:"button danger",onclick:move|_|{state::cancel(state);state.write().approval=None;},"Остановить задачу"}
                         }
                     }
                 }

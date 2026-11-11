@@ -1,6 +1,6 @@
 // Файл: App/services/attachments.rs
 // Разработчик: DenBroLiik
-// Описание: Изображения, текст, PDF и DOCX без Python-библиотек.
+// Описание: Чтение изображений, текста, PDF и DOCX в Rust.
 use anyhow::{Context, Result, bail, ensure};
 use image::{ImageReader, codecs::jpeg::JpegEncoder};
 use std::{

@@ -1,11 +1,11 @@
 // Файл: App/settings/main.rs
-// Описание: Домашняя страница и разделы настроек из Flet-версии.
+// Описание: Домашняя страница и разделы настроек.
 use crate::{
     app::{
         chat::chats,
         dialogs,
         shared::{dialog, icons},
-        state::{self, AppState, Screen},
+        state::{self, AppState},
     },
     settings::{abaut, personalizations},
 };
@@ -50,14 +50,14 @@ pub fn build_settings_dialog() -> Element {
     let back =
         selected.map(|_| EventHandler::new(move |_| state::select_settings_section(state, None)));
     rsx! {
-        dialog::build_dialog { title, settings: true, immediate: selected != Some(0), back,
+        dialog::build_dialog { title, settings: true, immediate: true, back,
             if let Some(index) = selected {
                 match index {
-                    0 => rsx! { personalizations::main::build_personalizations { account: true } },
+                    0 => rsx! { crate::settings::account::main::build_account_page {} },
                     1 => rsx! { personalizations::main::build_personalizations {} },
                     2 => rsx! { dialogs::build_model_catalog {} },
                     3 => rsx! { chats::build_chats_dialog {} },
-                    4 => rsx! { self::build_updates {} },
+                    4 => rsx! { crate::settings::updates::main::build_updates {} },
                     _ => rsx! { abaut::info::build_info {} },
                 }
             } else {
@@ -71,16 +71,5 @@ pub fn build_settings_dialog() -> Element {
                 } }
             }
         }
-    }
-}
-
-#[component]
-fn build_updates() -> Element {
-    let mut state = use_context::<Signal<AppState>>();
-    rsx! {
-        h2 { class: "section-title", "Версия приложения" }
-        div { class: "settings-card", icons::build_icon { name: "system_update_outlined" } div { strong { "Xopilot 2.1.0" } p { class: "notice", "Установленная версия" } } }
-        button { class: "button", onclick: move |_| state.write().notice = Some("Проверка и установка обновлений ещё переносятся.".into()), "Проверить обновления" }
-        button { class: "button", onclick: move |_| state::navigate(state, Screen::Api), "Настроить API" }
     }
 }

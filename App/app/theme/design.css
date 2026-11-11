@@ -1,5 +1,12 @@
-/* Размеры и цвета из App/app/theme, menu и composer Flet-версии. */
+/* Общая тема окна, меню, диалогов и строки ввода. */
 * { box-sizing: border-box; }
+.floating-scrim { position: fixed; inset: 0; border: 0; background: transparent; z-index: 90; }
+.floating-menu { position: fixed; visibility: hidden; z-index: 91; min-width: 220px; width: max-content; max-width: calc(100vw - 16px); overflow-y: auto; background: var(--raised); border: 1px solid var(--line); border-radius: 14px; padding: 6px; box-shadow: 0 6px 24px #0003; }
+.floating-menu .popup-item { white-space: normal; }.popover-description { max-width: 320px; margin: 8px 12px; line-height: 1.5; }
+.header-popup { max-height: calc(100dvh - 100px); overflow-y: auto; }.download-progress { width: 100%; accent-color: var(--accent); }
+.agent-status { justify-content: space-between; margin: 6px 0; }.agent-approval { max-width: 720px; }.approval-details { max-height: 45dvh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
+.local-account-panel { margin-top: 22px; }.account-statistics { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 14px 0; color: var(--muted); font-size: 13px; }
+.agent-trace { margin: 6px 0; color: var(--muted); font-size: 12px; }.agent-trace summary { cursor: pointer; }.agent-trace pre { max-height: 22dvh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 html, body { margin: 0; width: 100%; height: 100%; }
 body { font-family: sans-serif; font-size: 14px; letter-spacing: .25px; }
 button, input, textarea, select { font: inherit; }
@@ -231,12 +238,43 @@ blockquote { padding: 6px 8px; margin: 0 0 6px; border: 1px solid var(--accent);
 .dialog-canvas { width: min(898px,calc(100vw - 64px)); height: min(710px,calc(100dvh - 48px)); }
 .dialog-templates { width: min(608px,calc(100vw - 64px)); height: min(638px,calc(100dvh - 48px)); border-radius: 24px; }
 @media (max-width:599px) { .dialog-workspaces,.dialog-chats,.dialog-canvas,.dialog-templates { width: calc(100vw - 24px); } }
-/* WebKit по умолчанию рисует серую системную кнопку select; Flet использует поверхность темы. */
-.preference-select, .field select {
+/* Контролы используют поверхность выбранной темы. */
+select.preference-select, .field select {
     appearance: none; -webkit-appearance: none; background-color: var(--raised); padding-right: 40px;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24'%3E%3Cpath d='m7 10 5 5 5-5' fill='none' stroke='%2347747a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
     background-position: right 12px center; background-repeat: no-repeat; background-size: 20px;
 }
-.app:is([data-theme=dark],[data-theme=midnight],[data-theme=ocean],[data-theme=forest]) :is(.preference-select,.field select) {
+.app:is([data-theme=dark],[data-theme=midnight],[data-theme=ocean],[data-theme=forest]) :is(select.preference-select,.field select) {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24'%3E%3Cpath d='m7 10 5 5 5-5' fill='none' stroke='%23a8c8cd' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
+/* Компактные поверхности используют одну палитру с основным окном. */
+.settings-dialog { height: auto; }
+.settings-dialog .dialog-body { flex: 0 1 auto; }
+.model-catalog { display: flex; flex-direction: column; gap: 12px; }
+.model-card { padding: 16px; border: 1px solid var(--line); border-radius: 20px; background: var(--raised); }
+.model-card-main { display: flex; align-items: center; gap: 12px; }
+.model-icon { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 14px; flex-shrink: 0; background: linear-gradient(135deg,var(--tone-from),var(--tone-to)); color: var(--tone-ink); }
+.model-card .catalog-copy { flex: 1; min-width: 0; }
+.model-card-actions { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+.model-card-actions .button { margin: 0; white-space: nowrap; }
+.model-state { display: block; font-size: 11px; color: var(--muted); margin-top: 5px; }
+.model-state.installed { color: var(--accent); }
+.model-import-trigger,.account-local-trigger { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 6px; border: 0; background: transparent; color: var(--accent); text-align: left; }
+.model-import-trigger span:nth-child(2),.account-local-trigger span:nth-child(2) { flex: 1; }
+.model-import-panel { padding: 14px; border-radius: 18px; background: var(--raised); }
+.model-catalog .model-api-row { margin: 0; }
+.model-catalog-footer { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }.model-catalog-footer p { flex: 1; min-width: 180px; margin: 0; }
+.text-button { color: var(--accent); background: transparent; border: 0; padding: 8px; border-radius: 10px; }
+.select-option { display: flex; align-items: center; justify-content: space-between; gap: 20px; }.select-option[aria-selected=true] { background: var(--selection); color: var(--accent); border-radius: 10px; }
+.profile-identity { display: flex; align-items: center; gap: 16px; padding: 18px; border-radius: 22px; background: var(--raised); margin-bottom: 14px; }
+.profile-identity-copy { min-width: 0; }.profile-identity-copy p { margin: 6px 0 0; }
+.profile-name { display: flex; gap: 12px; align-items: center; color: var(--text); background: transparent; border: 0; font-size: 21px; font-weight: 600; padding: 3px 0; text-align: left; overflow-wrap: anywhere; }
+.profile-name .material-icons { font-size: 18px; color: var(--muted); }
+.profile-avatar-action { position: relative; cursor: pointer; flex-shrink: 0; }.profile-avatar-action input { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; }
+.profile-avatar-action:focus-within { outline: 2px solid var(--accent); border-radius: 50%; }.profile-avatar-action .profile-avatar { width: 72px; height: 72px; object-fit: cover; display: flex; }
+.avatar-edit { position: absolute; bottom: 0; right: 0; padding: 5px; border-radius: 50%; background: var(--selection); border: 2px solid var(--surface); display: flex; color: var(--accent); }.avatar-edit .material-icons { font-size: 16px; }
+.cloud-account-card,.profile-name-editor { padding: 16px; background: var(--raised); border-radius: 20px; margin-bottom: 14px; }.cloud-account-card h2 { font-size: 16px; margin: 0 0 8px; }.account-auth-actions { display: flex; flex-wrap: wrap; gap: 8px; }.account-auth-actions .button { margin: 0; }.google-signin { display: inline-flex; gap: 10px; align-items: center; }.google-letter { font-size: 20px; font-weight: 700; }.account-auth-form { border-top: 1px solid var(--line); margin-top: 16px; padding-top: 4px; }
+.profile-statistics { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; }.profile-stat { background: var(--raised); border-radius: 16px; padding: 12px; display: flex; flex-direction: column; gap: 7px; }.profile-stat > .material-icons { color: var(--accent); }.profile-stat small { color: var(--muted); }.profile-stat strong { font-size: 17px; }
+.update-installed { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; background: var(--raised); padding: 16px; border-radius: 20px; }.update-installed .catalog-copy { flex: 1; min-width: 150px; }.update-installed .button { margin: 0; }.update-change { display: flex; gap: 14px; align-items: flex-start; padding: 14px 4px; border-bottom: 1px solid var(--line); }.update-change > .material-icons { color: var(--accent); margin-top: 2px; }.update-change p { margin: 6px 0 0; }.release-notes { padding: 14px; border: 1px solid var(--line); border-radius: 16px; margin-top: 12px; }
+.about-hero { padding: 16px 12px; }.about-hero h2 { margin: 8px 0; }.about-hero p { margin: 8px 0; }
+@media(max-width:599px) { .settings-dialog { height: auto; }.model-card { padding: 12px; }.model-card-actions { flex-direction: column; align-items: flex-end; }.model-card-actions .button { font-size: 12px; padding: 9px 11px; }.profile-identity { padding: 14px; gap: 12px; }.profile-name { font-size: 18px; }.profile-stat { padding: 10px; }.model-icon { width: 34px; height: 34px; }.account-auth-actions .google-signin { width: 100%; justify-content: center; } }

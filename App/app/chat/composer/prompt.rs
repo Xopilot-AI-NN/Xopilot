@@ -1,5 +1,5 @@
 // Файл: App/app/chat/composer/prompt.rs
-// Описание: Две строки, как в Flet: поле ввода и компактные инструменты.
+// Описание: Две строки: поле ввода и компактные инструменты.
 use super::buttons::{add_material, send};
 use crate::app::{
     menu::buttons::brand,
@@ -13,6 +13,7 @@ pub fn build_prompt() -> Element {
     let mut state = use_context::<Signal<AppState>>();
     let draft = state.read().draft.clone();
     let model = state.read().model.clone();
+    let local = state.read().model_local;
     let busy = state.read().busy;
     let has_prompt = !draft.text.is_empty() || !draft.files.is_empty();
     rsx! {
@@ -42,19 +43,18 @@ pub fn build_prompt() -> Element {
                     button { class: "model-button tone-ai", title: "Выбор модели", "aria-label": "Выбор модели", onclick: move |_| state::navigate(state, Screen::Model),
                         span { class: "model-robot", icons::build_icon { name: "smart_toy_outlined" } }
                         span { class: "model-name", if model.is_empty() { span { class: "desktop-model-label", "Модель не выбрана" } span { class: "mobile-model-label", "Модель" } }
-                            else { "API · {model}" }
+                            else if local { "{model}" } else { "API · {model}" }
                         }
                         icons::build_icon { name: "expand_more" }
                     }
-                    button { class: "confirmation-button", title: "Подтверждение действий · Вручную", "aria-label": "Подтверждение действий · Вручную", onclick: move |_| state.write().notice = Some("Подтверждение действий агента ещё переносится. Сейчас доступны обычные ответы модели.".into()),
-                        icons::build_icon { name: "fact_check_outlined" } span { "Вручную" }
-                    }
+                    super::agent_controls::build_agent_controls {}
                     span { class: "spacer" }
                     brand::build_brand_button { icon: "mic", label: "Диктовка", role: "ai", onclick: move |_| state.write().notice = Some("Диктовка ещё переносится в новую версию.".into()) }
                     if has_prompt || busy { send::build_send_button {} }
                     else { brand::build_brand_button { icon: "graphic_eq", label: "Live — голосовой разговор", role: "ai", onclick: move |_| state.write().notice = Some("Live ещё переносится в новую версию.".into()) } }
                 }
             }
+            crate::app::tasks::task_messages::build_task_messages {}
         }
     }
 }

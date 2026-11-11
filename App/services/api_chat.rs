@@ -1,5 +1,5 @@
 // Файл: App/services/api_chat.rs
-// Описание: Потоковый совместимый API; локальный llama-server/Ollama тоже без Python.
+// Описание: Потоковый совместимый API; поддерживает также локальный llama-server/Ollama.
 use super::{attachments::build_attachment_message_parts, db::Store};
 use advanced_xopilot::db::StoredMessage;
 use anyhow::{Context, Result, bail, ensure};
@@ -63,7 +63,7 @@ pub fn is_api_selected(store: &Store) -> Result<bool> {
 pub fn selected_configuration(store: &Store) -> Result<ApiConfig> {
     ensure!(
         is_api_selected(store)?,
-        "Выберите и сохраните модель в настройках. Прежний локальный LiteRT runtime ещё не перенесён"
+        "API не выбран. Выберите локальную модель или сохраните подключение API"
     );
     configuration(store)?.validate()
 }

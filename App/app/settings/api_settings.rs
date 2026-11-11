@@ -58,6 +58,7 @@ pub fn build_api_settings() -> Element {
                     let selected = config.model.clone();
                     services::runtime::blocking(move || api_chat::save_configuration(&store, &config)).await?;
                     state.write().model = selected;
+                    state.write().model_local = false;
                     dirty.set(false);
                     status.set("Настройки модели сохранены".into());
                     Ok(())
@@ -65,7 +66,7 @@ pub fn build_api_settings() -> Element {
                 state::report(state, result);
             }); }, "Сохранить модель" }
             p { class: "notice", role: "status", "{status}" }
-            p { class: "notice", "Локальный сервер запускается отдельно. Формат .litertlm и прежний Python-runtime в эту версию не входят." }
+            p { class: "notice", "Для встроенной Gemma выберите локальную модель в каталоге. llama-server и Ollama запускаются отдельно." }
         }
     }
 }

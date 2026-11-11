@@ -170,17 +170,6 @@ pub fn parse(text: &str) -> Result<Reply> {
     Ok(Reply::Calls(vec![serde_json::from_value(value)?]))
 }
 
-#[cfg(test)]
-mod protocol_tests {
-    use super::*;
-    #[test]
-    fn complete_ndjson_actions_are_accepted_without_accepting_partial_json() {
-        let reply=parse("{\"tool\":\"list_project_files\",\"arguments\":{}}\n{\"tool\":\"read_project_file\",\"arguments\":{\"path\":\"a.txt\"}}").unwrap();
-        assert!(matches!(reply,Reply::Calls(calls) if calls.len()==2));
-        assert!(parse("{\"tool\":\"list_project_files\",\"arguments\":{}}\n{\"tool\":").is_err());
-        assert!(parse("{\"final\":\"done\"}\n{\"tool\":\"list_project_files\"}").is_err());
-    }
-}
 pub const TOOLS: &str = r#"list_project_files {}; read_project_file {path}; search_project {query}; git_project {};
 write_project_file {path,content} (сначала прочитай существующий файл); run_project_command {argv:[program,arg,...]};
 list_canvases {}; read_canvas {id}; create_canvas {title,kind:text|code|web,content}; update_canvas {id,content};
@@ -678,5 +667,17 @@ pub async fn command(root: PathBuf, argv: Vec<String>, token: CancellationToken)
             let _ = child.wait().await;
             Err(error)
         }
+    }
+}
+
+#[cfg(test)]
+mod protocol_tests {
+    use super::*;
+    #[test]
+    fn complete_ndjson_actions_are_accepted_without_accepting_partial_json() {
+        let reply=parse("{\"tool\":\"list_project_files\",\"arguments\":{}}\n{\"tool\":\"read_project_file\",\"arguments\":{\"path\":\"a.txt\"}}").unwrap();
+        assert!(matches!(reply,Reply::Calls(calls) if calls.len()==2));
+        assert!(parse("{\"tool\":\"list_project_files\",\"arguments\":{}}\n{\"tool\":").is_err());
+        assert!(parse("{\"final\":\"done\"}\n{\"tool\":\"list_project_files\"}").is_err());
     }
 }

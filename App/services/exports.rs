@@ -21,7 +21,14 @@ pub fn markdown(title: &str, messages: &[StoredMessage]) -> String {
 }
 
 pub fn save_markdown(title: &str, messages: &[StoredMessage]) -> Result<PathBuf> {
-    let dir = super::paths::app_data_dir()?.join("exports");
+    save_markdown_at(&super::paths::app_data_dir()?, title, messages)
+}
+pub fn save_markdown_at(
+    root: &std::path::Path,
+    title: &str,
+    messages: &[StoredMessage],
+) -> Result<PathBuf> {
+    let dir = root.join("exports");
     std::fs::create_dir_all(&dir)?;
     let path = dir.join(format!("chat-{}.md", uuid::Uuid::new_v4()));
     std::fs::write(&path, markdown(title, messages))?;
