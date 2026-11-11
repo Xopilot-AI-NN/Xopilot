@@ -65,10 +65,17 @@ pub fn build_model_row(id: String, progress: Progress) -> Element {
                             class: "button",
                             disabled: progress.phase == "verifying",
                             onclick: move |_| {
-                                if cfg!(target_os = "android") { state::report(state, model_installer::cancel(spec.id)); }
-                                else { model_installer::pause(spec.id); }
+                                if cfg!(target_os = "android") {
+                                    state::report(state, model_installer::cancel(spec.id));
+                                } else {
+                                    model_installer::pause(spec.id);
+                                }
                             },
-                            if cfg!(target_os = "android") { "Отменить" } else { "Пауза" }
+                            if cfg!(target_os = "android") {
+                                "Отменить"
+                            } else {
+                                "Пауза"
+                            }
                         }
                     } else if installed {
                         button {

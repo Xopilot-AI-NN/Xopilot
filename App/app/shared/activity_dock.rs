@@ -125,8 +125,11 @@ pub fn build_activity_dock() -> Element {
                                 onclick: {
                                     let id = id.clone();
                                     move |_| {
-                                        if cfg!(target_os = "android") { crate::app::state::report(state, model_installer::cancel(&id)); }
-                                        else { model_installer::pause(&id); }
+                                        if cfg!(target_os = "android") {
+                                            crate::app::state::report(state, model_installer::cancel(&id));
+                                        } else {
+                                            model_installer::pause(&id);
+                                        }
                                     }
                                 },
                                 icons::build_icon {
