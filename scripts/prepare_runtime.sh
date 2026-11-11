@@ -10,10 +10,13 @@ if [[ ! -f "$archive" ]]; then
 fi
 printf '%s  %s\n' "$digest" "$archive" | sha256sum --check --status
 mkdir -p App/native
-unzip -oq "$archive" 'lib/linux_*/*' 'lib/android_*/*' 'LICENSE' 'licenses/*' -d App/native/sdk
+unzip -oq "$archive" 'lib/linux_*/*' 'lib/android_*/*' 'lib/windows_x86_64/*' 'LICENSE' 'licenses/*' -d App/native/sdk
 for platform in linux_x86_64 linux_arm64 android_arm64 android_x86_64; do
   mkdir -p "App/native/$platform"
-  cp "App/native/sdk/lib/$platform/liblitert-lm.so" "App/native/$platform/"
+  # Официальные .so приходят с правами 0555: при повторной сборке заменяем файл, а не пишем в него.
+  cp -f "App/native/sdk/lib/$platform/liblitert-lm.so" "App/native/$platform/"
 done
+mkdir -p App/native/windows_x86_64
+cp -f App/native/sdk/lib/windows_x86_64/bin/litert-lm.dll App/native/windows_x86_64/
 (cd App/native/sdk && zip -qr ../runtime-licenses.zip LICENSE licenses)
 printf 'LiteRT C API 1.0.0 готов для Linux и Android.\n'

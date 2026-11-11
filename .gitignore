@@ -23,6 +23,8 @@ run.sh
 **/.gradle/
 *.jks
 *.keystore
+/.signing/
+/dist/
 *.env
 key.properties
 
