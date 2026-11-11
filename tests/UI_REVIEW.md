@@ -14,4 +14,6 @@ Linux Dioxus/WebKitGTK проверен на отдельных SQLCipher, пр�
 
 Актуальные проверки перечислены в [ui-review-results.json](ui-review-results.json). Снимки: [профиль](../previews/dioxus-profile.png), [модели](../previews/dioxus-models.png), [импорт и прогресс](../previews/dioxus-model-import.png), [о программе](../previews/dioxus-about.png), [действия агента](../previews/dioxus-agent-actions.png).
 
-GPU, e4b и физический Android не проверены. На телефоне остаются проверки Keystore, chooser и клавиатуры. Полный статус — [MIGRATION.md](../MIGRATION.md).
+GPU и e4b отдельно не проверены. Android теперь проверен отдельным пакетом на POCO X5 5G: [отчёт](ANDROID_DEVICE.md). Полный статус — [MIGRATION.md](../MIGRATION.md).
+
+Для 2.0.13 добавлена проверка времени уведомления: оно появляется, остаётся видимым и исчезает примерно через 3 секунды; 5-секундный срок уже не проходит тест. Аналогично проверяется исчезновение результата задачи. Активная задача и подтверждение не закрываются этим таймером.

@@ -265,10 +265,14 @@ process.once('SIGINT',()=>{void stop().finally(()=>{server.close();process.exit(
     await input('input[aria-label="Поиск по сообщениям"]', 'ничегонесовпадает');
     await check('Поиск без совпадений объясняет пустую ленту', "return document.querySelector('.search-empty')?.innerText.includes('Ничего не найдено');");
     await click('Закрыть поиск');
-    await menu(); await click('Экспортировать чат');
+    await menu();
+    const notificationStarted = Date.now();
+    await click('Экспортировать чат');
     assert(fs.readdirSync(path.join(root, 'data', 'exports')).some(name => name.endsWith('.md')));
-    await until("return !document.querySelector('.snackbar');", 'Уведомление не исчезло', 6500);
-    await check('Уведомление закрывается автоматически', "return !document.querySelector('.snackbar');");
+    await check('Уведомление показывается перед автоматическим закрытием', "return !!document.querySelector('.snackbar');");
+    await until("return !document.querySelector('.snackbar');", 'Уведомление не исчезло через 3 секунды', 4300);
+    assert(Date.now() - notificationStarted >= 2600 && Date.now() - notificationStarted < 4500);
+    await check('Уведомление закрывается через 3 секунды', "return !document.querySelector('.snackbar');");
     await input('#chat-prompt', 'Ответ для отмены'); await click('Отправить сообщение'); await click('Остановить ответ');
     await until("return !document.querySelector('button[title="+JSON.stringify('Остановить ответ')+"]');", 'Отмена не завершилась');
     await check('После остановки ввод снова доступен', "return !document.querySelector('#chat-prompt').disabled;");

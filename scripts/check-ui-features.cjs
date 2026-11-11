@@ -27,6 +27,11 @@ module.exports=async function({root,evaluate,wait,click,input,close,check,until,
     await until("return !document.querySelector('button[title=\"Остановить ответ\"]');",'Агент не обработал отказ');
     assert.equal(fs.readFileSync(path.join(project,'example.txt'),'utf8'),'Изменено агентом');
     await check('Отказ оставляет файл нетронутым',"return document.querySelector('.message.assistant').innerText.includes('Действие отклонено');");
+    await check('Готовность задачи находится над вводом', "const dock=document.querySelector('.activity-dock').getBoundingClientRect(),composer=document.querySelector('.composer').getBoundingClientRect();return dock.bottom<=composer.top&&!!document.querySelector('.task-completion');");
+    await wait(1000);
+    await check('Результат задачи не исчезает сразу', "return !!document.querySelector('.task-completion');");
+    await until("return !document.querySelector('.task-completion');", 'Результат задачи не исчез через 3 секунды', 3000);
+    await check('Результат задачи автоматически скрывается', "return !document.querySelector('.task-completion');");
     screenshot('desktop-agent-actions');
     await click('Режим агента');await click('Чат без инструментов');
     await input('#chat-prompt','Черновик автоматического профиля');
@@ -38,7 +43,6 @@ module.exports=async function({root,evaluate,wait,click,input,close,check,until,
     await click('Отмена');await close();
     assert.equal(requests.length,accountRequests,'Профиль не должен обращаться к серверу без нажатия входа');
     await check('Карточки действий находятся в ленте и показывают результаты', "return !!document.querySelector('.messages .agent-actions')&&!!document.querySelector('.agent-action[data-state=completed]')&&!!document.querySelector('.agent-action[data-state=failed]')&&!document.querySelector('.composer-area .agent-trace');");
-    await check('Готовность задачи находится над вводом', "const dock=document.querySelector('.activity-dock').getBoundingClientRect(),composer=document.querySelector('.composer').getBoundingClientRect();return dock.bottom<=composer.top&&!!document.querySelector('.task-completion');");
     const model=process.env.XOPILOT_TEST_MODEL;
     if(model){
         // Отдельный Rust-стенд проверяет тот же поток импорта; UI проверяет одиночный chooser.
