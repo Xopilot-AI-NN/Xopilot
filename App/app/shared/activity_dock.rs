@@ -86,7 +86,7 @@ pub fn build_activity_dock() -> Element {
                 .read()
                 .iter()
                 .filter(|(id, p)| {
-                    matches!(p.phase.as_str(), "downloading" | "verifying" | "paused")
+                    matches!(p.phase.as_str(), "downloading" | "verifying" | "paused" | "waiting")
                         || ((p.downloaded > 0 || p.phase == "error")
                             && !state.read().dismissed_downloads.contains(id))
                 })
@@ -110,19 +110,24 @@ pub fn build_activity_dock() -> Element {
                                 "На паузе"
                             } else if progress.phase == "verifying" {
                                 "Проверка файла"
+                            } else if progress.phase == "waiting" {
+                                "Ожидание сети · Android продолжит автоматически"
                             } else if progress.phase == "error" {
                                 "Ошибка загрузки"
                             } else {
                                 {super::progress::byte_progress(progress.downloaded,progress.total)}
                             }
                         }
-                        if progress.phase == "downloading" {
+                        if matches!(progress.phase.as_str(), "downloading" | "waiting") {
                             button {
                                 class: "plain-icon",
-                                title: "Приостановить загрузку",
+                                title: if cfg!(target_os = "android") { "Отменить загрузку" } else { "Приостановить загрузку" },
                                 onclick: {
                                     let id = id.clone();
-                                    move |_| model_installer::pause(&id)
+                                    move |_| {
+                                        if cfg!(target_os = "android") { crate::app::state::report(state, model_installer::cancel(&id)); }
+                                        else { model_installer::pause(&id); }
+                                    }
                                 },
                                 icons::build_icon {
                                     name: "stop",

@@ -2,7 +2,7 @@
 // Codepoints: flutter/flutter, packages/flutter/lib/src/material/icons.dart.
 use dioxus::prelude::*;
 
-pub const FONT: Asset = asset!("/assets/fonts/material/MaterialIcons-Regular.otf");
+pub const FONT: &str = super::static_assets::ICONS;
 
 /// Сопоставляет имени иконки символ локального Material-шрифта.
 pub fn glyph(name: &str) -> &'static str {

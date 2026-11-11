@@ -10,7 +10,9 @@ use jni::{
 use std::path::{Path, PathBuf};
 
 /// Подключает текущий поток к Android JVM на время JNI-вызова.
-fn with_context<T>(call: impl FnOnce(&mut JNIEnv<'_>, JObject<'_>) -> Result<T>) -> Result<T> {
+pub(crate) fn with_context<T>(
+    call: impl FnOnce(&mut JNIEnv<'_>, JObject<'_>) -> Result<T>,
+) -> Result<T> {
     let context = ndk_context::android_context();
     // VM и Activity принадлежат Dioxus/wry и живут до завершения Activity.
     let vm = unsafe { JavaVM::from_raw(context.vm().cast()) }?;
@@ -23,6 +25,22 @@ fn with_context<T>(call: impl FnOnce(&mut JNIEnv<'_>, JObject<'_>) -> Result<T>)
         let _ = env.exception_clear();
     }
     result
+}
+
+/// Сворачивает корневую задачу вместо уничтожения Activity и процесса Dioxus по кнопке «Назад».
+pub fn move_to_background() -> Result<()> {
+    with_context(|env, activity| {
+        env.call_method(activity, "moveTaskToBack", "(Z)Z", &[JValue::Bool(1)])?;
+        Ok(())
+    })
+}
+
+/// Отмечает готовый интерфейс после кадра и шрифтов для честного Android startup timing.
+pub fn report_fully_drawn() -> Result<()> {
+    with_context(|env, activity| {
+        env.call_method(activity, "reportFullyDrawn", "()V", &[])?;
+        Ok(())
+    })
 }
 
 /// Преобразует Java String в Rust с проверкой JNI-ошибок.

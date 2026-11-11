@@ -7,6 +7,8 @@ pub mod agent_session;
 #[cfg(any(target_os = "android", test))]
 #[cfg_attr(test, allow(dead_code))]
 pub mod android;
+#[cfg(target_os = "android")]
+pub mod android_downloads;
 pub mod api_chat;
 pub mod attachments;
 pub mod canvases;
@@ -30,6 +32,8 @@ pub mod project_inspection;
 pub mod project_tools;
 pub mod prompt_templates;
 pub mod runtime;
+pub mod startup;
 pub mod task_history;
+pub mod ui_session;
 pub mod updates;
 pub mod workspaces;

@@ -9,4 +9,6 @@ pub mod notification_lifetime;
 pub mod popover;
 pub mod progress;
 pub mod select;
+pub mod session_lifecycle;
+pub mod static_assets;
 pub mod unsaved;

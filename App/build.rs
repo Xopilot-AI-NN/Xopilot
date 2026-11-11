@@ -14,12 +14,17 @@ fn main() {
         "aarch64-unknown-linux-gnu" => "linux_arm64",
         "aarch64-linux-android" => "android_arm64",
         "x86_64-linux-android" => "android_x86_64",
+        "x86_64-pc-windows-msvc" => "windows_x86_64",
         _ => "unsupported",
     };
     let source = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap())
         .join("native")
         .join(platform)
-        .join("liblitert-lm.so");
+        .join(if target.contains("windows") {
+            "litert-lm.dll"
+        } else {
+            "liblitert-lm.so"
+        });
     println!("cargo:rerun-if-changed={}", source.display());
     println!(
         "cargo:rustc-env=XOPILOT_LITERT_BUNDLED={}",

@@ -1,3 +1,7 @@
+#![cfg_attr(
+    all(target_os = "windows", not(debug_assertions)),
+    windows_subsystem = "windows"
+)]
 // Файл: App/main.rs
 // Разработчик: DenBroLiik
 // Описание: Точка входа Xopilot для Linux и Android.
@@ -11,8 +15,14 @@ fn main() {
 #[cfg(any(feature = "desktop", feature = "mobile"))]
 fn main() {
     tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn,xopilot=info")),
+        )
         .init();
+
+    #[cfg(target_os = "android")]
+    xopilot::services::startup::preload();
 
     #[cfg(not(target_os = "android"))]
     dioxus::LaunchBuilder::desktop()
@@ -20,6 +30,9 @@ fn main() {
             dioxus::desktop::Config::new().with_menu(None).with_window(
                 dioxus::desktop::WindowBuilder::new()
                     .with_title("Xopilot")
+                    .with_window_icon(
+                        dioxus::desktop::icon_from_memory(include_bytes!("assets/icon.png")).ok(),
+                    )
                     .with_inner_size(dioxus::desktop::LogicalSize::new(1060.0, 760.0))
                     .with_min_inner_size(dioxus::desktop::LogicalSize::new(380.0, 560.0)),
             ),

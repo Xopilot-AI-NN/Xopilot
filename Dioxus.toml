@@ -1,11 +1,12 @@
 [application]
 name = "Xopilot"
 default_platform = "desktop"
+android_manifest = "android/AndroidManifest.xml"
 
 [bundle]
 identifier = "by.xopilot.app"
 publisher = "Xopilot"
-icon = ["App/assets/icon.png"]
+icon = ["App/assets/icon_windows.ico", "App/assets/icon.png"]
 short_description = "Чаты и проекты с ИИ"
 category = "Productivity"
 
@@ -23,3 +24,7 @@ identifier = "by.xopilot.app"
 
 [android.application]
 uses_cleartext_traffic = true
+
+[android.raw]
+# Используем WebView Back-guard: закрытие окна не должно завершать процесс Rust.
+application_attrs = 'android:enableOnBackInvokedCallback="false"'

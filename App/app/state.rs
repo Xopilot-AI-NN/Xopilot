@@ -11,22 +11,7 @@ use anyhow::{Context, Result};
 use dioxus::prelude::*;
 use tokio_util::sync::CancellationToken;
 
-#[derive(Clone, Copy, PartialEq, Default)]
-pub enum Screen {
-    #[default]
-    Chat,
-    Settings,
-    Workspaces,
-    Canvas,
-    Templates,
-    Chats,
-    Materials,
-    Private,
-    Model,
-    Api,
-    Account,
-    Memory,
-}
+pub use services::ui_session::Screen;
 
 #[derive(Clone, Default)]
 pub struct AppState {
@@ -62,6 +47,8 @@ pub struct AppState {
     pub notice: Option<String>,
     pub settings_section: Option<usize>,
     pub dialog_history: Vec<Screen>,
+    pub session_scrolls: std::collections::HashMap<String, f64>,
+    pub chat_scroll: f64,
 }
 
 impl AppState {
@@ -160,26 +147,38 @@ pub fn select_settings_section(mut state: Signal<AppState>, section: Option<usiz
 
 /// Открывает защищённую базу и восстанавливает профиль, чат и настройки.
 pub async fn initialize(mut state: Signal<AppState>) {
-    let result = services::runtime::background(async move {
-        tokio::task::spawn_blocking(|| -> Result<_> {
-            let store = Store::open()?;
-            services::profile::ensure_local(&store)?;
-            let snapshot = store.with(|db| services::chat_store::load(db, None))?;
-            let model = services::generation::label(&store);
-            let agent = services::agent::settings(&store, snapshot.active)?;
-            let actions = services::task_history::load(&store, &snapshot.messages)?;
-            Ok((store, snapshot, model, agent, actions))
-        })
-        .await?
-    })
-    .await;
+    let began = std::time::Instant::now();
+    let result = services::startup::take().await;
     match result {
-        Ok((store, snapshot, model, agent, actions)) => {
+        Ok(services::startup::Prepared {
+            store,
+            snapshot,
+            model,
+            agent,
+            actions,
+            session,
+        }) => {
+            // Карта прокрутки устанавливается до эффектов вновь открываемых окон.
+            if let Ok(json) = serde_json::to_string(&session.scrolls) {
+                document::eval(&format!(
+                    "window.xopilotDialogScroll = new Map(Object.entries({json}));"
+                ));
+            }
+            document::eval(&format!(
+                "window.xopilotChatScroll = {};",
+                session.chat_scroll
+            ));
             let mut value = state.write();
             value.store = Some(store);
             value.agent = agent;
             value.action_history = actions;
             value.apply(snapshot);
+            value.screen = session.screen;
+            value.settings_section = session.settings_section;
+            value.sidebar = session.sidebar;
+            value.dialog_history = session.history;
+            value.session_scrolls = session.scrolls;
+            value.chat_scroll = session.chat_scroll;
             value.error = None;
             match model {
                 Ok((model, local)) => {
@@ -189,6 +188,12 @@ pub async fn initialize(mut state: Signal<AppState>) {
                 Err(error) => value.error = Some(format!("Проверьте настройки API: {error:#}")),
             }
             value.ready = true;
+            #[cfg(target_os = "android")]
+            services::android_downloads::ensure_monitor();
+            tracing::info!(
+                history_ms = began.elapsed().as_millis(),
+                "История и состояние восстановлены"
+            );
         }
         Err(error) => {
             let mut value = state.write();

@@ -1,6 +1,8 @@
 // Файл: App/services/paths.rs
 // Описание: Доступные для записи каталоги, совместимые с прежней установкой.
-use anyhow::{Context, Result};
+#[cfg(not(target_os = "android"))]
+use anyhow::Context;
+use anyhow::Result;
 use std::path::PathBuf;
 
 /// Определяет каталог устройства с учётом тестового переопределения пути.
@@ -9,7 +11,15 @@ pub fn base_data_dir() -> Result<PathBuf> {
         return Ok(PathBuf::from(path));
     }
     #[cfg(target_os = "android")]
-    return super::android::data_dir();
+    {
+        static ROOT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+        if let Some(root) = ROOT.get() {
+            return Ok(root.clone());
+        }
+        let root = super::android::data_dir()?;
+        let _ = ROOT.set(root.clone());
+        return Ok(root);
+    }
     #[cfg(not(target_os = "android"))]
     Ok(dirs::data_dir()
         .context("Не удалось найти каталог данных пользователя")?

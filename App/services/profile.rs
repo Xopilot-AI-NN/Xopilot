@@ -5,14 +5,21 @@ use serde_json::{Value, json};
 
 /// Создаёт постоянный профиль первого запуска, сохраняя прежнее имя, фото и память.
 pub fn ensure_local(store: &Store) -> Result<()> {
-    store.with(|db|{
-        let mut value:Value=read_json(db,"profile_v1")?;
-        if !value.is_object(){value=json!({"name":db.get_setting("profile_name")?.unwrap_or_else(||"Пользователь".into()),"avatar":""});}
-        if value["id"].as_str().is_none(){value["id"]=uuid::Uuid::new_v4().to_string().into();}
-        if value.get("created_at").is_none(){value["created_at"]=json!(super::canvases::now());}
-        write_json(db,"profile_v1",&value)?;
+    store.with(|db| {
+        let mut value: Value = read_json(db, "profile_v1")?;
+        let original = value.clone();
+        if !value.is_object() {
+            value = json!({"name": db.get_setting("profile_name")?.unwrap_or_else(|| "Пользователь".into()), "avatar": ""});
+        }
+        if value["id"].as_str().is_none() { value["id"] = uuid::Uuid::new_v4().to_string().into(); }
+        if value.get("created_at").is_none() { value["created_at"] = json!(super::canvases::now()); }
+        // Уже созданный профиль не вызывает fsync при каждом возвращении в приложение.
+        if value != original { write_json(db, "profile_v1", &value)?; }
         // Один раз заменяем прежний ручной выбор новой автоматической политикой.
-        if db.get_setting("compute_policy_v1")?.is_none(){db.set_setting("llm_backend","auto")?;db.set_setting("compute_policy_v1","1")?;}
+        if db.get_setting("compute_policy_v1")?.is_none() {
+            db.set_setting("llm_backend", "auto")?;
+            db.set_setting("compute_policy_v1", "1")?;
+        }
         Ok(())
     })
 }

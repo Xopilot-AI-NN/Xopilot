@@ -1,6 +1,7 @@
 // Описание: Потоковая загрузка с паузой/продолжением, межпроцессной блокировкой и SHA-256.
 use super::db::Store;
 use anyhow::{Context, Result, ensure};
+#[cfg(any(not(target_os = "android"), test))]
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -107,6 +108,10 @@ fn notify(id: &str, phase: &str, downloaded: u64, total: Option<u64>, error: Str
 }
 /// Возвращает текущую фазу, объём и ошибку операции.
 pub fn progress(id: &str) -> Progress {
+    #[cfg(target_os = "android")]
+    if let Some(progress) = super::android_downloads::progress(id) {
+        return progress;
+    }
     if let Ok(jobs) = jobs().lock()
         && let Some(job) = jobs.get(id)
     {
@@ -136,6 +141,15 @@ pub fn pause(id: &str) {
 /// Начинает операцию после проверки размера и исключения параллельной записи.
 pub fn start(id: &str) -> Result<()> {
     let spec = model(id)?;
+    #[cfg(target_os = "android")]
+    return super::android_downloads::start(spec);
+    #[cfg(not(target_os = "android"))]
+    start_native(spec)
+}
+
+/// Настольная потоковая загрузка сохраняет прежнюю ручную паузу и Range-продолжение.
+#[cfg(not(target_os = "android"))]
+fn start_native(spec: Model) -> Result<()> {
     let token = CancellationToken::new();
     {
         let mut jobs = jobs()
@@ -193,12 +207,24 @@ fn lock(root: &Path, spec: Model) -> Result<std::fs::File> {
     fs2::FileExt::try_lock_exclusive(&lock).context("Модель занята другим процессом")?;
     Ok(lock)
 }
+/// Отменяет системную Android-загрузку; на ПК оставляет совместимую паузу.
+pub fn cancel(id: &str) -> Result<()> {
+    #[cfg(target_os = "android")]
+    return super::android_downloads::cancel(id);
+    #[cfg(not(target_os = "android"))]
+    {
+        pause(id);
+        Ok(())
+    }
+}
 /// Запускает сетевую загрузку и отражает её завершение в реестре.
+#[cfg(not(target_os = "android"))]
 async fn download(spec: Model, token: CancellationToken) -> Result<()> {
     let root = super::paths::models_dir()?;
     download_to(spec, token, root).await
 }
 /// Продолжает частичный файл и публикует его только после проверки SHA-256.
+#[cfg(any(not(target_os = "android"), test))]
 async fn download_to(spec: Model, token: CancellationToken, root: PathBuf) -> Result<()> {
     let _lease = lock(&root, spec)?;
     let part = root.join(format!("{}.part", spec.filename));

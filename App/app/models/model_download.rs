@@ -17,13 +17,14 @@ pub fn build_model_row(id: String, progress: Progress) -> Element {
     let mut state = use_context::<Signal<AppState>>();
     let spec = model_installer::model(&id).unwrap();
     let installed = model_installer::installed_path(spec).is_ok();
-    let running = ["downloading", "verifying"].contains(&progress.phase.as_str());
+    let running = ["downloading", "verifying", "waiting"].contains(&progress.phase.as_str());
     let mut deleting = use_signal(|| false);
     let selected = state.read().model_local && state.read().model == spec.name;
     let status = match progress.phase.as_str() {
         "downloading" => "Загрузка",
         "verifying" => "Проверка SHA-256",
         "paused" => "На паузе",
+        "waiting" => "Android ожидает сеть и продолжит автоматически",
         "error" => "Ошибка",
         _ => {
             if installed {
@@ -62,8 +63,12 @@ pub fn build_model_row(id: String, progress: Progress) -> Element {
                     if running {
                         button {
                             class: "button",
-                            onclick: move |_| model_installer::pause(spec.id),
-                            "Пауза"
+                            disabled: progress.phase == "verifying",
+                            onclick: move |_| {
+                                if cfg!(target_os = "android") { state::report(state, model_installer::cancel(spec.id)); }
+                                else { model_installer::pause(spec.id); }
+                            },
+                            if cfg!(target_os = "android") { "Отменить" } else { "Пауза" }
                         }
                     } else if installed {
                         button {

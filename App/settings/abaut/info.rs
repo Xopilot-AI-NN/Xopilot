@@ -21,7 +21,7 @@ pub fn build_info() -> Element {
                 div {
                     class: "about-logo",
                     img {
-                        src: asset!("/assets/icon.png"),
+                        src: crate::app::shared::static_assets::ICON,
                         alt: "Логотип Xopilot",
                     }
                 }

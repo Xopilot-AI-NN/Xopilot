@@ -149,16 +149,23 @@ fn library_path() -> Result<PathBuf> {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700))?;
     }
-    let path = root.join("liblitert-lm.so");
+    let path = root.join(if cfg!(target_os = "windows") {
+        "litert-lm.dll"
+    } else {
+        "liblitert-lm.so"
+    });
     if !NOTICES.is_empty() {
         std::fs::write(root.join("runtime-licenses.zip"), NOTICES)?;
     }
     if !path.is_file()
         || super::model_installer::digest_file(&path, &CancellationToken::new())? != digest
     {
-        let temporary = root.join(format!("{}.tmp", uuid::Uuid::new_v4()));
-        std::fs::write(&temporary, EMBEDDED)?;
-        std::fs::rename(temporary, &path)?;
+        use std::io::Write;
+        let mut temporary = tempfile::NamedTempFile::new_in(&root)?;
+        temporary.write_all(EMBEDDED)?;
+        temporary.as_file().sync_all()?;
+        // persist заменяет испорченный файл также на Windows, где обычный rename не заменяет DLL.
+        temporary.persist(&path).map_err(|error| error.error)?;
     }
     Ok(path)
 }

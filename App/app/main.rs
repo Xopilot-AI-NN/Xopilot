@@ -12,7 +12,7 @@ use crate::{
 };
 use dioxus::prelude::*;
 
-const FONT: Asset = asset!("/assets/fonts/GoogleSans-Regular.ttf");
+const FONT: &str = super::shared::static_assets::FONT;
 
 /// Инициализирует приложение и фоновое сохранение черновика.
 #[component]
@@ -80,6 +80,23 @@ pub fn build_window() -> Element {
     let outside_chat = value.screen != state::Screen::Chat;
     drop(value);
     use_effect(use_reactive(
+        (&ready, &has_store),
+        move |(ready, has_store)| {
+            if ready && has_store {
+                spawn(async move {
+                    let result = document::eval("await document.fonts.ready; await new Promise(requestAnimationFrame); return performance.now();").await;
+                    if let Ok(value) = result {
+                        tracing::info!(web_ready_ms = value.as_f64(), "Интерфейс готов");
+                    }
+                    #[cfg(target_os = "android")]
+                    if let Err(error) = services::android::report_fully_drawn() {
+                        tracing::debug!("{error:#}");
+                    }
+                });
+            }
+        },
+    ));
+    use_effect(use_reactive(
         (&pending_screen, &pending_section, &approval_open),
         move |(screen, section, approval)| {
             if screen.is_some() || section.is_some() || approval {
@@ -91,9 +108,13 @@ pub fn build_window() -> Element {
         document::Title {
             "Xopilot"
         }
+        super::shared::static_assets::build_static_assets {
+        }
         self::build_mobile_layout {
         }
         super::shared::notification_lifetime::build_notification_lifetime {
+        }
+        super::shared::session_lifecycle::build_session_lifecycle {
         }
         style {
             {
@@ -106,19 +127,14 @@ pub fn build_window() -> Element {
         }
         document::Link {
             rel: "icon",
-            href: asset!("/assets/icon.png"),
+            href: super::shared::static_assets::ICON,
         }
         div {
             class: "app",
             "data-theme": theme,
             "data-platform": if cfg!(target_os = "android") { "android" } else { "desktop" },
-            if !ready {
-                div {
-                    class: "empty",
-                    role: "status",
-                    "Открываем защищённую историю…"
-                }
-            } else if !has_store {
+            "data-ready": ready.to_string(),
+            if ready && !has_store {
                 div {
                     class: "empty",
                     icons::build_icon {
@@ -144,6 +160,8 @@ pub fn build_window() -> Element {
             } else {
                 div {
                     class: "layout",
+                    inert: if ready { None } else { Some("") },
+                    "aria-busy": (!ready).to_string(),
                     menu::menu::build_menu {
                     }
                     main {
