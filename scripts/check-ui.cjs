@@ -10,6 +10,8 @@ const assert = require('node:assert/strict');
 const {spawn, execFileSync} = require('node:child_process');
 const repository = path.resolve(__dirname, '..');
 const root = fs.mkdtempSync('/tmp/xopilot-ui-check-');
+// В /tmp часто tmpfs: настоящие веса держим на диске, не занимая гигабайты RAM.
+const modelDirectory=process.env.XOPILOT_TEST_MODEL?path.join(repository,'target/ui-models',path.basename(root)):path.join(root,'data/models');
 fs.chmodSync(root, 0o700);
 const socket = path.join(root, 'ui.sock');
 const binary = path.join(repository, 'target/dx/interface_interaction/debug/linux/app/interface_interaction');
@@ -17,6 +19,7 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 let child, windowId;
 const results = [];
 const requests = [];
+let agentRequests = 0;
 
 async function evaluate(script) {
     return new Promise((resolve, reject) => {
@@ -44,8 +47,8 @@ async function until(script, message, timeout = 7000) {
     throw Error(message);
 }
 async function click(label) {
-    await evaluate(`
-        const scope = [...document.querySelectorAll('[aria-modal="true"]')].pop() || document;
+    const script=`
+        const scope = [...document.querySelectorAll('.floating-menu')].pop() || [...document.querySelectorAll('[aria-modal="true"]')].pop() || document;
         const candidates = [...scope.querySelectorAll('button')].filter(x => !x.closest('[inert]') && !x.disabled && x.getClientRects().length && getComputedStyle(x).visibility !== 'hidden');
         const label = ${JSON.stringify(label)};
         const button = candidates.find(x => x.title === label || x.getAttribute('aria-label') === label)
@@ -56,7 +59,11 @@ async function click(label) {
         if (!hit || !button.contains(hit)) throw Error('Кнопка перекрыта: ' + label);
         // Событие идёт отдельным оборотом, после ответа диагностического eval.
         setTimeout(() => button.click(), 0); return true;
-    `);
+    `;
+    for(let attempt=0;;attempt++){
+        try{await evaluate(script);break;}
+        catch(error){if(attempt>=20||!(/Не найдена кнопка|Кнопка перекрыта/.test(error.message)))throw error;await wait(100);}
+    }
     await wait(170);
 }
 async function input(selector, value) {
@@ -84,9 +91,14 @@ function resize(next) {
 }
 async function start() {
     const log = fs.openSync(path.join(root, 'app.log'), 'a');
-    child = spawn(binary, [], {cwd: repository, env: {...process.env, XOPILOT_DATA_DIR:path.join(root, 'data'), XOPILOT_UI_SOCKET:socket, GSETTINGS_BACKEND:'memory'}, stdio:['ignore', log, log]});
+    child = spawn(binary, [], {cwd: repository, env: {...process.env, XOPILOT_DATA_DIR:path.join(root, 'data'), XOPILOT_MODELS_DIR:modelDirectory, XOPILOT_UI_SOCKET:socket, GSETTINGS_BACKEND:'memory'}, stdio:['ignore', log, log]});
     fs.closeSync(log);
     for (let i=0;i<100 && !fs.existsSync(socket);i++) await wait(50);
+    // Файл Unix socket появляется чуть раньше listen; под нагрузкой это заметная гонка.
+    for(let attempt=0;;attempt++){
+        try{await evaluate('return document.readyState;');break;}
+        catch(error){if(attempt>=100||child.exitCode!==null||child.signalCode!==null||!['ENOENT','ECONNREFUSED'].includes(error.code))throw error;await wait(50);}
+    }
     await until("return !!document.querySelector('#chat-prompt');", 'История не открылась');
     if (process.env.NIRI_SOCKET) {
         const windows = JSON.parse(execFileSync('niri', ['msg', '--json', 'windows']));
@@ -111,9 +123,19 @@ const server = http.createServer(async (request, response) => {
     let body = '';
     for await (const chunk of request) body += chunk;
     requests.push(JSON.parse(body));
+    const message=JSON.parse(body);
+    if(message.messages[0]?.content?.includes('You are the Xopilot agent')){
+        const turn=agentRequests++,step=turn%3,run=Math.floor(turn/3);
+        const answer=step===0?{tool:'read_project_file',arguments:{path:'example.txt'}}:
+            step===1?{tool:'write_project_file',arguments:{path:'example.txt',content:run===0?'Изменено агентом':'Эта правка отклонена'}}:
+                {final:run===0?'Файл изменён агентом':'Действие отклонено'};
+        await wait(450);
+        response.writeHead(200,{'Content-Type':'application/json'});
+        response.end(JSON.stringify({choices:[{message:{content:JSON.stringify(answer)}}]}));return;
+    }
     response.writeHead(200, {'Content-Type':'text/event-stream'});
     response.write('data: ' + JSON.stringify({choices:[{delta:{content:'Потоковый ответ.\n\n'}}]}) + '\n\n');
-    await wait(900);
+    await wait(1800);
     if (!response.destroyed) response.end('data: '+JSON.stringify({choices:[{delta:{content:'**Markdown** и окончание ответа.'}}]})+'\n\ndata: [DONE]\n\n');
 });
 
@@ -128,21 +150,31 @@ const server = http.createServer(async (request, response) => {
         await click(section);
         await check('Открывается раздел: ' + section, `return document.querySelector('#dialog-title').textContent === ${JSON.stringify(section)};`);
         if (section === 'Профиль и аккаунт') {
-            await input('.dialog input', 'Имя UI-проверки');
+            await click('Изменить имя');
+            await input('.profile-name-editor input', 'Имя UI-проверки');
             await click('Назад к настройкам');
             await check('Несохранённый профиль защищён при возврате', "return document.querySelector('[role=alertdialog]')?.contains(document.activeElement);");
             await click('Остаться');
-            await click('Сохранить профиль');
+            await click('Сохранить имя');
+        }
+        if (section === 'Модели') {
+            await check('Скачивание расположено справа внутри карточки модели', "return [...document.querySelectorAll('.model-card')].every(card=>{const row=card.getBoundingClientRect(),button=card.querySelector('button').getBoundingClientRect();return button.right<=row.right&&button.left>row.left+row.width/2&&button.top>=row.top&&button.bottom<=row.bottom;});");
         }
         if (section === 'Персонализация') {
-            await input('select[aria-label="Тема оформления"]', 'dark');
+            await click('Тема оформления');
+            await check('Тематический список помещается в окно и отмечает выбранную тему', "const menu=document.querySelector('[role=listbox]'),r=menu.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&r.bottom<=innerHeight&&!!menu.querySelector('[aria-selected=true]')&&!document.querySelector('select[aria-label=\"Тема оформления\"]');");
+            await click('Аква · тёмная');
+            await click('Тема оформления');
+            if(windowId)execFileSync('niri',['msg','action','screenshot-window','--id',String(windowId),'--path',path.join(root,'desktop-themed-select.png')]);
+            await click('Аква · тёмная');
             await check('Тема применяется в открытом окне', "return document.querySelector('.app').dataset.theme === 'dark';");
-            await input('select[aria-label="Тема оформления"]', 'light');
+            await click('Тема оформления'); await click('Аква · светлая');
             await click('Память обо мне');
             await input('.dialog textarea', 'Инструкции UI-проверки');
             await click('Сохранить профиль'); await close();
             await check('Память возвращает в персонализацию', "return document.querySelector('#dialog-title').textContent === 'Персонализация';");
         }
+        if(windowId)execFileSync('niri',['msg','action','screenshot-window','--id',String(windowId),'--path',path.join(root,'desktop-section-'+['Профиль и аккаунт','Персонализация','Модели','История','Обновления','О программе'].indexOf(section)+'.png')]);
         await click('Назад к настройкам');
     }
     await close();
@@ -177,16 +209,16 @@ const server = http.createServer(async (request, response) => {
     await input('.dialog input', 'Canvas UI-проверки');
     await input('.dialog textarea', '# Сохранённый Canvas');
     await click('Сохранить');
-    const canvasId = await evaluate("return document.querySelector('select[aria-label=Документ]').value;");
-    assert(canvasId);
-    await input('select[aria-label="Документ"]', '');
+    await click('Документ'); await click('Новый документ');
     await check('Пункт «Новый документ» действительно открывает пустой Canvas', "return document.querySelector('.dialog input').value === '' && document.querySelector('.dialog textarea').value === '';");
-    await input('select[aria-label="Документ"]', canvasId);
+    await click('Документ'); await click('Canvas UI-проверки');
     await check('Сохранённый Canvas открывается по выбору из списка', "return document.querySelector('.dialog textarea').value === '# Сохранённый Canvas';");
     await input('.dialog textarea', 'Несохранённая правка'); await close();
     await click('Остаться'); await click('Сохранить');
     await click('Удалить Canvas'); await click('Подтвердить удаление Canvas');
-    await check('Canvas удаляется только после подтверждения', "return document.querySelector('select[aria-label=Документ]').options.length === 1 && document.querySelector('.dialog textarea').value === '';");
+    await click('Документ');
+    await check('Canvas удаляется только после подтверждения', "return document.querySelectorAll('[role=listbox] [role=option]').length === 1 && document.querySelector('.dialog textarea').value === '';");
+    await click('Новый документ');
     await close();
     await menu(); await click('Шаблоны запросов'); await click('Создать');
     await input('.dialog .section input', 'Шаблон UI-проверки'); await input('.dialog textarea', 'Первый текст шаблона');
@@ -194,7 +226,7 @@ const server = http.createServer(async (request, response) => {
     await check('Шаблон редактируется без создания дубликата', "return document.querySelectorAll('.dialog .list .section').length === 1 && document.querySelector('.dialog .list').innerText.includes('Исправленный шаблон');");
     await click('Вставить в сообщение');
     await check('Шаблон дополняет черновик без отправки', `return document.querySelector('#chat-prompt').value === ${JSON.stringify('Черновик первого чата\n\nИсправленный шаблон')};`);
-    await click('Выбор модели'); await click('API · настроить подключение');
+    await click('Выбор модели'); await click('Подключить API');
     await input('.dialog input[type=password]', 'test-key-only'); await click('OpenRouter');
     await check('Смена провайдера очищает прежний ключ', "return document.querySelector('.dialog input[type=password]').value === '';");
     await close(); await click('Остаться');
@@ -202,6 +234,7 @@ const server = http.createServer(async (request, response) => {
     await input('.dialog input[placeholder="Идентификатор из каталога провайдера"]', 'interface-test');
     await click('Сохранить модель'); await close(); await close();
     await input('#chat-prompt', 'Вопрос UI-проверки'); await click('Отправить сообщение');
+    await until("return document.querySelector('.message.assistant')?.innerText.includes('Потоковый ответ');", 'Первый SSE-фрагмент не появился');
     await check('Ответ отображается по мере получения SSE', "return !!document.querySelector('button[title="+JSON.stringify('Остановить ответ')+"]') && document.querySelector('.message.assistant').innerText.includes('Потоковый ответ');");
     await until("return !document.querySelector('button[title="+JSON.stringify('Остановить ответ')+"]');", 'Ответ не завершился');
     await click('Действия сообщения'); await click('Изменить');
@@ -242,19 +275,20 @@ const server = http.createServer(async (request, response) => {
         await wait(300);
         execFileSync('niri', ['msg', 'action', 'screenshot-window', '--id', String(windowId), '--path', path.join(root, 'mobile-drawer.png')]);
         await click('Настройки'); await click('Профиль и аккаунт');
-        await input('.dialog input', 'Несохранённое имя'); await close();
+        await click('Изменить имя'); await input('.profile-name-editor input', 'Несохранённое имя'); await close();
         execFileSync('niri', ['msg', 'action', 'screenshot-window', '--id', String(windowId), '--path', path.join(root, 'mobile-unsaved.png')]);
-        await click('Остаться'); await click('Сохранить профиль'); await close();
+        await click('Остаться'); await click('Сохранить имя'); await close();
         resize(1000); await wait(350);
         await click('Поиск, закладки и экспорт'); await click('Закладки');
         execFileSync('niri', ['msg', 'action', 'screenshot-window', '--id', String(windowId), '--path', path.join(root, 'desktop-empty-bookmarks.png')]);
     }
+    await require('./check-ui-features.cjs')({root,evaluate,wait,click,input,close,check,until,resize,requests});
     fs.writeFileSync(path.join(root, 'result.json'), JSON.stringify({checks:results, httpRequests:requests.length, viewportWidths:windowId?[1000,390]:[1060], platform:'Linux WebKitGTK; Android device not tested'}, null, 2));
     console.log(`${results.length} проверок пройдено. Артефакты: ${root}`);
 })().catch(async error => {
     console.error(error);
     try {
-        const state = await evaluate("return {focus:document.activeElement?.outerHTML,drawer:document.querySelector('.drawer-layer')?.outerHTML.slice(0,500),dialog:document.querySelector('.dialog')?.innerText,confirmation:document.querySelector('[role=alertdialog]')?.innerText};");
+        const state = await evaluate("return {focus:document.activeElement?.outerHTML.slice(0,500),error:document.querySelector('.snackbar')?.innerText,drawer:document.querySelector('.drawer-layer')?.outerHTML.slice(0,500),dialog:document.querySelector('.dialog')?.innerText,confirmation:document.querySelector('[role=alertdialog]')?.innerText};");
         fs.writeFileSync(path.join(root, 'failure.json'), JSON.stringify(state, null, 2));
     } catch (_) {}
     console.error('Артефакты: ' + root);

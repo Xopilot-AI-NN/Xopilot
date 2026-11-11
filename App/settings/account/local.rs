@@ -102,7 +102,7 @@ pub fn build_local_accounts() -> Element {
                     label{class:"field","Локальный логин",input{value:"{login}",autocomplete:"username",maxlength:80,oninput:move|e|login.set(e.value())}}
                     label{class:"field","Имя нового профиля",input{value:"{name}",maxlength:50,oninput:move|e|name.set(e.value())}}
                 }else{
-                    label{class:"field","Выберите аккаунт",select{value:"{selected}",onchange:move|e|selected.set(e.value()),for account in accounts.read().iter(){option{value:"{account.id}","{account.login}"}}}}
+                    label{class:"field","Выберите аккаунт",crate::app::shared::select::build_select{id:"local-account-choice",label:"Выберите аккаунт",value:selected.read().clone(),options:accounts.read().iter().map(|account|(account.id.clone(),account.login.clone())).collect::<Vec<_>>(),onchange:move|id:String|selected.set(id)}}
                 }
                 label{class:"field","Пароль локального аккаунта",input{r#type:"password",autocomplete:if mode.read().as_str()=="register"{"new-password"}else{"current-password"},value:"{password}",oninput:move|e|password.set(e.value())}}
                 if mode.read().as_str()=="register"{label{class:"field","Повторите пароль",input{r#type:"password",autocomplete:"new-password",value:"{confirmation}",oninput:move|e|confirmation.set(e.value())}}}

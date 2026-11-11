@@ -43,22 +43,15 @@ pub fn build_canvas_dialog() -> Element {
     rsx! {
         div { class: "page", div { class: "page-content",
             div { class: "canvas-document-row",
-                label { class: "field", "Документ", select { "aria-label": "Документ", value: "{document.id}", onchange: move |e| {
-                    let id = e.value();
+                label { class: "field", "Документ", crate::app::shared::select::build_select { id:"canvas-document",label:"Документ",value:document.id.clone(),options:std::iter::once((String::new(),"Новый документ".to_owned())).chain(docs.read().iter().map(|doc|(doc.id.clone(),doc.title.clone()))).collect::<Vec<_>>(),onchange: move |id:String| {
                     let selected = if id.is_empty() { Some(Document { kind: "text".into(), chat_id: state.read().active, ..Default::default() }) }
                         else { docs.read().iter().find(|doc| doc.id == id).cloned() };
                     if let Some(selected) = selected {
                         if *dirty.read() {
                             pending.set(Some(selected));
-                            // Пока пользователь решает, показываем действительно открытый документ.
-                            let id = serde_json::to_string(&current.peek().id).unwrap_or_default();
-                            document::eval(&format!("document.querySelector('select[aria-label=\"Документ\"]').value={id};"));
                         } else { current.set(selected); status.set(String::new()); deleting.set(false); }
                     }
-                },
-                    option { value: "", "Новый документ" }
-                    for doc in docs.read().iter() { option { value: "{doc.id}", "{doc.title}" } }
-                } }
+                } } }
                 button { class: "plain-icon", title: "Новый Canvas", onclick: move |_| {
                     let new = Document { kind: "text".into(), chat_id: state.read().active, ..Default::default() };
                     if *dirty.read() { pending.set(Some(new)); }
@@ -73,9 +66,10 @@ pub fn build_canvas_dialog() -> Element {
             }
             section { class: "section",
                 label { class: "field", "Название", input { value: "{document.title}", oninput: move |e| { current.write().title = e.value(); dirty.set(true); } } }
-                label { class: "field", "Вид", select { value: "{document.kind}", onchange: move |e| { current.write().kind = e.value(); dirty.set(true); },
-                    option { value: "text", "Текст / Markdown" } option { value: "code", "Код" } option { value: "web", "HTML-сайт" }
-                    if document.kind == "drawing" { option { value: "drawing", "Рисунок прежней версии" } }
+                label { class: "field", "Вид", crate::app::shared::select::build_select {
+                    id:"canvas-kind",label:"Вид Canvas",value:document.kind.clone(),
+                    options:{let mut options=vec![("text".into(),"Текст / Markdown".into()),("code".into(),"Код".into()),("web".into(),"HTML-сайт".into())];if document.kind=="drawing"{options.push(("drawing".into(),"Рисунок прежней версии".into()));}options},
+                    onchange:move |kind:String| {current.write().kind=kind;dirty.set(true);}
                 } }
                 if document.kind == "drawing" {
                     p { class: "notice", "Рисунок сохранён в базе. Редактор рисования ещё не перенесён." }
