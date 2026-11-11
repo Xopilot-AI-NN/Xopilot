@@ -36,3 +36,6 @@ App/advanced_xopilot*.pyd
 
 # Сервер и панель администратора не публикуются.
 /Server/
+
+# Нативный SDK скачивает scripts/prepare_runtime.sh; в релиз входит нужная библиотека.
+/App/native/
