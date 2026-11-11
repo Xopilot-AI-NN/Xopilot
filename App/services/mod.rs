@@ -12,6 +12,7 @@ pub mod drafts;
 pub mod exports;
 pub mod generation;
 pub mod litert;
+pub mod local_accounts;
 pub mod message_navigation;
 pub mod mobile_documents;
 pub mod model_installer;

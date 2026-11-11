@@ -180,6 +180,24 @@ impl Database {
         rows.collect()
     }
 
+    /// SQLCipher export сохраняет целостный снимок с новым ключом; WAL не копируется вслепую.
+    pub fn export_encrypted(&self, path: &Path, key: &str) -> Result<()> {
+        if path.exists() {
+            return Err(rusqlite::Error::InvalidPath(path.to_owned()));
+        }
+        self.conn.execute(
+            "ATTACH DATABASE ?1 AS xopilot_export KEY ?2",
+            params![path.to_string_lossy(), key],
+        )?;
+        let result=self.conn.execute_batch(&format!("SELECT sqlcipher_export('xopilot_export'); PRAGMA xopilot_export.user_version = {CURRENT_SCHEMA_VERSION};"));
+        let detach = self.conn.execute_batch("DETACH DATABASE xopilot_export");
+        if result.is_err() || detach.is_err() {
+            let _ = std::fs::remove_file(path);
+        }
+        result?;
+        detach
+    }
+
     // ---------- chats / messages ----------
 
     pub fn create_chat(&self, title: &str) -> Result<i64> {

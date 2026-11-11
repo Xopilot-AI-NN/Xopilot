@@ -6,11 +6,11 @@ use serde::{Serialize, de::DeserializeOwned};
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone)]
-pub struct Store(Arc<Mutex<Database>>);
+pub struct Store(Arc<Mutex<Database>>, Option<Arc<std::fs::File>>);
 
 impl Store {
     pub fn open() -> Result<Self> {
-        let root = super::paths::app_data_dir()?;
+        let root = super::paths::base_data_dir()?;
         super::account_deletion::perform_pending_erasure(&root)?;
         let path = root.join("xopilot.db");
         #[cfg(not(target_os = "android"))]
@@ -26,7 +26,15 @@ impl Store {
     }
 
     pub fn new(db: Database) -> Self {
-        Self(Arc::new(Mutex::new(db)))
+        Self(Arc::new(Mutex::new(db)), None)
+    }
+    pub fn with_lease(mut self, lease: std::fs::File) -> Self {
+        self.1 = Some(Arc::new(lease));
+        self
+    }
+    pub fn retain_lease(mut self, original: &Store) -> Self {
+        self.1 = original.1.clone();
+        self
     }
 
     pub fn with<T>(&self, call: impl FnOnce(&Database) -> Result<T>) -> Result<T> {
