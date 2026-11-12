@@ -21,35 +21,27 @@
 
 ## Screenshots
 
-Six views of Xopilot Rust Edition. Click any image to view it at full resolution.
-
 <table align="center">
   <tr>
     <td align="center" valign="middle">
       <a href="previews/dioxus-main.png"><img src="previews/dioxus-main.png" alt="Chats — Xopilot Rust Edition" width="260" /></a>
-      <sub>Chats</sub>
     </td>
     <td align="center" valign="middle">
       <a href="previews/dioxus-mobile.png"><img src="previews/dioxus-mobile.png" alt="Mobile UI — Xopilot Rust Edition" width="130" /></a>
-      <sub>Mobile UI</sub>
     </td>
     <td align="center" valign="middle">
       <a href="previews/dioxus-models.png"><img src="previews/dioxus-models.png" alt="Local models — Xopilot Rust Edition" width="260" /></a>
-      <sub>Local models</sub>
     </td>
   </tr>
   <tr>
     <td align="center" valign="middle">
       <a href="previews/android-keyboard.png"><img src="previews/android-keyboard.png" alt="Android — Xopilot Rust Edition" width="110" /></a>
-      <sub>Android</sub>
     </td>
     <td align="center" valign="middle">
       <a href="previews/dioxus-canvas.png"><img src="previews/dioxus-canvas.png" alt="Canvas — Xopilot Rust Edition" width="260" /></a>
-      <sub>Canvas</sub>
     </td>
     <td align="center" valign="middle">
       <a href="previews/dioxus-mobile-settings.png"><img src="previews/dioxus-mobile-settings.png" alt="Settings — Xopilot Rust Edition" width="130" /></a>
-      <sub>Settings</sub>
     </td>
   </tr>
 </table>
