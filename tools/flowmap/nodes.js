@@ -51,132 +51,15 @@
     watchedHandle = null,
     watchTimer = null,
     importGeneration = 0;
+  let traceFiles = [],
+    selectedTrace = "",
+    liveEnabled = false,
+    catalogueTimer = null;
   const positions = new Map();
   let filename = "",
     isDragging = null,
     toastTimeout,
     raf = 0;
-  const demo = [
-    {
-      seq: 1,
-      ms: 0,
-      kind: "start",
-      name: "Запуск Xopilot",
-      detail: "main()",
-      thread: "ThreadId(1)",
-      id: "main",
-    },
-    {
-      seq: 2,
-      ms: 3,
-      kind: "call",
-      name: "initialize()",
-      detail: "Инициализация приложения",
-      thread: "ThreadId(1)",
-      id: "init",
-      parent_id: "main",
-    },
-    {
-      seq: 3,
-      ms: 5,
-      kind: "file_write",
-      name: "Запись файла",
-      detail: "/tmp/xopilot-demo.txt",
-      thread: "ThreadId(1)",
-      id: "write",
-      parent_id: "init",
-    },
-    {
-      seq: 4,
-      ms: 7,
-      kind: "step",
-      name: "Файл записан",
-      detail: "21 байт, 2 мс",
-      thread: "ThreadId(1)",
-      id: "written",
-      parent_id: "write",
-    },
-    {
-      seq: 5,
-      ms: 8,
-      kind: "file_read",
-      name: "Чтение файла",
-      detail: "/tmp/xopilot-demo.txt",
-      thread: "ThreadId(1)",
-      id: "read",
-      parent_id: "init",
-    },
-    {
-      seq: 6,
-      ms: 9,
-      kind: "step",
-      name: "Файл прочитан",
-      detail: "21 байт, 1 мс",
-      thread: "ThreadId(1)",
-      id: "readok",
-      parent_id: "read",
-    },
-    {
-      seq: 7,
-      ms: 10,
-      kind: "variable",
-      name: "testingss",
-      detail: "21",
-      thread: "ThreadId(1)",
-      id: "value",
-      parent_id: "init",
-    },
-    {
-      seq: 8,
-      ms: 11,
-      kind: "branch",
-      name: "testingss > 0",
-      detail: "true",
-      thread: "ThreadId(1)",
-      id: "branch",
-      parent_id: "init",
-    },
-    {
-      seq: 9,
-      ms: 12,
-      kind: "call",
-      name: "spawn_worker()",
-      detail: "Запуск фоновой задачи",
-      thread: "ThreadId(1)",
-      id: "spawn",
-      parent_id: "branch",
-    },
-    {
-      seq: 10,
-      ms: 14,
-      kind: "call",
-      name: "process_data()",
-      detail: "Фоновый поток",
-      thread: "ThreadId(2)",
-      id: "worker",
-      parent_id: "spawn",
-    },
-    {
-      seq: 11,
-      ms: 18,
-      kind: "step",
-      name: "Данные обработаны",
-      detail: "Время 4 мс",
-      thread: "ThreadId(2)",
-      id: "done",
-      parent_id: "worker",
-    },
-    {
-      seq: 12,
-      ms: 20,
-      kind: "end",
-      name: "Завершение",
-      detail: "Успешно",
-      thread: "ThreadId(1)",
-      id: "end",
-      parent_id: "main",
-    },
-  ];
   function element(tag, attrs = {}, text) {
     const node = document.createElementNS(svgNS, tag);
     for (const [key, value] of Object.entries(attrs))
@@ -796,7 +679,11 @@
     $("#stats").textContent =
       `${filename || "Данные"} · ${events.length} событий · показано ${visible.length} · потоков ${threads} · связей ${edges.length}`;
     if (!events.length)
-      message("Открой трассировку Xopilot или нажми «Пример».");
+      message(
+        liveEnabled
+          ? "Ожидаем первые события приложения…"
+          : "Выбери журнал JSONL в верхней панели.",
+      );
     else if (filtered.length > MAX_VISIBLE)
       message(
         `События ${page * MAX_VISIBLE + 1}–${page * MAX_VISIBLE + visible.length} из ${filtered.length}. Используй страницы или фильтры.`,
@@ -1016,43 +903,6 @@
     setTimeout(() => URL.revokeObjectURL(url), 1000);
     toast("SVG сохранён");
   }
-  async function loadFile(file) {
-    if (!file) return;
-    if (file.size > MAX_BYTES) {
-      message("Файл больше 64 МиБ. Сократи трассировку.", "error");
-      return;
-    }
-    const generation = ++importGeneration;
-    try {
-      const parsed = parseFile(await file.text());
-      if (generation !== importGeneration) return;
-      stopWatch();
-      setEvents(parsed, file.name);
-      toast(`Загружено ${parsed.length} событий`);
-    } catch (error) {
-      message(`Ошибка импорта: ${error.message}`, "error");
-      toast("Не удалось прочитать файл");
-    }
-  }
-  $("#trace-file").addEventListener("change", (ev) => {
-    loadFile(ev.target.files?.[0]);
-    ev.target.value = "";
-  });
-  shell.addEventListener("dragover", (ev) => {
-    if (ev.dataTransfer?.types.includes("Files")) ev.preventDefault();
-  });
-  shell.addEventListener("drop", (ev) => {
-    ev.preventDefault();
-    loadFile(ev.dataTransfer?.files[0]);
-  });
-  $("#demo-btn").addEventListener("click", () => {
-    stopWatch();
-    setEvents(
-      parseFile(demo.map((x) => JSON.stringify(x)).join("\n")),
-      "Демонстрация",
-    );
-  });
-  $("#empty-demo").addEventListener("click", () => $("#demo-btn").click());
   $("#export-btn").addEventListener("click", saveSVG);
   $("#fit-btn").addEventListener("click", fit);
   $("#zoom-in").addEventListener("click", () =>
@@ -1137,70 +987,49 @@
     select(target.id, true);
     return true;
   }
+  // Смена журнала отменяет предыдущий цикл чтения. Ответ старого запроса
+  // проверяется по поколению, чтобы быстрая смена выбора не подменила карту.
   function stopWatch() {
-    if (watchTimer) clearTimeout(watchTimer);
-    watchTimer = null;
+    clearTimeout(watchTimer);
     watchedHandle = null;
-    $("#watch-btn").textContent = "Обновлять файл";
+    importGeneration++;
   }
-  async function watchFile() {
-    if (watchedHandle) {
-      stopWatch();
-      return;
-    }
-    try {
-      let handle;
-      const status = await fetch("/flowmap-status")
-        .then((response) => (response.ok ? response.json() : {}))
-        .catch(() => ({}));
-      if (status.trace) {
-        handle = {
-          async getFile() {
-            const response = await fetch("/flowmap-trace", {
-              cache: "no-store",
-            });
-            if (!response.ok)
-              throw Error("Не удалось прочитать подключённую трассу");
-            const content = await response.text();
-            return {
-              name: status.trace,
-              size: new TextEncoder().encode(content).byteLength,
-              lastModified: response.headers.get("X-Flowmap-Revision"),
-              text: async () => content,
-            };
-          },
-        };
-      } else {
-        if (!window.showOpenFilePicker) {
-          toast(
-            "Укажи журнал при запуске serve.cjs или открой файл в Chrome/Edge",
-          );
-          return;
-        }
-        [handle] = await window.showOpenFilePicker();
-      }
-      const file = await handle.getFile();
-      if (file.size > MAX_BYTES) throw Error("Файл больше 64 МиБ");
-      setEvents(parseFile(await file.text(), true), file.name);
-      watchedHandle = handle;
-      if (!events.length) message("Ожидаем первые события приложения…");
-      $("#watch-btn").textContent = "■ Остановить обновление";
-      let lastModified = file.lastModified,
-        lastSize = file.size;
-      const poll = async () => {
-        if (watchedHandle !== handle) return;
-        try {
-          const next = await handle.getFile();
-          if (next.size > MAX_BYTES) throw Error("Файл больше 64 МиБ");
-          if (next.lastModified !== lastModified || next.size !== lastSize) {
-            const parsed = parseFile(await next.text(), true);
-            if (watchedHandle !== handle) return;
-            const firstEvents = !events.length && parsed.length > 0;
-            events = parsed;
-            lastModified = next.lastModified;
-            lastSize = next.size;
+  function updateLiveButton() {
+    $("#watch-btn").setAttribute("aria-pressed", String(liveEnabled));
+    $("#watch-btn").textContent = liveEnabled
+      ? "● Реальное время"
+      : "Реальное время";
+  }
+  async function readSelected(reset = false) {
+    stopWatch();
+    if (!selectedTrace) return;
+    const generation = importGeneration;
+    const selected = traceFiles.find((file) => file.id === selectedTrace);
+    if (!selected) return;
+    const handle = {};
+    watchedHandle = handle;
+    let revision = null;
+    // Последовательный polling не создаёт параллельных запросов. При паузе
+    // остаётся последний снимок, при продолжении сразу читаются новые записи.
+    const poll = async () => {
+      try {
+        const response = await fetch(
+          `/flowmap-trace?file=${encodeURIComponent(selected.id)}`,
+          { cache: "no-store" },
+        );
+        if (!response.ok)
+          throw Error("Журнал недоступен. Обнови список журналов.");
+        const nextRevision = response.headers.get("X-Flowmap-Revision");
+        const content = await response.text();
+        if (generation !== importGeneration || watchedHandle !== handle) return;
+        if (revision !== nextRevision || reset) {
+          const parsed = parseFile(content, true);
+          const firstEvents = !events.length && parsed.length > 0;
+          if (reset) setEvents(parsed, selected.name);
+          else {
             const thread = $("#thread").value,
               kind = $("#kind").value;
+            events = parsed;
             populateFilters();
             $("#thread").value = thread;
             $("#kind").value = kind;
@@ -1208,18 +1037,65 @@
             if (!$("#kind").value) $("#kind").value = "*";
             refresh(firstEvents);
           }
-          if (watchedHandle === handle) watchTimer = setTimeout(poll, 1000);
-        } catch (error) {
-          stopWatch();
-          message(error.message, "error");
+          revision = nextRevision;
+          reset = false;
         }
-      };
-      watchTimer = setTimeout(poll, 1000);
+        if (liveEnabled && generation === importGeneration)
+          watchTimer = setTimeout(poll, 500);
+      } catch (error) {
+        if (generation !== importGeneration) return;
+        stopWatch();
+        liveEnabled = false;
+        updateLiveButton();
+        message(error.message, "error");
+      }
+    };
+    await poll();
+  }
+  // Список строится из локальной папки журналов, системный проводник не нужен.
+  // Новые файлы появляются в списке автоматически без изменения текущего выбора.
+  async function refreshFiles(initial = false) {
+    try {
+      const response = await fetch("/flowmap-files", { cache: "no-store" });
+      if (!response.ok) throw Error("Запусти просмотрщик через ./scripts/fmap");
+      const data = await response.json();
+      traceFiles = data.files;
+      const select = $("#trace-select");
+      select.replaceChildren(
+        new Option(
+          traceFiles.length
+            ? "Выбери журнал JSONL"
+            : "Журналы пока отсутствуют",
+          "",
+        ),
+      );
+      for (const file of traceFiles) {
+        const size =
+          file.size < 1024
+            ? `${file.size} Б`
+            : `${(file.size / 1024).toFixed(1)} КиБ`;
+        select.add(new Option(`${file.name} · ${size}`, file.id));
+      }
+      if (initial) selectedTrace = data.selected;
+      select.value = selectedTrace;
+      if (initial && selectedTrace) await readSelected(true);
     } catch (error) {
-      if (error.name !== "AbortError") message(error.message, "error");
+      message(error.message, "error");
     }
   }
-  $("#watch-btn").addEventListener("click", watchFile);
+  $("#trace-select").addEventListener("change", async (event) => {
+    selectedTrace = event.target.value;
+    stopWatch();
+    setEvents([], "");
+    await readSelected(true);
+  });
+  $("#refresh-files").addEventListener("click", () => refreshFiles());
+  $("#watch-btn").addEventListener("click", () => {
+    liveEnabled = !liveEnabled;
+    updateLiveButton();
+    if (liveEnabled) readSelected();
+    else stopWatch();
+  });
   $("#json-btn").addEventListener("click", () =>
     download(
       events.map((event) => JSON.stringify(event.raw)).join("\n") + "\n",
@@ -1312,7 +1188,11 @@
   window.addEventListener("pagehide", () => {
     stopPlayback();
     stopWatch();
+    clearInterval(catalogueTimer);
   });
   refresh(true);
-  if (new URLSearchParams(location.search).get("live") === "1") watchFile();
+  liveEnabled = new URLSearchParams(location.search).get("live") === "1";
+  updateLiveButton();
+  refreshFiles(true);
+  catalogueTimer = setInterval(() => refreshFiles(), 5000);
 })();

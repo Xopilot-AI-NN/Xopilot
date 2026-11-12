@@ -675,3 +675,14 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+/* Выбор журнала остаётся компактным даже у длинного имени файла. */
+#trace-select {
+  max-width: 290px;
+  min-width: 190px;
+}
+#watch-btn[aria-pressed="true"] {
+  color: #a4f3d7;
+  border-color: #328970;
+  background: #16473d;
+}

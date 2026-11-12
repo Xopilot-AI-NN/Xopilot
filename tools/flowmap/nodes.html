@@ -18,14 +18,20 @@
       </div>
       <div class="top-actions">
         <span class="offline"><span class="dot"></span>Локальный просмотр</span>
-        <label class="action primary" for="trace-file">＋ Открыть JSONL</label>
-        <input
-          type="file"
-          id="trace-file"
-          accept=".jsonl,.json,.txt,application/json"
-        />
-        <button class="action" id="demo-btn">Пример</button>
-        <button class="action" id="watch-btn">Обновлять файл</button>
+        <label for="trace-select" class="sr-only">Журнал JSONL</label>
+        <select id="trace-select" class="action" aria-label="Журнал JSONL">
+          <option value="">Загрузка журналов…</option>
+        </select>
+        <button
+          class="action"
+          id="refresh-files"
+          title="Обновить список журналов"
+        >
+          Обновить список
+        </button>
+        <button class="action" id="watch-btn" aria-pressed="false">
+          Реальное время
+        </button>
         <button class="action" id="json-btn">JSONL</button>
         <button class="action" id="save-layout">Сохранить раскладку</button>
         <label class="action" for="layout-file">Открыть раскладку</label
@@ -131,12 +137,9 @@
             <div class="empty-icon">⬡</div>
             <h2>Карта выполнения Xopilot</h2>
             <p>
-              Загрузи JSONL-трассировку, чтобы увидеть её как граф из нод.<br />Все
-              файлы обрабатываются внутри браузера.
+              Выбери журнал JSONL в верхней панели.<br />
+              Режим «Реальное время» показывает новые события автоматически.
             </p>
-            <button id="empty-demo" class="action primary">
-              Показать демонстрацию
-            </button>
           </div>
           <div
             class="minimap"
