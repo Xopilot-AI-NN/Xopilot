@@ -15,8 +15,11 @@ pub fn runtime() -> &'static Runtime {
 
 /// Выполняет сетевую или асинхронную задачу вне исполнителя Dioxus.
 pub async fn background<T: Send + 'static>(future: impl Future<Output = T> + Send + 'static) -> T {
+    let parent = crate::flow_trace::current_id().unwrap_or_default();
     runtime()
-        .spawn(future)
+        .spawn(async move {
+            crate::flow_trace::scope_with_parent("Фоновая задача", &parent, future).await
+        })
         .await
         .expect("Фоновая задача прервана")
 }
@@ -25,5 +28,13 @@ pub async fn background<T: Send + 'static>(future: impl Future<Output = T> + Sen
 pub async fn blocking<T: Send + 'static>(
     call: impl FnOnce() -> anyhow::Result<T> + Send + 'static,
 ) -> anyhow::Result<T> {
-    background(async move { tokio::task::spawn_blocking(call).await? }).await
+    background(async move {
+        let parent = crate::flow_trace::current_id().unwrap_or_default();
+        tokio::task::spawn_blocking(move || {
+            let _operation = crate::flow_trace::span_with_parent("Блокирующая операция", &parent);
+            call()
+        })
+        .await?
+    })
+    .await
 }

@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Xopilot Flow Map · создано ChatGPT</title>
+<style>
+:root{font-family:system-ui,-apple-system,'Segoe UI',sans-serif;color-scheme:dark;background:#17191e;color:#e6e9ef}
+*{box-sizing:border-box}body{margin:0}header{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:16px 22px;background:#23262e;border-bottom:1px solid #363b46}h1{font-size:18px;margin:0}header small{color:#9da8ba}main{display:grid;grid-template-columns:minmax(420px,1fr) 300px;gap:14px;padding:14px;min-height:calc(100vh - 88px)}
+.panel{background:#22252c;border:1px solid #343a45;border-radius:10px;overflow:hidden}.toolbar{display:flex;gap:10px;padding:12px;align-items:center;flex-wrap:wrap;border-bottom:1px solid #343a45}button,.file-label{font:inherit;font-size:13px;color:#e6e9ef;background:#323b49;border:1px solid #4a586a;padding:8px 12px;border-radius:7px;cursor:pointer}button:hover,.file-label:hover{background:#3d4b5d}input[type=file]{display:none}input[type=search]{font:inherit;color:inherit;background:#171b22;border:1px solid #434b58;padding:8px 10px;border-radius:7px;min-width:160px;flex:1}
+#graphScroll{height:calc(100vh - 185px);overflow:auto;padding:20px 10px;text-align:center}svg{max-width:100%;overflow:visible}#info{padding:17px;overflow-wrap:anywhere}h2{font-size:16px;margin:0 0 14px}.muted{color:#a4aebc;font-size:13px;line-height:1.5}dl{display:grid;grid-template-columns:88px minmax(0,1fr);gap:12px 8px;font-size:13px}dt{color:#a4aebc}dd{margin:0;white-space:pre-wrap}#status{padding:0 15px 12px;color:#aeb8c7;font-size:12px}#caution{padding:12px;margin-top:25px;background:#292c34;border-radius:7px;font-size:12px;color:#bbc4d2;line-height:1.55}.node{cursor:pointer}.node:focus-visible rect,.node:focus-visible polygon{stroke:#fff;stroke-width:3}.node.active rect,.node.active polygon{stroke:#f0d58b;stroke-width:3}.node:hover rect,.node:hover polygon{filter:brightness(1.15)}
+@media(max-width:900px){main{grid-template-columns:1fr}#graphScroll{height:60vh}}
+</style>
+</head>
+<body>
+<header><h1>Xopilot · Flow Map</h1><small>Карта фактически выполненных шагов · локально, без передачи файлов в сеть</small></header>
+<main>
+<section class="panel">
+  <div class="toolbar">
+    <label class="file-label">Открыть events.jsonl<input id="file" type="file" accept=".jsonl,.json,.txt"></label>
+    <button id="demo">Пример</button>
+    <input id="search" type="search" placeholder="Поиск события…" aria-label="Поиск событий">
+  </div>
+  <div id="status">Выбери трассировку или открой демонстрацию.</div>
+  <div id="graphScroll"><svg id="graph" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Карта выполнения"></svg></div>
+</section>
+<aside class="panel" id="info">
+  <h2>Сведения о событии</h2>
+  <p class="muted">Нажми на блок схемы. Покажу время выполнения, поток, название и описание.</p>
+  <div id="details"></div>
+  <div id="caution">Значения переменных скрыты по умолчанию. Для их записи явно установи XOPILOT_FLOW_VALUES=1 и не трассируй токены, пароли или личные переписки.</div>
+</aside>
+</main>
+<script>
+// Создано ChatGPT. Визуализатор полностью локальный; недоверенный JSON отображается через textContent.
+'use strict';
+const svg = document.querySelector('#graph');
+const status = document.querySelector('#status');
+const searchInput = document.querySelector('#search');
+const details = document.querySelector('#details');
+const ns = 'http://www.w3.org/2000/svg';
+let events = [];
+let selected = null;
+const palette = {
+  start:['#235f4d','#a3ebc8'],end:['#235f4d','#a3ebc8'],
+  step:['#304356','#c9e7ff'],call:['#45395c','#e3ccff'],
+  branch:['#5b4a2b','#ffe2a3'],variable:['#295260','#b4edf4'],
+  file_read:['#35517b','#b4d4ff'],file_write:['#6b4540','#ffccbc'],error:['#78343b','#ffd1d8']
+};
+const example = [
+ {seq:1,ms:0,kind:'start',name:'Запуск программы',detail:'',thread:'ThreadId(1)'},
+ {seq:2,ms:1,kind:'file_write',name:'Запись файла',detail:'data.txt',thread:'ThreadId(1)'},
+ {seq:3,ms:2,kind:'file_read',name:'Чтение файла',detail:'data.txt',thread:'ThreadId(1)'},
+ {seq:4,ms:3,kind:'variable',name:'testingss',detail:'21',thread:'ThreadId(1)'},
+ {seq:5,ms:4,kind:'branch',name:'testingss > 0',detail:'true',thread:'ThreadId(1)'},
+ {seq:6,ms:5,kind:'call',name:'process_data()',detail:'',thread:'ThreadId(1)'},
+ {seq:7,ms:8,kind:'end',name:'Завершение',detail:'Успешно',thread:'ThreadId(1)'}
+];
+function el(name, attrs = {}, text = null) {
+  const node = document.createElementNS(ns, name);
+  for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, String(value));
+  if (text !== null) node.textContent = String(text);
+  return node;
+}
+function textNode(parent, x, y, text, color, size, weight='normal') {
+  const node = el('text', {x,y,fill:color,'font-size':size,'font-weight':weight,'text-anchor':'middle','font-family':'system-ui, sans-serif'}, text);
+  parent.append(node);
+}
+function parse(text) {
+  const lines = text.split(/\r?\n/).filter(line=>line.trim());
+  if (lines.length > 100000) throw new Error('Слишком много строк (максимум 100000).');
+  const parsed = lines.map((line,i)=>{
+    let value;
+    try {value = JSON.parse(line);} catch {throw new Error(`Неверный JSON в строке ${i+1}`)}
+    if (!value || typeof value !== 'object' || Array.isArray(value) || !Number.isFinite(Number(value.ms))) {
+      throw new Error(`Некорректное событие в строке ${i+1}`);
+    }
+    return {
+      seq:Number(value.seq ?? i+1),ms:Number(value.ms),kind:String(value.kind ?? 'step').slice(0,100),
+      name:String(value.name ?? 'Событие').slice(0,1000),detail:String(value.detail ?? '').slice(0,5000),
+      thread:String(value.thread ?? '?').slice(0,100)
+    };
+  });
+  parsed.sort((a,b)=>a.seq-b.seq);
+  return parsed;
+}
+function select(event, element) {
+  selected = event;
+  svg.querySelectorAll('.node').forEach(n=>n.classList.remove('active'));
+  if(element) element.classList.add('active');
+  details.replaceChildren();
+  const dl=document.createElement('dl');
+  for(const [key,value] of [['№',event.seq],['Тип',event.kind],['Событие',event.name],['С момента старта',`${event.ms} мс`],['Поток',event.thread],['Детали',event.detail || '—']]) {
+    const dt=document.createElement('dt');dt.textContent=key;
+    const dd=document.createElement('dd');dd.textContent=String(value);
+    dl.append(dt,dd);
+  }
+  details.append(dl);
+}
+function draw() {
+  const term=searchInput.value.trim().toLocaleLowerCase();
+  const filtered = events.filter(e=>(e.name+' '+e.detail+' '+e.kind).toLocaleLowerCase().includes(term));
+  // Браузер не должен зависать от непредсказуемо длинного журнала.
+  const visible=filtered.slice(0,1500);
+  const totalHeight=Math.max(100,visible.length*102+34);
+  svg.setAttribute('viewBox',`0 0 620 ${totalHeight}`);
+  svg.setAttribute('width','620');svg.setAttribute('height',String(totalHeight));
+  svg.replaceChildren();
+  visible.forEach((event,i)=>{
+    const y=18+i*102;
+    if(i){
+      svg.append(el('line',{x1:310,y1:y-36,x2:310,y2:y-9,stroke:'#7d879a','stroke-width':2}));
+      svg.append(el('path',{d:`M304 ${y-16} L310 ${y-8} L316 ${y-16}`,fill:'none',stroke:'#7d879a','stroke-width':2}));
+    }
+    const group=el('g',{class:'node',tabindex:0,role:'button','aria-label':event.name});
+    const [bg,fg]=palette[event.kind]||palette.step;
+    if(event.kind==='branch'){
+      group.append(el('polygon',{points:`310,${y} 550,${y+35} 310,${y+70} 70,${y+35}`,fill:bg,stroke:fg,'stroke-width':1.5}));
+    }else{
+      group.append(el('rect',{x:70,y,width:480,height:70,rx:event.kind==='start'||event.kind==='end'?30:10,fill:bg,stroke:fg,'stroke-width':1.5}));
+    }
+    const label=event.name.length>52?event.name.slice(0,49)+'…':event.name;
+    const info=event.detail.length>60?event.detail.slice(0,57)+'…':event.detail;
+    textNode(group,310,y+28,label,fg,15,'600');
+    textNode(group,310,y+49,info||`${event.kind}  ·  +${event.ms} мс`,'#d8dfed',12);
+    const caption=el('text',{x:564,y:y+40,fill:'#9ca7b9','font-size':12},`#${event.seq}`);group.append(caption);
+    group.addEventListener('click',()=>select(event,group));
+    group.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();select(event,group)}});
+    svg.append(group);
+  });
+  const notice=visible.length<filtered.length?` · Показаны первые ${visible.length} из ${filtered.length}`:'';
+  status.textContent=`Событий: ${events.length} · После фильтра: ${filtered.length}${notice}`;
+  if(!visible.length){textNode(svg,310,45,'Нет событий для отображения','#aeb8c7',16)}
+  if(selected && !filtered.includes(selected)){details.replaceChildren();selected=null}
+}
+document.querySelector('#file').addEventListener('change', async event=>{
+  const file=event.target.files?.[0]; if(!file)return;
+  if(file.size>30*1024*1024){status.textContent='Файл больше 30 МиБ: выбери более короткую трассировку.';return}
+  try{events=parse(await file.text());selected=null;details.replaceChildren();searchInput.value='';draw()}
+  catch(err){status.textContent=`Ошибка: ${err.message}`}
+});
+document.querySelector('#demo').addEventListener('click',()=>{events=example.slice();selected=null;details.replaceChildren();searchInput.value='';draw()});
+searchInput.addEventListener('input',draw);
+</script>
+</body>
+</html>

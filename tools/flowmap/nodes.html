@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>Xopilot · Flow Map</title>
+    <link rel="stylesheet" href="./nodes.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo" aria-hidden="true">⌘</span>
+        <div>
+          <strong>Xopilot <span class="dim">/ Flow Map</span></strong
+          ><small>Node Explorer · v3</small>
+        </div>
+      </div>
+      <div class="top-actions">
+        <span class="offline"><span class="dot"></span>Локальный просмотр</span>
+        <label class="action primary" for="trace-file">＋ Открыть JSONL</label>
+        <input
+          type="file"
+          id="trace-file"
+          accept=".jsonl,.json,.txt,application/json"
+        />
+        <button class="action" id="demo-btn">Пример</button>
+        <button class="action" id="watch-btn">Обновлять файл</button>
+        <button class="action" id="json-btn">JSONL</button>
+        <button class="action" id="save-layout">Сохранить раскладку</button>
+        <label class="action" for="layout-file">Открыть раскладку</label
+        ><input type="file" id="layout-file" accept=".json" />
+        <button
+          class="action"
+          id="export-btn"
+          title="Сохранить видимый граф в SVG"
+        >
+          ↓ SVG
+        </button>
+      </div>
+    </header>
+    <main class="workspace">
+      <section class="editor" aria-label="Редактор графа">
+        <div class="toolbar">
+          <div class="toolgroup">
+            <label for="search" class="sr-only">Поиск</label>
+            <input
+              id="search"
+              type="search"
+              placeholder="⌕  Поиск событий, значений, путей…"
+            />
+            <label for="thread" class="sr-only">Поток</label>
+            <select id="thread" title="Фильтр потоков">
+              <option value="*">Все потоки</option>
+            </select>
+            <label for="kind" class="sr-only">Тип события</label>
+            <select id="kind" title="Тип события">
+              <option value="*">Все типы</option>
+            </select>
+          </div>
+          <div class="toolgroup">
+            <button
+              id="layout-btn"
+              class="action minor"
+              title="Изменить схему раскладки"
+            >
+              ⇄ По потокам
+            </button>
+            <button
+              id="fit-btn"
+              class="action minor"
+              title="Показать весь граф (F)"
+            >
+              ⛶ По размеру
+            </button>
+            <button id="zoom-out" class="icon-btn" aria-label="Уменьшить">
+              −
+            </button>
+            <output id="zoom-label" aria-label="Масштаб">100%</output>
+            <button id="zoom-in" class="icon-btn" aria-label="Увеличить">
+              +
+            </button>
+          </div>
+        </div>
+        <div class="notice" id="notice">
+          <span>Открой трассировку Xopilot или нажми «Пример»</span>
+        </div>
+        <div
+          class="canvas-shell"
+          id="canvas-shell"
+          tabindex="0"
+          aria-label="Карта выполнения: перетаскивание нод, колесо для масштаба, пустое место для перемещения карты"
+        >
+          <svg
+            id="graph"
+            xmlns="http://www.w3.org/2000/svg"
+            role="img"
+            aria-label="Граф событий"
+            preserveAspectRatio="xMidYMid meet"
+          >
+            <defs>
+              <marker
+                id="arrow-causal"
+                markerWidth="9"
+                markerHeight="9"
+                refX="8"
+                refY="4.5"
+                orient="auto"
+                markerUnits="userSpaceOnUse"
+              >
+                <path d="M0 0L9 4.5L0 9Z" fill="#90c7b5" />
+              </marker>
+              <marker
+                id="arrow-time"
+                markerWidth="9"
+                markerHeight="9"
+                refX="8"
+                refY="4.5"
+                orient="auto"
+                markerUnits="userSpaceOnUse"
+              >
+                <path d="M0 0L9 4.5L0 9Z" fill="#73859a" />
+              </marker>
+            </defs>
+            <g id="viewport">
+              <g id="edges"></g>
+              <g id="nodes"></g>
+            </g>
+          </svg>
+          <div class="canvas-empty" id="empty">
+            <div class="empty-icon">⬡</div>
+            <h2>Карта выполнения Xopilot</h2>
+            <p>
+              Загрузи JSONL-трассировку, чтобы увидеть её как граф из нод.<br />Все
+              файлы обрабатываются внутри браузера.
+            </p>
+            <button id="empty-demo" class="action primary">
+              Показать демонстрацию
+            </button>
+          </div>
+          <div
+            class="minimap"
+            id="minimap"
+            title="Нажми, чтобы переместиться по схеме"
+          >
+            <canvas id="mini-canvas" width="220" height="116"></canvas
+            ><span>ОБЗОР</span>
+          </div>
+          <div class="canvas-help">
+            Колесо — масштаб · Перетаскивай фон — перемещение · Ноды можно
+            двигать · F — вписать
+          </div>
+        </div>
+        <div class="playback" aria-label="Навигация по трассе">
+          <button class="action minor" id="page-prev">← Страница</button
+          ><output id="page-label">1 / 1</output
+          ><button class="action minor" id="page-next">Страница →</button>
+          <button class="action minor" id="step-prev">Предыдущее событие</button
+          ><button class="action minor" id="play-btn">▶ Просмотр</button
+          ><button class="action minor" id="step-next">
+            Следующее событие
+          </button>
+        </div>
+        <div class="bottomline">
+          <div id="stats">Нет данных</div>
+          <div class="legend">
+            <span><i class="legend-line causal"></i>Связь по parent_id</span
+            ><span
+              ><i class="legend-line time"></i>Порядок событий в потоке</span
+            >
+          </div>
+        </div>
+        <section class="timeline" aria-label="Лента событий">
+          <div class="timeline-header">
+            <strong>История выполнения</strong
+            ><span id="timeline-caption">—</span>
+          </div>
+          <div class="timeline-items" id="timeline-items"></div>
+        </section>
+      </section>
+      <aside class="inspector" aria-label="Сведения о событии">
+        <div class="inspector-heading">
+          <span class="inspector-eyebrow">INSPECTOR</span>
+          <h2>Детали ноды</h2>
+        </div>
+        <div class="inspect-content" id="details">
+          <div class="placeholder">
+            Выбери ноду на графе.<br />Здесь появятся значения, поток, время и
+            связи.
+          </div>
+        </div>
+        <div class="inspector-foot">
+          <strong>Приватность</strong>
+          <p>
+            Обрабатывается локально. Не записывай в трассы токены, пароли, ключи
+            и переписки. Значения Rust-переменных не собираются автоматически.
+          </p>
+        </div>
+      </aside>
+    </main>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="./model.js"></script>
+    <script src="./nodes.js" defer></script>
+  </body>
+</html>

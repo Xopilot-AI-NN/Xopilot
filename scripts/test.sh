@@ -24,6 +24,11 @@ case "${1:-quick}" in
   bridges)
     node scripts/check-mobile-bridges.cjs
     ;;
+  flowmap)
+    node --test tools/flowmap/model.test.cjs
+    cargo build --locked -p xopilot --example flowmap_nodes_demo --no-default-features
+    node tools/flowmap/check-trace.cjs
+    ;;
   model)
     if [[ $# -ne 2 ]]; then
       echo 'Использование: ./scripts/test.sh model /путь/gemma-4-E2B-it.litertlm' >&2
@@ -36,6 +41,6 @@ case "${1:-quick}" in
     cargo run -p xopilot --no-default-features --locked --example local_agent_smoke -- "$2"
     cargo run -p xopilot --no-default-features --locked --example local_canvas_smoke -- "$2"
     ;;
-  *) echo 'Режимы: quick | full | ui | bridges | apk | apk-check [путь/к/APK] | model /путь/к/модели' >&2; exit 2 ;;
+  *) echo 'Режимы: quick | full | ui | bridges | flowmap | apk | apk-check [путь/к/APK] | model /путь/к/модели' >&2; exit 2 ;;
 esac
 echo 'Проверки завершились успешно.'

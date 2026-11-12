@@ -14,15 +14,19 @@ fn main() {
 /// Настраивает платформенное окно и запускает Dioxus.
 #[cfg(any(feature = "desktop", feature = "mobile"))]
 fn main() {
+    xopilot::flow_trace::begin("Запуск Xopilot");
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn,xopilot=info")),
         )
         .init();
+    xopilot::flow_trace::step("Настроено логирование");
 
     #[cfg(target_os = "android")]
     xopilot::services::startup::preload();
+
+    xopilot::flow_trace::step("Запуск платформенного интерфейса Dioxus");
 
     #[cfg(not(target_os = "android"))]
     dioxus::LaunchBuilder::desktop()
@@ -41,4 +45,6 @@ fn main() {
 
     #[cfg(target_os = "android")]
     dioxus::launch(xopilot::app::main::build_app_ui);
+
+    xopilot::flow_trace::end("Завершение Xopilot");
 }
