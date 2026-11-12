@@ -15,6 +15,8 @@
      <img alt="Rust и SQLCipher" src="https://img.shields.io/badge/storage-Rust%20%2B%20SQLCipher-c5b4ff" /></p>
 </div>
 
+**Язык:** **Русский** · [English](README_EN.md)
+
 > **В разработке · Rust 2.0.13.** Интерфейс и сервисы перенесены на Rust / Dioxus. Часть возможностей прежней версии ещё переносится; состояние каждого раздела описано в [MIGRATION.md](MIGRATION.md). Результаты проверок — [Rust / Linux](tests/RUST_DIOXUS.md) и [Android](tests/ANDROID_DEVICE.md). Локальная сборка не означает, что новый релиз уже опубликован.
 
 ## Что изменилось в dev-v2.0.13
