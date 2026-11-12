@@ -141,7 +141,7 @@ fn settings_overlay_retains_chat_and_exposes_original_sections()
         "Модели",
         "История",
         "Обновления",
-        "О программе",
+        "О приложении",
     ] {
         assert!(
             html.contains(label),

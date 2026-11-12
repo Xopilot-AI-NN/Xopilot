@@ -72,6 +72,8 @@ pub fn build_app_ui() -> Element {
         self::build_window {
             key: "{state.read().session_revision}",
         }
+
+        super::shared::static_assets::build_static_assets {}
     }
 }
 
@@ -127,8 +129,6 @@ pub fn build_window() -> Element {
     rsx! {
         document::Title {
             "Xopilot"
-        }
-        super::shared::static_assets::build_static_assets {
         }
         self::build_mobile_layout {
         }
