@@ -20,8 +20,8 @@ for abi in arm64-v8a x86_64; do
   "$tools/zipalign" -f -P 16 4 "$work/unsigned.apk" "$work/aligned.apk"
   "$tools/apksigner" sign --v4-signing-enabled false --ks "$keystore" --ks-key-alias "$key_alias" \
     --ks-pass "file:$store_password" --key-pass "file:$key_password" \
-    --out "dist/Xopilot-$abi.apk" "$work/aligned.apk"
-  "$tools/apksigner" verify "dist/Xopilot-$abi.apk"
-  ./scripts/test.sh apk-check "dist/Xopilot-$abi.apk"
+    --out "dist/Xopilot-Android-$abi.apk" "$work/aligned.apk"
+  "$tools/apksigner" verify "dist/Xopilot-Android-$abi.apk"
+  ./scripts/test.sh apk-check "dist/Xopilot-Android-$abi.apk"
 done
-(cd dist && sha256sum Xopilot-arm64-v8a.apk Xopilot-x86_64.apk > SHA256SUMS-Android.txt)
+(cd dist && sha256sum Xopilot-Android-arm64-v8a.apk Xopilot-Android-x86_64.apk > SHA256SUMS-Android.txt)

@@ -155,7 +155,7 @@ jobs:
           body_path: RELEASE_NOTES.md
           files: |
             artifacts/Xopilot-*.zip
-            artifacts/Xopilot
-            artifacts/Xopilot.exe
+            artifacts/Xopilot-*-Linux
+            artifacts/Xopilot-*-Windows.exe
             artifacts/Xopilot-*.apk
             artifacts/SHA256SUMS-Android.txt

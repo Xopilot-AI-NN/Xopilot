@@ -15,9 +15,9 @@
 
 | Платформа | Файлы |
 |---|---|
-| Linux x86_64 | `Xopilot-Dev-2_0_13-Linux.zip`, `Xopilot` |
-| Windows x86_64 | `Xopilot-Dev-2_0_13-Windows.zip`, `Xopilot.exe` |
-| Android ARM64 + x86_64 | `Xopilot-arm64-v8a.apk`, `Xopilot-x86_64.apk` |
+| Linux x86_64 | `Xopilot-Dev-2_0_13-Linux.zip`, `Xopilot-Dev-2_0_13-Linux` |
+| Windows x86_64 | `Xopilot-Dev-2_0_13-Windows.zip`, `Xopilot-Dev-2_0_13-Windows.exe` |
+| Android ARM64 + x86_64 | `Xopilot-Android-arm64-v8a.apk`, `Xopilot-Android-x86_64.apk` |
 
 Linux использует системные GTK3, WebKitGTK 4.1 и libxdo, Windows — Edge WebView2. Rust, Cargo, Python и инструменты сборки пользователям не нужны. Модели скачиваются отдельно из приложения.
 

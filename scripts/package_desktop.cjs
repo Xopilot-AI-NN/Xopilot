@@ -11,6 +11,7 @@ function main() {
     const buildType = process.env.GITHUB_REF_NAME?.startsWith('v') ? 'Release' : 'Dev';
     const system = platform === 'windows' ? 'Windows' : 'Linux';
     const archiveName = `Xopilot-${buildType}-${version.replaceAll('.', '_')}-${system}.zip`;
+    const standaloneName = archiveName.slice(0, -4) + (platform === 'windows' ? '.exe' : '');
     const folder = path.resolve(`target/dx/xopilot/release/${platform}/app`);
     const source = path.join(folder, platform === 'windows' ? 'xopilot.exe' : 'xopilot');
     const binary = platform === 'windows' ? 'Xopilot.exe' : 'Xopilot';
@@ -19,7 +20,7 @@ function main() {
     fs.mkdirSync(temporary, {recursive: true});
     fs.mkdirSync('dist', {recursive: true});
     fs.copyFileSync(source, path.join(temporary, binary));
-    fs.copyFileSync(source, path.join('dist', binary));
+    fs.copyFileSync(source, path.join('dist', standaloneName));
     fs.copyFileSync('LICENSE', path.join(temporary, 'LICENSE'));
     fs.copyFileSync('App/native/runtime-licenses.zip', path.join(temporary, 'runtime-licenses.zip'));
     fs.writeFileSync(path.join(temporary, 'README.txt'), platform === 'linux'
@@ -35,10 +36,10 @@ function main() {
         execFileSync('pwsh', ['-NoProfile', '-Command', `Compress-Archive -Path '${quote(temporary)}/*' -DestinationPath '${quote(destination)}' -Force`], {stdio: 'inherit'});
     } else {
         fs.chmodSync(path.join(temporary, binary), 0o755);
-        fs.chmodSync(path.join('dist', binary), 0o755);
+        fs.chmodSync(path.join('dist', standaloneName), 0o755);
         fs.rmSync(path.join('dist', archiveName), {force: true});
         execFileSync('zip', ['-qr', path.resolve('dist', archiveName), '.'], {cwd: temporary});
     }
-    console.log(`Готово: dist/${archiveName} и dist/${binary}`);
+    console.log(`Готово: dist/${archiveName} и dist/${standaloneName}`);
 }
 try { main(); } catch (error) { console.error(error.message); process.exitCode = 1; }
