@@ -19,6 +19,40 @@
 
 > **В разработке · Rust 2.0.13.** Интерфейс и сервисы перенесены на Rust / Dioxus. Часть возможностей прежней версии ещё переносится; состояние каждого раздела описано в [MIGRATION.md](MIGRATION.md). Результаты проверок — [Rust / Linux](tests/RUST_DIOXUS.md) и [Android](tests/ANDROID_DEVICE.md). Локальная сборка не означает, что новый релиз уже опубликован.
 
+## Скриншоты
+
+Шесть экранов Xopilot Rust Edition. Нажми на изображение, чтобы открыть его в полном размере.
+
+<table align="center">
+  <tr>
+    <td align="center" valign="middle">
+      <a href="previews/dioxus-main.png"><img src="previews/dioxus-main.png" alt="Чаты — Xopilot Rust Edition" width="260" /></a>
+      <sub>Чаты</sub>
+    </td>
+    <td align="center" valign="middle">
+      <a href="previews/dioxus-mobile.png"><img src="previews/dioxus-mobile.png" alt="Мобильная версия — Xopilot Rust Edition" width="130" /></a>
+      <sub>Мобильная версия</sub>
+    </td>
+    <td align="center" valign="middle">
+      <a href="previews/dioxus-models.png"><img src="previews/dioxus-models.png" alt="Локальные модели — Xopilot Rust Edition" width="260" /></a>
+      <sub>Локальные модели</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" valign="middle">
+      <a href="previews/android-keyboard.png"><img src="previews/android-keyboard.png" alt="Android — Xopilot Rust Edition" width="110" /></a>
+      <sub>Android</sub>
+    </td>
+    <td align="center" valign="middle">
+      <a href="previews/dioxus-canvas.png"><img src="previews/dioxus-canvas.png" alt="Canvas — Xopilot Rust Edition" width="260" /></a>
+      <sub>Canvas</sub>
+    </td>
+    <td align="center" valign="middle">
+      <a href="previews/dioxus-mobile-settings.png"><img src="previews/dioxus-mobile-settings.png" alt="Настройки — Xopilot Rust Edition" width="130" /></a>
+      <sub>Настройки</sub>
+    </td>
+  </tr>
+</table>
 ## Что изменилось в dev-v2.0.13
 
 Сравнение с последним опубликованным пререлизом [dev-v2.0.12](https://github.com/Xopilot-AI-NN/Xopilot/releases/tag/dev-v2.0.12):

@@ -19,6 +19,40 @@
 
 > **In development · Rust 2.0.13.** The UI and services have been migrated to Rust / Dioxus. Some features from the previous version are still being ported; see [MIGRATION.md](MIGRATION.md) for the status of each area. Test results are available for [Rust / Linux](tests/RUST_DIOXUS.md) and [Android](tests/ANDROID_DEVICE.md). A successful local build does not mean that a new release has already been published.
 
+## Screenshots
+
+Six views of Xopilot Rust Edition. Click any image to view it at full resolution.
+
+<table align="center">
+  <tr>
+    <td align="center" valign="middle">
+      <a href="previews/dioxus-main.png"><img src="previews/dioxus-main.png" alt="Chats — Xopilot Rust Edition" width="260" /></a>
+      <sub>Chats</sub>
+    </td>
+    <td align="center" valign="middle">
+      <a href="previews/dioxus-mobile.png"><img src="previews/dioxus-mobile.png" alt="Mobile UI — Xopilot Rust Edition" width="130" /></a>
+      <sub>Mobile UI</sub>
+    </td>
+    <td align="center" valign="middle">
+      <a href="previews/dioxus-models.png"><img src="previews/dioxus-models.png" alt="Local models — Xopilot Rust Edition" width="260" /></a>
+      <sub>Local models</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" valign="middle">
+      <a href="previews/android-keyboard.png"><img src="previews/android-keyboard.png" alt="Android — Xopilot Rust Edition" width="110" /></a>
+      <sub>Android</sub>
+    </td>
+    <td align="center" valign="middle">
+      <a href="previews/dioxus-canvas.png"><img src="previews/dioxus-canvas.png" alt="Canvas — Xopilot Rust Edition" width="260" /></a>
+      <sub>Canvas</sub>
+    </td>
+    <td align="center" valign="middle">
+      <a href="previews/dioxus-mobile-settings.png"><img src="previews/dioxus-mobile-settings.png" alt="Settings — Xopilot Rust Edition" width="130" /></a>
+      <sub>Settings</sub>
+    </td>
+  </tr>
+</table>
 ## What's new in dev-v2.0.13
 
 Compared with the latest published prerelease, [dev-v2.0.12](https://github.com/Xopilot-AI-NN/Xopilot/releases/tag/dev-v2.0.12):
