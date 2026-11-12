@@ -99,7 +99,7 @@ async fn request_inner(
     token: Option<&str>,
 ) -> Result<Value> {
     let endpoint = normalize_endpoint(endpoint)?;
-    let client = reqwest::Client::builder()
+    let client = super::http_client::builder()?
         .redirect(reqwest::redirect::Policy::none())
         .connect_timeout(std::time::Duration::from_secs(10))
         .timeout(std::time::Duration::from_secs(20))

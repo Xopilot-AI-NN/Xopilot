@@ -8,7 +8,7 @@ use super::{
 };
 use anyhow::{Result, ensure};
 use jni::{
-    JNIEnv,
+    Env, jni_sig, jni_str,
     objects::{JObject, JString, JValue},
 };
 use serde::{Deserialize, Serialize};
@@ -61,13 +61,13 @@ fn save(value: &State) -> Result<()> {
     Ok(())
 }
 /// Возвращает Android-сервис через Application Context, без отдельного Java/Kotlin сервиса.
-fn manager<'a>(env: &mut JNIEnv<'a>, activity: &JObject<'_>) -> Result<JObject<'a>> {
+fn manager<'a>(env: &mut Env<'a>, activity: &JObject<'_>) -> Result<JObject<'a>> {
     let name = env.new_string("download")?;
     let service = env
         .call_method(
             activity,
-            "getSystemService",
-            "(Ljava/lang/String;)Ljava/lang/Object;",
+            jni_str!("getSystemService"),
+            jni_sig!("(Ljava/lang/String;)Ljava/lang/Object;"),
             &[JValue::Object(&name)],
         )?
         .l()?;
@@ -83,16 +83,21 @@ fn staging(spec: Model) -> Result<PathBuf> {
         let file = env
             .call_method(
                 &activity,
-                "getExternalFilesDir",
-                "(Ljava/lang/String;)Ljava/io/File;",
+                jni_str!("getExternalFilesDir"),
+                jni_sig!("(Ljava/lang/String;)Ljava/io/File;"),
                 &[JValue::Object(&JObject::null())],
             )?
             .l()?;
         ensure!(!file.is_null(), "Android не предоставил каталог загрузки");
         let path = env
-            .call_method(file, "getAbsolutePath", "()Ljava/lang/String;", &[])?
+            .call_method(
+                file,
+                jni_str!("getAbsolutePath"),
+                jni_sig!("()Ljava/lang/String;"),
+                &[],
+            )?
             .l()?;
-        let path: String = env.get_string(&JString::from(path))?.into();
+        let path = JString::cast_local(env, path)?.try_to_string(env)?;
         Ok(PathBuf::from(path)
             .join("models")
             .join(format!("{}.download", spec.filename)))
@@ -109,59 +114,59 @@ fn enqueue(spec: Model) -> Result<i64> {
         let url = env.new_string(spec.url)?;
         let uri = env
             .call_static_method(
-                "android/net/Uri",
-                "parse",
-                "(Ljava/lang/String;)Landroid/net/Uri;",
+                jni_str!("android/net/Uri"),
+                jni_str!("parse"),
+                jni_sig!("(Ljava/lang/String;)Landroid/net/Uri;"),
                 &[JValue::Object(&url)],
             )?
             .l()?;
         let request = env.new_object(
-            "android/app/DownloadManager$Request",
-            "(Landroid/net/Uri;)V",
+            jni_str!("android/app/DownloadManager$Request"),
+            jni_sig!("(Landroid/net/Uri;)V"),
             &[JValue::Object(&uri)],
         )?;
         let title = env.new_string(format!("Xopilot · {}", spec.name))?;
         env.call_method(
             &request,
-            "setTitle",
-            "(Ljava/lang/CharSequence;)Landroid/app/DownloadManager$Request;",
+            jni_str!("setTitle"),
+            jni_sig!("(Ljava/lang/CharSequence;)Landroid/app/DownloadManager$Request;"),
             &[JValue::Object(&title)],
         )?;
         let description = env.new_string("Загрузка модели · SHA-256 будет проверен в Xopilot")?;
         env.call_method(
             &request,
-            "setDescription",
-            "(Ljava/lang/CharSequence;)Landroid/app/DownloadManager$Request;",
+            jni_str!("setDescription"),
+            jni_sig!("(Ljava/lang/CharSequence;)Landroid/app/DownloadManager$Request;"),
             &[JValue::Object(&description)],
         )?;
         env.call_method(
             &request,
-            "setNotificationVisibility",
-            "(I)Landroid/app/DownloadManager$Request;",
+            jni_str!("setNotificationVisibility"),
+            jni_sig!("(I)Landroid/app/DownloadManager$Request;"),
             &[JValue::Int(1)],
         )?;
         let file_uri = env.new_string(format!("file://{}", destination.display()))?;
         // setDestinationUri принимает файл в app-specific каталоге и не требует STORAGE permission.
         let uri = env
             .call_static_method(
-                "android/net/Uri",
-                "parse",
-                "(Ljava/lang/String;)Landroid/net/Uri;",
+                jni_str!("android/net/Uri"),
+                jni_str!("parse"),
+                jni_sig!("(Ljava/lang/String;)Landroid/net/Uri;"),
                 &[JValue::Object(&file_uri)],
             )?
             .l()?;
         env.call_method(
             &request,
-            "setDestinationUri",
-            "(Landroid/net/Uri;)Landroid/app/DownloadManager$Request;",
+            jni_str!("setDestinationUri"),
+            jni_sig!("(Landroid/net/Uri;)Landroid/app/DownloadManager$Request;"),
             &[JValue::Object(&uri)],
         )?;
         let manager = manager(env, &activity)?;
         Ok(env
             .call_method(
                 manager,
-                "enqueue",
-                "(Landroid/app/DownloadManager$Request;)J",
+                jni_str!("enqueue"),
+                jni_sig!("(Landroid/app/DownloadManager$Request;)J"),
                 &[JValue::Object(&request)],
             )?
             .j()?)
@@ -179,20 +184,24 @@ struct Status {
 fn query(id: i64) -> Result<Option<Status>> {
     with_context(|env, activity| {
         let filter = env.new_long_array(1)?;
-        env.set_long_array_region(&filter, 0, &[id])?;
-        let query = env.new_object("android/app/DownloadManager$Query", "()V", &[])?;
+        filter.set_region(env, 0, &[id])?;
+        let query = env.new_object(
+            jni_str!("android/app/DownloadManager$Query"),
+            jni_sig!("()V"),
+            &[],
+        )?;
         env.call_method(
             &query,
-            "setFilterById",
-            "([J)Landroid/app/DownloadManager$Query;",
+            jni_str!("setFilterById"),
+            jni_sig!("([J)Landroid/app/DownloadManager$Query;"),
             &[JValue::Object(&filter)],
         )?;
         let manager = manager(env, &activity)?;
         let cursor = env
             .call_method(
                 manager,
-                "query",
-                "(Landroid/app/DownloadManager$Query;)Landroid/database/Cursor;",
+                jni_str!("query"),
+                jni_sig!("(Landroid/app/DownloadManager$Query;)Landroid/database/Cursor;"),
                 &[JValue::Object(&query)],
             )?
             .l()?;
@@ -201,7 +210,10 @@ fn query(id: i64) -> Result<Option<Status>> {
             "Android не предоставил состояние загрузки"
         );
         let result = (|| -> Result<Option<Status>> {
-            if !env.call_method(&cursor, "moveToFirst", "()Z", &[])?.z()? {
+            if !env
+                .call_method(&cursor, jni_str!("moveToFirst"), jni_sig!("()Z"), &[])?
+                .z()?
+            {
                 return Ok(None);
             }
             let mut get = |name: &str| -> Result<i64> {
@@ -209,13 +221,18 @@ fn query(id: i64) -> Result<Option<Status>> {
                 let column = env
                     .call_method(
                         &cursor,
-                        "getColumnIndexOrThrow",
-                        "(Ljava/lang/String;)I",
+                        jni_str!("getColumnIndexOrThrow"),
+                        jni_sig!("(Ljava/lang/String;)I"),
                         &[JValue::Object(&name)],
                     )?
                     .i()?;
                 Ok(env
-                    .call_method(&cursor, "getLong", "(I)J", &[JValue::Int(column)])?
+                    .call_method(
+                        &cursor,
+                        jni_str!("getLong"),
+                        jni_sig!("(I)J"),
+                        &[JValue::Int(column)],
+                    )?
                     .j()?)
             };
             let total = get("total_size")?;
@@ -226,7 +243,7 @@ fn query(id: i64) -> Result<Option<Status>> {
                 reason: get("reason")? as i32,
             }))
         })();
-        let _ = env.call_method(cursor, "close", "()V", &[]);
+        let _ = env.call_method(cursor, jni_str!("close"), jni_sig!("()V"), &[]);
         result
     })
 }
@@ -234,9 +251,14 @@ fn query(id: i64) -> Result<Option<Status>> {
 fn remove_system(id: i64) -> Result<()> {
     with_context(|env, activity| {
         let ids = env.new_long_array(1)?;
-        env.set_long_array_region(&ids, 0, &[id])?;
+        ids.set_region(env, 0, &[id])?;
         let manager = manager(env, &activity)?;
-        env.call_method(manager, "remove", "([J)I", &[JValue::Object(&ids)])?;
+        env.call_method(
+            manager,
+            jni_str!("remove"),
+            jni_sig!("([J)I"),
+            &[JValue::Object(&ids)],
+        )?;
         Ok(())
     })
 }

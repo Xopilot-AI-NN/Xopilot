@@ -21,6 +21,7 @@ pub mod diagnostics;
 pub mod drafts;
 pub mod exports;
 pub mod generation;
+pub mod http_client;
 pub mod litert;
 pub mod message_navigation;
 pub mod mobile_documents;

@@ -184,7 +184,7 @@ pub async fn generate_reply(
     updates: tokio::sync::mpsc::UnboundedSender<String>,
 ) -> Result<String> {
     let config = config.validate()?;
-    let client = reqwest::Client::builder()
+    let client = super::http_client::builder()?
         .connect_timeout(Duration::from_secs(15))
         .timeout(Duration::from_secs(600))
         // Ключ API нельзя пересылать на адрес из редиректа.

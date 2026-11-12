@@ -68,12 +68,12 @@ fn read_docx(raw: &[u8]) -> Result<String> {
     loop {
         use quick_xml::events::Event;
         match reader.read_event()? {
-            Event::Start(tag) if tag.name().as_ref() == b"w:t" => in_text = true,
-            Event::End(tag) if tag.name().as_ref() == b"w:t" => in_text = false,
-            Event::End(tag) if tag.name().as_ref() == b"w:p" => text.push('\n'),
-            Event::Text(value) if in_text => text.push_str(&value.xml_content()?),
+            Event::Start(tag) if tag.name().as_ref() == "w:t" => in_text = true,
+            Event::End(tag) if tag.name().as_ref() == "w:t" => in_text = false,
+            Event::End(tag) if tag.name().as_ref() == "w:p" => text.push('\n'),
+            Event::Text(value) if in_text => text.push_str(&value.xml10_content()),
             Event::GeneralRef(value) if in_text => {
-                let name = value.decode()?;
+                let name = value.xml10_content();
                 text.push_str(&quick_xml::escape::unescape(&format!("&{name};"))?);
             }
             Event::Eof => break,

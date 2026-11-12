@@ -229,7 +229,7 @@ async fn download_to(spec: Model, token: CancellationToken, root: PathBuf) -> Re
     let _lease = lock(&root, spec)?;
     let part = root.join(format!("{}.part", spec.filename));
     let mut offset = part.metadata().map(|m| m.len()).unwrap_or(0);
-    let client = reqwest::Client::builder()
+    let client = super::http_client::builder()?
         .connect_timeout(std::time::Duration::from_secs(15))
         .build()?;
     let mut request = client.get(spec.url).header("Accept-Encoding", "identity");

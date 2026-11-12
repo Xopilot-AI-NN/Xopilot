@@ -8,7 +8,7 @@ pub struct Release {
 }
 /// Проверяет опубликованный стабильный релиз по действию пользователя.
 pub async fn latest() -> Result<Option<Release>> {
-    let response = reqwest::Client::builder()
+    let response = super::http_client::builder()?
         .timeout(std::time::Duration::from_secs(20))
         .build()?
         .get("https://api.github.com/repos/Xopilot-AI-NN/Xopilot/releases/latest")

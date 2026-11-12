@@ -15,7 +15,7 @@ fn xml(archive: &mut zip::ZipArchive<Cursor<&[u8]>>, name: &str) -> Result<Strin
 }
 
 /// Извлекает текстовые узлы, включая экранированные символы OOXML.
-fn texts(source: &str, element: &[u8]) -> Result<Vec<String>> {
+fn texts(source: &str, element: &str) -> Result<Vec<String>> {
     use quick_xml::events::Event;
     let mut reader = quick_xml::Reader::from_str(source);
     let mut values = Vec::new();
@@ -50,9 +50,9 @@ pub fn read(raw: &[u8]) -> Result<String> {
         let mut reader = quick_xml::Reader::from_str(&source);
         loop {
             match reader.read_event()? {
-                Event::Start(tag) if tag.name().as_ref() == b"si" => {
+                Event::Start(tag) if tag.name().as_ref() == "si" => {
                     let content = reader.read_text(tag.name())?;
-                    strings.push(texts(&content, b"t")?.join(""));
+                    strings.push(texts(&content, "t")?.join(""));
                 }
                 Event::Eof => break,
                 _ => {}
@@ -74,25 +74,25 @@ pub fn read(raw: &[u8]) -> Result<String> {
         let mut reader = quick_xml::Reader::from_str(&source);
         loop {
             match reader.read_event()? {
-                Event::Start(tag) if tag.name().as_ref() == b"c" => {
+                Event::Start(tag) if tag.name().as_ref() == "c" => {
                     let mut address = String::new();
                     let mut kind = String::new();
                     for attribute in tag.attributes() {
                         let attribute = attribute?;
                         let value = attribute
-                            .decode_and_unescape_value(reader.decoder())?
+                            .normalized_value(quick_xml::XmlVersion::Implicit1_0)?
                             .into_owned();
                         match attribute.key.as_ref() {
-                            b"r" => address = value,
-                            b"t" => kind = value,
+                            "r" => address = value,
+                            "t" => kind = value,
                             _ => {}
                         }
                     }
                     let inner = reader.read_text(tag.name())?;
                     let value = if kind == "inlineStr" {
-                        texts(&inner, b"t")?.join("")
+                        texts(&inner, "t")?.join("")
                     } else {
-                        let value = texts(&inner, b"v")?.join("");
+                        let value = texts(&inner, "v")?.join("");
                         if kind == "s" {
                             let index: usize = value.parse()?;
                             shared
