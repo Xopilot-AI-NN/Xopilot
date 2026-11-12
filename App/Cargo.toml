@@ -31,7 +31,7 @@ base64 = "0.22"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "bmp", "gif"] }
 zip = { version = "9", default-features = false, features = ["deflate"] }
 quick-xml = "0.38"
-pdf-extract = "0.10"
+pdf-extract = "0.12"
 uuid = { version = "1", features = ["v4", "serde"] }
 sha2 = "0.11"
 hex = "0.4"
