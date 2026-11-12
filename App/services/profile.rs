@@ -102,6 +102,7 @@ pub fn avatar_file(store: &Store, path: &std::path::Path) -> Result<String> {
 /// Собирает язык ответа, имя и память пользователя для системного контекста.
 pub fn instructions(store: &Store) -> Result<String> {
     let profile = read(store)?;
+    let saved_memory = super::user_memory::context(store)?;
     store.with(|db| {
         let personal = db.get_setting("personal_instructions")?.unwrap_or_default();
         let language = if db.get_setting("response_language")?.as_deref() == Some("en") {
@@ -113,11 +114,7 @@ pub fn instructions(store: &Store) -> Result<String> {
             "{language}\nИмя пользователя: {}.\n{}\nСохранённая память пользователя:\n{}",
             profile["name"].as_str().unwrap_or("Пользователь"),
             personal,
-            profile
-                .get("memory")
-                .filter(|v| !v.is_null())
-                .map(Value::to_string)
-                .unwrap_or_default()
+            saved_memory
         ))
     })
 }

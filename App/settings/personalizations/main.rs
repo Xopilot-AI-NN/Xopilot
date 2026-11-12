@@ -100,6 +100,7 @@ pub fn build_personalizations(#[props(default)] memory_only: bool) -> Element {
                 },
                 "Сохранить профиль"
             }
+            super::memory::build_memory {}
         } else {
             h2 {
                 class: "section-title",

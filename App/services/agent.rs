@@ -670,14 +670,7 @@ async fn execute(
                 true,
             )
             .await?;
-            let store = &context.store;
-            store.with(|db| {
-                let mut personal = db.get_setting("personal_instructions")?.unwrap_or_default();
-                personal.push('\n');
-                personal.push_str(text);
-                db.set_setting("personal_instructions", &personal)?;
-                Ok(())
-            })?;
+            super::user_memory::save(&context.store, "", "", text, "fact", false)?;
             Ok(json!({"saved":true}))
         }
         "list_recent_chats" => context.store.with(|db| {

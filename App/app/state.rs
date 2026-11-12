@@ -340,6 +340,11 @@ pub async fn send(mut state: Signal<AppState>) -> Result<()> {
     let prepared = services::runtime::background(async move {
         tokio::task::spawn_blocking(move || -> Result<_> {
             let config = services::generation::selected(&worker_store)?;
+            // Необязательное автоизвлечение не должно блокировать отправку сообщения,
+            // например при заполненной памяти или повреждённой старой записи профиля.
+            if let Err(error) = services::user_memory::capture(&worker_store, &draft.text) {
+                tracing::warn!("Не удалось автоматически сохранить память: {error}");
+            }
             let workspace = services::workspaces::chat_workspace(&worker_store, id)?;
             let instructions = format!(
                 "{}\n{}",

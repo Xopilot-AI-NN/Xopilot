@@ -42,6 +42,17 @@ module.exports = async function offline({
         "return document.querySelector('.profile-name').textContent.includes('UI Test');",
       );
     }
+    if (section === "Персонализация") {
+      await click("Память обо мне");
+      await input('input[aria-label="Запись памяти"]', "Предпочитаю короткие ответы");
+      await click("Сохранить запись");
+      await check("Запись появилась в редакторе памяти", "return document.querySelector('.dialog').innerText.includes('Предпочитаю короткие ответы');");
+      await click("Изменить запись");
+      await input('input[aria-label="Запись памяти"]', "Предпочитаю подробные ответы");
+      await click("Сохранить запись");
+      await check("Правка памяти сохранена", "return document.querySelector('.dialog').innerText.includes('Предпочитаю подробные ответы');");
+      await close();
+    }
     if (section === "Модели")
       await check(
         "Кнопки моделей внутри карточек",

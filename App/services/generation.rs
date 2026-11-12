@@ -64,6 +64,7 @@ pub async fn reply(
             api_chat::generate_reply(config, messages, token, updates).await
         }
         Configuration::Local { path, backend } => {
+            let messages = super::context_compaction::compact(messages);
             let automatic = backend == "auto";
             let (chosen, reason) = if automatic {
                 if let Some(loaded) = super::litert::loaded_backend(&path) {
