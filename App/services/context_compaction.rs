@@ -5,14 +5,21 @@ use serde_json::{Value, json};
 /// Выдержки помечены как данные беседы, чтобы не превращать их в новые инструкции.
 /// Последний запрос сохраняется целиком даже при превышении бюджета одним сообщением.
 pub fn compact(messages: Vec<Value>) -> Vec<Value> {
-    let size = |message: &Value| message.to_string().chars().count();
-    if messages.iter().map(size).sum::<usize>() <= 7000 || messages.len() < 4 {
+    let size = |message: &Value| {
+        message.to_string().chars().count()
+    };
+    if messages.iter().map(size).sum::<usize>() <= 7000
+        || messages.len() < 4
+    {
         return messages;
     }
-    let system = usize::from(messages[0]["role"] == "system");
+    let system =
+        usize::from(messages[0]["role"] == "system");
     let mut start = messages.len() - 1;
     let mut budget = size(&messages[start]);
-    while start > system && budget + size(&messages[start - 1]) <= 4000 {
+    while start > system
+        && budget + size(&messages[start - 1]) <= 4000
+    {
         start -= 1;
         budget += size(&messages[start]);
     }
@@ -26,13 +33,16 @@ pub fn compact(messages: Vec<Value>) -> Vec<Value> {
         let Some(text) = message["content"].as_str() else {
             continue;
         };
-        let excerpt: String = text.chars().take(240).collect();
+        let excerpt: String =
+            text.chars().take(240).collect();
         let line = format!(
             "{}: {}\n",
             message["role"].as_str().unwrap_or("user"),
             excerpt
         );
-        if excerpts.chars().count() + line.chars().count() > 1200 {
+        if excerpts.chars().count() + line.chars().count()
+            > 1200
+        {
             break;
         }
         excerpts.push_str(&line);

@@ -14,7 +14,12 @@ const TOP: &[(&str, &str, &str, Screen)] = &[
         "navigate",
         Screen::Workspaces,
     ),
-    ("chat_bubble_outline", "Чаты", "navigate", Screen::Chats),
+    (
+        "chat_bubble_outline",
+        "Чаты",
+        "navigate",
+        Screen::Chats,
+    ),
     (
         "library_books_outlined",
         "Материалы",
@@ -102,9 +107,13 @@ pub fn build_menu_overlay() -> Element {
     drop(value);
     use_effect(use_reactive((&open,), move |(open,)| {
         if open {
-            document::eval(include_str!("../shared/dialog_focus.js"));
+            document::eval(include_str!(
+                "../shared/dialog_focus.js"
+            ));
         } else {
-            document::eval("document.getElementById('chat-prompt')?.focus({preventScroll:true});");
+            document::eval(
+                "document.getElementById('chat-prompt')?.focus({preventScroll:true});",
+            );
         }
     }));
     let needle = query.read().to_lowercase();

@@ -3,7 +3,8 @@ use advanced_xopilot::db::Database;
 
 /// Проверяет повторное открытие зашифрованной истории со связанными полями.
 #[test]
-fn encrypted_history_reopens_with_attachments_quotes_and_duration() {
+fn encrypted_history_reopens_with_attachments_quotes_and_duration()
+ {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("xopilot.db");
     let key = "a".repeat(64);
@@ -11,8 +12,11 @@ fn encrypted_history_reopens_with_attachments_quotes_and_duration() {
     {
         let db = Database::open(&path, &key).unwrap();
         chat = db.create_chat("История").unwrap();
-        db.set_setting("api_config_v1", r#"{"model":"test","key":"secret"}"#)
-            .unwrap();
+        db.set_setting(
+            "api_config_v1",
+            r#"{"model":"test","key":"secret"}"#,
+        )
+        .unwrap();
         db.add_message_full(
             chat,
             "user",
@@ -26,13 +30,21 @@ fn encrypted_history_reopens_with_attachments_quotes_and_duration() {
     }
     let raw = std::fs::read(&path).unwrap();
     assert!(!raw.starts_with(b"SQLite format 3"));
-    assert!(Database::open(&path, &"b".repeat(64)).is_err());
+    assert!(
+        Database::open(&path, &"b".repeat(64)).is_err()
+    );
     let db = Database::open(&path, &key).unwrap();
     let messages = db.get_messages(chat).unwrap();
     assert_eq!(messages.len(), 1);
     assert_eq!(messages[0].content, "Привет");
-    assert_eq!(messages[0].quote.as_deref(), Some("цитата"));
-    assert_eq!(messages[0].reply_to.as_deref(), Some("ответ"));
+    assert_eq!(
+        messages[0].quote.as_deref(),
+        Some("цитата")
+    );
+    assert_eq!(
+        messages[0].reply_to.as_deref(),
+        Some("ответ")
+    );
     assert_eq!(messages[0].attachments[0].0, "image.png");
     assert_eq!(messages[0].elapsed_seconds, Some(1.25));
     assert!(
@@ -46,7 +58,8 @@ fn encrypted_history_reopens_with_attachments_quotes_and_duration() {
 /// Проверяет каскадное удаление сообщений и вложений вместе с чатом.
 #[test]
 fn deleting_chat_cascades_messages_and_attachments() {
-    let db = Database::open(":memory:", &"a".repeat(64)).unwrap();
+    let db = Database::open(":memory:", &"a".repeat(64))
+        .unwrap();
     let chat = db.create_chat("chat").unwrap();
     db.add_message_full(
         chat,
@@ -71,13 +84,18 @@ fn newer_schema_and_unknown_settings_are_not_downgraded() {
     let key = "a".repeat(64);
     {
         let db = Database::open(&path, &key).unwrap();
-        db.set_setting("cloud_sync_ledger:account", "preserve")
-            .unwrap();
+        db.set_setting(
+            "cloud_sync_ledger:account",
+            "preserve",
+        )
+        .unwrap();
     }
     {
-        let conn = rusqlite::Connection::open(&path).unwrap();
+        let conn =
+            rusqlite::Connection::open(&path).unwrap();
         conn.pragma_update(None, "key", &key).unwrap();
-        conn.pragma_update(None, "user_version", 99).unwrap();
+        conn.pragma_update(None, "user_version", 99)
+            .unwrap();
     }
     let db = Database::open(&path, &key).unwrap();
     assert_eq!(db.schema_version().unwrap(), 99);

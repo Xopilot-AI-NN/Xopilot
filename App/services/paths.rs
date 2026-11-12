@@ -7,12 +7,14 @@ use std::path::PathBuf;
 
 /// Определяет каталог устройства с учётом тестового переопределения пути.
 pub fn base_data_dir() -> Result<PathBuf> {
-    if let Some(path) = std::env::var_os("XOPILOT_DATA_DIR") {
+    if let Some(path) = std::env::var_os("XOPILOT_DATA_DIR")
+    {
         return Ok(PathBuf::from(path));
     }
     #[cfg(target_os = "android")]
     {
-        static ROOT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+        static ROOT: std::sync::OnceLock<PathBuf> =
+            std::sync::OnceLock::new();
         if let Some(root) = ROOT.get() {
             return Ok(root.clone());
         }
@@ -22,7 +24,9 @@ pub fn base_data_dir() -> Result<PathBuf> {
     }
     #[cfg(not(target_os = "android"))]
     Ok(dirs::data_dir()
-        .context("Не удалось найти каталог данных пользователя")?
+        .context(
+            "Не удалось найти каталог данных пользователя",
+        )?
         .join("Xopilot"))
 }
 

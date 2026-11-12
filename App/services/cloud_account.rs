@@ -9,7 +9,8 @@ use zeroize::Zeroizing;
 pub const KEY: &str = "cloud_account_v1";
 /// Определяет адрес сервиса для текущего запроса.
 pub fn endpoint() -> String {
-    std::env::var("XOPILOT_ACCOUNT_ENDPOINT").unwrap_or_else(|_| "https://xopilot.by".into())
+    std::env::var("XOPILOT_ACCOUNT_ENDPOINT")
+        .unwrap_or_else(|_| "https://xopilot.by".into())
 }
 /// Разрешает HTTPS и локальный тестовый HTTP без credentials и лишнего пути.
 pub fn normalize_endpoint(value: &str) -> Result<String> {
@@ -26,7 +27,12 @@ pub fn normalize_endpoint(value: &str) -> Result<String> {
     ensure!(
         url.scheme() == "https"
             || (url.scheme() == "http"
-                && matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "[::1]"))),
+                && matches!(
+                    url.host_str(),
+                    Some(
+                        "localhost" | "127.0.0.1" | "[::1]"
+                    )
+                )),
         "Серверу нужен HTTPS"
     );
     Ok(url.as_str().trim_end_matches('/').to_owned())
@@ -55,9 +61,9 @@ pub fn validate_email(value: &str) -> Result<String> {
             && parts[1].contains('.')
             && !parts[1].starts_with('.')
             && !parts[1].ends_with('.')
-            && !value
-                .chars()
-                .any(|c| c.is_whitespace() || c.is_control() || "<>".contains(c)),
+            && !value.chars().any(|c| c.is_whitespace()
+                || c.is_control()
+                || "<>".contains(c)),
         "Введите корректный email — Gmail, Яндекс, Mail.ru или другой почтовый сервис"
     );
     Ok(value)
@@ -79,7 +85,8 @@ async fn request(
 ) -> Result<Value> {
     let endpoint = endpoint.to_owned();
     let path = path.to_owned();
-    let token = token.map(|value| Zeroizing::new(value.to_owned()));
+    let token =
+        token.map(|value| Zeroizing::new(value.to_owned()));
     super::runtime::background(async move {
         request_inner(
             &endpoint,
@@ -105,7 +112,9 @@ async fn request_inner(
         .timeout(std::time::Duration::from_secs(20))
         .build()?;
     let mut request = if let Some(body) = body {
-        client.post(format!("{endpoint}/api/v1{path}")).json(&body)
+        client
+            .post(format!("{endpoint}/api/v1{path}"))
+            .json(&body)
     } else {
         client.get(format!("{endpoint}/api/v1{path}"))
     };
@@ -127,9 +136,12 @@ async fn request_inner(
         );
         bytes.extend_from_slice(&chunk);
     }
-    let value: Value = serde_json::from_slice(&bytes).context("Сервер вернул неверный ответ")?;
+    let value: Value = serde_json::from_slice(&bytes)
+        .context("Сервер вернул неверный ответ")?;
     if !status.is_success() {
-        let code = value["error"].as_str().unwrap_or("server_error");
+        let code = value["error"]
+            .as_str()
+            .unwrap_or("server_error");
         bail!("{}", error_message(code));
     }
     Ok(value)
@@ -137,16 +149,30 @@ async fn request_inner(
 /// Переводит код ошибки аккаунта в сообщение без секретных данных.
 fn error_message(code: &str) -> &str {
     match code {
-        "invalid_credentials" => "Неверный email или пароль",
-        "email_exists" | "account_exists" => "Аккаунт с такой почтой уже существует",
+        "invalid_credentials" => {
+            "Неверный email или пароль"
+        }
+        "email_exists" | "account_exists" => {
+            "Аккаунт с такой почтой уже существует"
+        }
         "invalid_email" => "Неверный email",
-        "password_length" => "Пароль должен содержать не менее 12 символов",
+        "password_length" => {
+            "Пароль должен содержать не менее 12 символов"
+        }
         "invalid_code" => "Неверный код подтверждения",
-        "google_not_configured" => "Google ещё не настроен на сервере",
+        "google_not_configured" => {
+            "Google ещё не настроен на сервере"
+        }
         "google_expired" => "Время входа Google истекло",
-        "rate_limited" => "Слишком много попыток. Попробуйте позже",
-        "email_unavailable" => "Сервис отправки писем временно недоступен",
-        _ => "Не удалось выполнить операцию аккаунта. Проверьте сервер и введённые данные",
+        "rate_limited" => {
+            "Слишком много попыток. Попробуйте позже"
+        }
+        "email_unavailable" => {
+            "Сервис отправки писем временно недоступен"
+        }
+        _ => {
+            "Не удалось выполнить операцию аккаунта. Проверьте сервер и введённые данные"
+        }
     }
 }
 /// Проверяет профиль, сохраняет токены и отзывает отменённый вход.
@@ -159,19 +185,36 @@ async fn persist_login(
     let access = tokens["access_token"]
         .as_str()
         .context("В ответе нет токена входа")?;
-    let profile = match request(endpoint, "/me", None, Some(access)).await {
-        Ok(profile) => profile,
-        Err(error) => {
-            let _ = request(endpoint, "/auth/logout", Some(json!({})), Some(access)).await;
-            return Err(error);
-        }
-    };
+    let profile =
+        match request(endpoint, "/me", None, Some(access))
+            .await
+        {
+            Ok(profile) => profile,
+            Err(error) => {
+                let _ = request(
+                    endpoint,
+                    "/auth/logout",
+                    Some(json!({})),
+                    Some(access),
+                )
+                .await;
+                return Err(error);
+            }
+        };
     if cancelled.is_cancelled() {
-        let _ = request(endpoint, "/auth/logout", Some(json!({})), Some(access)).await;
+        let _ = request(
+            endpoint,
+            "/auth/logout",
+            Some(json!({})),
+            Some(access),
+        )
+        .await;
         bail!("Вход отменён");
     }
     let mut session = tokens;
-    let object = session.as_object_mut().context("Неверный ответ входа")?;
+    let object = session
+        .as_object_mut()
+        .context("Неверный ответ входа")?;
     for key in [
         "account_id",
         "session_id",
@@ -190,7 +233,10 @@ async fn persist_login(
         .get("expires_in")
         .and_then(Value::as_f64)
         .unwrap_or(0.0);
-    object.insert("expires_at".into(), json!(super::canvases::now() + expires));
+    object.insert(
+        "expires_at".into(),
+        json!(super::canvases::now() + expires),
+    );
     store.write(KEY, &session)
 }
 /// Выполняет вход по email через прежний серверный контракт.
@@ -206,7 +252,8 @@ pub async fn sign_in(
     );
     let endpoint = normalize_endpoint(&endpoint())?;
     let tokens=request(&endpoint,"/auth/login",Some(json!({"email":validate_email(&email)?,"password":password.as_str(),"device_name":device()})),None).await?;
-    persist_login(&store, &endpoint, tokens, &cancelled).await
+    persist_login(&store, &endpoint, tokens, &cancelled)
+        .await
 }
 /// Создаёт серверную регистрацию с проверкой имени и совпадения паролей.
 pub async fn register(
@@ -215,9 +262,13 @@ pub async fn register(
     password: Zeroizing<String>,
     repeat: Zeroizing<String>,
 ) -> Result<Value> {
-    ensure!(password.as_str() == repeat.as_str(), "Пароли не совпадают");
     ensure!(
-        password.chars().count() >= 12 && password.len() <= 1024,
+        password.as_str() == repeat.as_str(),
+        "Пароли не совпадают"
+    );
+    ensure!(
+        password.chars().count() >= 12
+            && password.len() <= 1024,
         "Пароль: от 12 символов, не более 1024 байт"
     );
     ensure!(
@@ -239,7 +290,8 @@ pub async fn confirm(
         "Неверная регистрация"
     );
     ensure!(
-        code.len() == 6 && code.chars().all(|c| c.is_ascii_digit()),
+        code.len() == 6
+            && code.chars().all(|c| c.is_ascii_digit()),
         "Введите 6 цифр из письма"
     );
     let endpoint = normalize_endpoint(&endpoint())?;
@@ -250,7 +302,8 @@ pub async fn confirm(
         None,
     )
     .await?;
-    persist_login(&store, &endpoint, tokens, &cancelled).await
+    persist_login(&store, &endpoint, tokens, &cancelled)
+        .await
 }
 pub struct GoogleFlow {
     endpoint: String,
@@ -259,7 +312,9 @@ pub struct GoogleFlow {
     pub browser_url: String,
 }
 /// Создаёт временный proof входа и проверяет серверную ссылку браузера.
-pub async fn begin_google(store: &Store) -> Result<GoogleFlow> {
+pub async fn begin_google(
+    store: &Store,
+) -> Result<GoogleFlow> {
     ensure!(
         state(store)?.is_none(),
         "Сначала выйдите из текущего облачного аккаунта"
@@ -283,9 +338,11 @@ pub async fn begin_google(store: &Store) -> Result<GoogleFlow> {
             .context("Не указан адрес входа")?,
     )?;
     ensure!(
-        url.origin() == reqwest::Url::parse(&endpoint)?.origin()
+        url.origin()
+            == reqwest::Url::parse(&endpoint)?.origin()
             && url.fragment().is_none()
-            && url.path() == format!("/api/v1/auth/google/open/{id}"),
+            && url.path()
+                == format!("/api/v1/auth/google/open/{id}"),
         "Сервер вернул неверную ссылку Google"
     );
     let query = url.query_pairs().collect::<Vec<_>>();
@@ -293,7 +350,10 @@ pub async fn begin_google(store: &Store) -> Result<GoogleFlow> {
         query.len() == 1
             && query[0].0 == "ticket"
             && query[0].1.len() == 64
-            && query[0].1.chars().all(|c| c.is_ascii_hexdigit()),
+            && query[0]
+                .1
+                .chars()
+                .all(|c| c.is_ascii_hexdigit()),
         "Неверный билет входа Google"
     );
     Ok(GoogleFlow {
@@ -319,7 +379,13 @@ pub async fn poll_google(
     match response["status"].as_str() {
         Some("pending") => Ok(false),
         Some("authenticated") => {
-            persist_login(store, &flow.endpoint, response["tokens"].clone(), cancelled).await?;
+            persist_login(
+                store,
+                &flow.endpoint,
+                response["tokens"].clone(),
+                cancelled,
+            )
+            .await?;
             Ok(true)
         }
         _ => bail!("Вход Google отменён или истёк"),

@@ -11,7 +11,8 @@ use dioxus::prelude::*;
 #[component]
 pub fn build_account_page() -> Element {
     let state = use_context::<Signal<AppState>>();
-    let mut name = use_signal(|| "Пользователь".to_string());
+    let mut name =
+        use_signal(|| "Пользователь".to_string());
     let mut avatar = use_signal(String::new);
     let mut draft = use_signal(String::new);
     let mut editing = use_signal(|| false);
@@ -25,15 +26,32 @@ pub fn build_account_page() -> Element {
             let result = async {
                 let store = state::store(state)?;
                 let root = services::paths::app_data_dir()?;
-                let (profile, stats) = services::runtime::blocking(move || {
-                    Ok((
-                        services::profile::read(&store)?,
-                        services::profiles::usage(&store, &root)?,
-                    ))
-                })
-                .await?;
-                name.set(profile["name"].as_str().unwrap_or("Пользователь").into());
-                avatar.set(profile["avatar"].as_str().unwrap_or_default().into());
+                let (profile, stats) =
+                    services::runtime::blocking(
+                        move || {
+                            Ok((
+                                services::profile::read(
+                                    &store,
+                                )?,
+                                services::profiles::usage(
+                                    &store, &root,
+                                )?,
+                            ))
+                        },
+                    )
+                    .await?;
+                name.set(
+                    profile["name"]
+                        .as_str()
+                        .unwrap_or("Пользователь")
+                        .into(),
+                );
+                avatar.set(
+                    profile["avatar"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .into(),
+                );
                 usage.set(stats);
                 Ok(())
             }
@@ -53,76 +71,97 @@ pub fn build_account_page() -> Element {
                 }
                 div {
                     class: "profile-identity-copy",
-                    button {
-                        class: "profile-name",
-                        title: "Изменить имя",
-                        onclick: move |_| {
-                            draft.set(name.peek().clone());
-                            editing.set(true);
-                        },
-                        span {
-                            "{name}"
-                        }
-                        icons::build_icon {
-                            name: "edit",
-                        }
-                    }
-                    p {
-                        class: "notice",
-                        "Профиль создан автоматически на этом устройстве"
-                    }
-                }
-            }
-            if *editing.read() {
-                section {
-                    class: "profile-name-editor",
-                    label {
-                        class: "field",
-                        "Имя пользователя"
-                        input {
-                            value: "{draft}",
-                            maxlength: 50,
-                            autofocus: true,
-                            oninput: move |e| {
-                                draft.set(e.value());
-                                dirty.set(true);
-                            },
-                        }
-                    }
-                    div {
-                        class: "row",
-                        button {
-                            class: "button",
-                            onclick: move |_| {
-                                editing.set(false);
-                                dirty.set(false);
-                            },
-                            "Отмена"
-                        }
-                        button {
-                            class: "button primary",
-                            onclick: move |_| {
+
+                    if *editing.read() {
+                        form {
+                            class: "profile-name-inline-editor",
+
+                            onsubmit: move |e| {
+                                e.prevent_default();
+
+                                let requested = draft.peek().trim().to_owned();
+                                if requested.is_empty() {
+                                    return;
+                                }
+
                                 spawn(async move {
                                     let result = async {
                                         let store = state::store(state)?;
-                                        let requested = draft.peek().clone();
                                         let value = requested.clone();
-                                        services::runtime::blocking(move || services::profile::rename(
-                                                &store,
-                                                &value,
-                                            ))
-                                            .await?;
-                                        name.set(requested.trim().to_owned());
+
+                                        services::runtime::blocking(move || {
+                                            services::profile::rename(&store, &value)
+                                        })
+                                        .await?;
+
+                                        name.set(requested);
                                         editing.set(false);
                                         dirty.set(false);
                                         Ok(())
                                     }
-                                        .await;
+                                    .await;
+
                                     state::report(state, result);
                                 });
                             },
-                            "Сохранить имя"
+
+                            input {
+                                class: "profile-name-input",
+                                value: "{draft}",
+                                maxlength: 50,
+                                autofocus: true,
+
+                                oninput: move |e| {
+                                    draft.set(e.value());
+                                    dirty.set(true);
+                                },
+
+                                onkeydown: move |e| {
+                                    if e.key() == Key::Escape {
+                                        editing.set(false);
+                                        dirty.set(false);
+                                    }
+                                },
+                            }
+
+                            button {
+                                r#type: "submit",
+                                class: "profile-name-action",
+                                title: "Сохранить имя",
+                                "✓"
+                            }
+
+                            button {
+                                r#type: "button",
+                                class: "profile-name-action",
+                                title: "Отмена",
+                                onclick: move |_| {
+                                    editing.set(false);
+                                    dirty.set(false);
+                                },
+                                "×"
+                            }
                         }
+                    } else {
+                        button {
+                            class: "profile-name",
+                            title: "Изменить имя",
+                            onclick: move |_| {
+                                draft.set(name.peek().clone());
+                                editing.set(true);
+                            },
+
+                            span { "{name}" }
+
+                            icons::build_icon {
+                                name: "edit",
+                            }
+                        }
+                    }
+
+                    p {
+                        class: "notice",
+                        "Профиль создан автоматически на этом устройстве"
                     }
                 }
             }

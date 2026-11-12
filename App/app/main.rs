@@ -26,20 +26,32 @@ pub fn build_app_ui() -> Element {
     use_future(move || async move {
         state::initialize(state).await;
     });
-    let draft_revision = use_hook(|| std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)));
+    let draft_revision = use_hook(|| {
+        std::sync::Arc::new(
+            std::sync::atomic::AtomicU64::new(0),
+        )
+    });
     let draft_to_save = use_memo(move || {
         let value = state.read();
-        (value.session_revision, value.active, value.draft.clone())
+        (
+            value.session_revision,
+            value.active,
+            value.draft.clone(),
+        )
     });
     // Отменяем ожидание предыдущего черновика, когда пользователь продолжает ввод.
     let _draft_writer = use_resource(move || {
         use std::sync::atomic::Ordering;
-        let revision = draft_revision.fetch_add(1, Ordering::SeqCst) + 1;
+        let revision = draft_revision
+            .fetch_add(1, Ordering::SeqCst)
+            + 1;
         let current_revision = draft_revision.clone();
-        let (_session, active, draft) = draft_to_save.read().clone();
+        let (_session, active, draft) =
+            draft_to_save.read().clone();
         let store = state.peek().store.clone();
         async move {
-            if let (Some(store), Some(id)) = (store, active) {
+            if let (Some(store), Some(id)) = (store, active)
+            {
                 let result = services::runtime::background(async move {
                     tokio::time::sleep(std::time::Duration::from_millis(400)).await;
                     store
@@ -86,7 +98,10 @@ pub fn build_window() -> Element {
                 spawn(async move {
                     let result = document::eval("await document.fonts.ready; await new Promise(requestAnimationFrame); return performance.now();").await;
                     if let Ok(value) = result {
-                        tracing::info!(web_ready_ms = value.as_f64(), "Интерфейс готов");
+                        tracing::info!(
+                            web_ready_ms = value.as_f64(),
+                            "Интерфейс готов"
+                        );
                     }
                     #[cfg(target_os = "android")]
                     if let Err(error) = services::android::report_fully_drawn() {
@@ -99,8 +114,13 @@ pub fn build_window() -> Element {
     use_effect(use_reactive(
         (&pending_screen, &pending_section, &approval_open),
         move |(screen, section, approval)| {
-            if screen.is_some() || section.is_some() || approval {
-                document::eval(include_str!("shared/dialog_focus.js"));
+            if screen.is_some()
+                || section.is_some()
+                || approval
+            {
+                document::eval(include_str!(
+                    "shared/dialog_focus.js"
+                ));
             }
         },
     ));

@@ -3,11 +3,16 @@ use dioxus::prelude::*;
 
 #[component]
 /// Известная доля меняет только transform; неизвестный объём показывает движущийся сегмент.
-pub fn build_progress_bar(value: Option<f64>, label: String) -> Element {
+pub fn build_progress_bar(
+    value: Option<f64>,
+    label: String,
+) -> Element {
     let value = value
         .filter(|fraction| fraction.is_finite())
         .map(|fraction| fraction.clamp(0.0, 1.0));
-    let style = value.map(|fraction| format!("transform: scaleX({fraction});"));
+    let style = value.map(|fraction| {
+        format!("transform: scaleX({fraction});")
+    });
     rsx! {
         div {
             class: "download-progress progress-track",
@@ -25,15 +30,22 @@ pub fn build_progress_bar(value: Option<f64>, label: String) -> Element {
 }
 
 /// Показывает переданный объём и процент только при известном полном размере.
-pub fn byte_progress(completed: u64, total: Option<u64>) -> String {
+pub fn byte_progress(
+    completed: u64,
+    total: Option<u64>,
+) -> String {
     match total.filter(|total| *total > 0) {
         Some(total) => format!(
             "{:.0}% · {} / {}",
-            (completed as f64 / total as f64 * 100.0).min(100.0),
+            (completed as f64 / total as f64 * 100.0)
+                .min(100.0),
             bytes(completed),
             bytes(total),
         ),
-        None => format!("{} · размер уточняется", bytes(completed)),
+        None => format!(
+            "{} · размер уточняется",
+            bytes(completed)
+        ),
     }
 }
 

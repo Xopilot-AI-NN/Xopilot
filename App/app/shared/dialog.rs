@@ -13,7 +13,9 @@ pub fn build_dialog(
     #[props(default)] settings: bool,
     #[props(default)] narrow: bool,
     #[props(default = true)] immediate: bool,
-    #[props(default)] back: Option<EventHandler<MouseEvent>>,
+    #[props(default)] back: Option<
+        EventHandler<MouseEvent>,
+    >,
     children: Element,
 ) -> Element {
     let state = use_context::<Signal<AppState>>();
@@ -22,7 +24,9 @@ pub fn build_dialog(
         document::eval(include_str!("dialog_focus.js"));
     }));
     use_drop(move || {
-        document::eval("document.getElementById('chat-prompt')?.focus({preventScroll:true});");
+        document::eval(
+            "document.getElementById('chat-prompt')?.focus({preventScroll:true});",
+        );
     });
     rsx! {
         div {

@@ -50,7 +50,8 @@ pub fn model(id: &str) -> Result<Model> {
 }
 /// Находит установленный файл, включая совместимый прежний каталог.
 pub fn installed_path(spec: Model) -> Result<PathBuf> {
-    let path = super::paths::models_dir()?.join(spec.filename);
+    let path =
+        super::paths::models_dir()?.join(spec.filename);
     if path.is_file() {
         return Ok(path);
     }
@@ -63,12 +64,18 @@ pub fn installed_path(spec: Model) -> Result<PathBuf> {
     anyhow::bail!("Сначала скачайте {}", spec.name)
 }
 /// Вычисляет SHA-256 потоком, проверяя отмену между блоками.
-pub fn digest_file(path: &Path, token: &CancellationToken) -> Result<String> {
+pub fn digest_file(
+    path: &Path,
+    token: &CancellationToken,
+) -> Result<String> {
     let mut source = std::fs::File::open(path)?;
     let mut hash = Sha256::new();
     let mut buffer = vec![0; 1024 * 1024];
     loop {
-        ensure!(!token.is_cancelled(), "Операция приостановлена");
+        ensure!(
+            !token.is_cancelled(),
+            "Операция приостановлена"
+        );
         let count = source.read(&mut buffer)?;
         if count == 0 {
             break;
@@ -77,7 +84,9 @@ pub fn digest_file(path: &Path, token: &CancellationToken) -> Result<String> {
     }
     Ok(hex::encode(hash.finalize()))
 }
-#[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Clone, Default, Debug, PartialEq, Serialize, Deserialize,
+)]
 pub struct Progress {
     pub phase: String,
     pub downloaded: u64,
@@ -88,13 +97,20 @@ struct Job {
     progress: Progress,
     token: CancellationToken,
 }
-static JOBS: OnceLock<Mutex<HashMap<String, Job>>> = OnceLock::new();
+static JOBS: OnceLock<Mutex<HashMap<String, Job>>> =
+    OnceLock::new();
 /// Лениво создаёт общий реестр фоновых загрузок.
 fn jobs() -> &'static Mutex<HashMap<String, Job>> {
     JOBS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 /// Публикует снимок прогресса для окна и общей полосы состояния.
-fn notify(id: &str, phase: &str, downloaded: u64, total: Option<u64>, error: String) {
+fn notify(
+    id: &str,
+    phase: &str,
+    downloaded: u64,
+    total: Option<u64>,
+    error: String,
+) {
     if let Ok(mut jobs) = jobs().lock()
         && let Some(job) = jobs.get_mut(id)
     {
@@ -109,7 +125,9 @@ fn notify(id: &str, phase: &str, downloaded: u64, total: Option<u64>, error: Str
 /// Возвращает текущую фазу, объём и ошибку операции.
 pub fn progress(id: &str) -> Progress {
     #[cfg(target_os = "android")]
-    if let Some(progress) = super::android_downloads::progress(id) {
+    if let Some(progress) =
+        super::android_downloads::progress(id)
+    {
         return progress;
     }
     if let Ok(jobs) = jobs().lock()
@@ -122,7 +140,9 @@ pub fn progress(id: &str) -> Progress {
         if installed_path(spec).is_ok() {
             result.phase = "installed".into();
         } else if let Ok(root) = super::paths::models_dir()
-            && let Ok(metadata) = root.join(format!("{}.part", spec.filename)).metadata()
+            && let Ok(metadata) = root
+                .join(format!("{}.part", spec.filename))
+                .metadata()
         {
             result.phase = "paused".into();
             result.downloaded = metadata.len();
@@ -152,13 +172,15 @@ pub fn start(id: &str) -> Result<()> {
 fn start_native(spec: Model) -> Result<()> {
     let token = CancellationToken::new();
     {
-        let mut jobs = jobs()
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Ошибка загрузчика"))?;
+        let mut jobs = jobs().lock().map_err(|_| {
+            anyhow::anyhow!("Ошибка загрузчика")
+        })?;
         ensure!(
-            !jobs
-                .get(spec.id)
-                .is_some_and(|j| ["downloading", "verifying"].contains(&j.progress.phase.as_str())),
+            !jobs.get(spec.id).is_some_and(|j| [
+                "downloading",
+                "verifying"
+            ]
+            .contains(&j.progress.phase.as_str())),
             "Загрузка уже идёт"
         );
         jobs.insert(
@@ -203,8 +225,12 @@ fn lock(root: &Path, spec: Model) -> Result<std::fs::File> {
         .write(true)
         .create(true)
         .truncate(false)
-        .open(root.join(format!("{}.part.lock", spec.filename)))?;
-    fs2::FileExt::try_lock_exclusive(&lock).context("Модель занята другим процессом")?;
+        .open(root.join(format!(
+            "{}.part.lock",
+            spec.filename
+        )))?;
+    fs2::FileExt::try_lock_exclusive(&lock)
+        .context("Модель занята другим процессом")?;
     Ok(lock)
 }
 /// Отменяет системную Android-загрузку; на ПК оставляет совместимую паузу.
@@ -219,26 +245,40 @@ pub fn cancel(id: &str) -> Result<()> {
 }
 /// Запускает сетевую загрузку и отражает её завершение в реестре.
 #[cfg(not(target_os = "android"))]
-async fn download(spec: Model, token: CancellationToken) -> Result<()> {
+async fn download(
+    spec: Model,
+    token: CancellationToken,
+) -> Result<()> {
     let root = super::paths::models_dir()?;
     download_to(spec, token, root).await
 }
 /// Продолжает частичный файл и публикует его только после проверки SHA-256.
 #[cfg(any(not(target_os = "android"), test))]
-async fn download_to(spec: Model, token: CancellationToken, root: PathBuf) -> Result<()> {
+async fn download_to(
+    spec: Model,
+    token: CancellationToken,
+    root: PathBuf,
+) -> Result<()> {
     let _lease = lock(&root, spec)?;
     let part = root.join(format!("{}.part", spec.filename));
-    let mut offset = part.metadata().map(|m| m.len()).unwrap_or(0);
+    let mut offset =
+        part.metadata().map(|m| m.len()).unwrap_or(0);
     let client = super::http_client::builder()?
         .connect_timeout(std::time::Duration::from_secs(15))
         .build()?;
-    let mut request = client.get(spec.url).header("Accept-Encoding", "identity");
+    let mut request = client
+        .get(spec.url)
+        .header("Accept-Encoding", "identity");
     if offset > 0 {
-        request = request.header("Range", format!("bytes={offset}-"));
+        request = request
+            .header("Range", format!("bytes={offset}-"));
     }
     let response = tokio::select! { _=token.cancelled()=>anyhow::bail!("Пауза"), response=tokio::time::timeout(std::time::Duration::from_secs(60),request.send())=>response.context("Сервер модели не ответил; загруженная часть сохранена")?.context("Нет соединения; загруженная часть сохранена")? };
     let total;
-    if response.status() == reqwest::StatusCode::RANGE_NOT_SATISFIABLE && offset > 0 {
+    if response.status()
+        == reqwest::StatusCode::RANGE_NOT_SATISFIABLE
+        && offset > 0
+    {
         total = Some(offset);
     } else {
         ensure!(
@@ -246,7 +286,9 @@ async fn download_to(spec: Model, token: CancellationToken, root: PathBuf) -> Re
             "Сервер модели вернул HTTP {}",
             response.status()
         );
-        if response.status() == reqwest::StatusCode::PARTIAL_CONTENT {
+        if response.status()
+            == reqwest::StatusCode::PARTIAL_CONTENT
+        {
             let range = response
                 .headers()
                 .get("Content-Range")
@@ -261,17 +303,25 @@ async fn download_to(spec: Model, token: CancellationToken, root: PathBuf) -> Re
                 .context("Неверное начало диапазона")?
                 .0
                 .parse::<u64>()?;
-            ensure!(start == offset, "Сервер вернул чужой диапазон");
+            ensure!(
+                start == offset,
+                "Сервер вернул чужой диапазон"
+            );
             total = Some(limit.parse::<u64>()?);
         } else {
             offset = 0;
             total = response.content_length();
         }
         const MAX: u64 = 8 * 1024 * 1024 * 1024;
-        ensure!(total.is_none_or(|n| n <= MAX), "Модель больше 8 ГиБ");
+        ensure!(
+            total.is_none_or(|n| n <= MAX),
+            "Модель больше 8 ГиБ"
+        );
         if let Some(total) = total {
             ensure!(
-                fs2::available_space(&root)? > total.saturating_sub(offset) + 64 * 1024 * 1024,
+                fs2::available_space(&root)?
+                    > total.saturating_sub(offset)
+                        + 64 * 1024 * 1024,
                 "Недостаточно места для модели"
             );
         }
@@ -291,11 +341,20 @@ async fn download_to(spec: Model, token: CancellationToken, root: PathBuf) -> Re
                 break;
             };
             let chunk = chunk?;
-            ensure!(offset + chunk.len() as u64 <= MAX, "Модель больше 8 ГиБ");
+            ensure!(
+                offset + chunk.len() as u64 <= MAX,
+                "Модель больше 8 ГиБ"
+            );
             file.write_all(&chunk).await?;
             offset += chunk.len() as u64;
             if last.elapsed().as_millis() > 200 {
-                notify(spec.id, "downloading", offset, total, String::new());
+                notify(
+                    spec.id,
+                    "downloading",
+                    offset,
+                    total,
+                    String::new(),
+                );
                 last = std::time::Instant::now();
             }
         }
@@ -305,18 +364,34 @@ async fn download_to(spec: Model, token: CancellationToken, root: PathBuf) -> Re
         total.is_none_or(|n| n == offset),
         "Загрузка оборвалась. Продолжите её"
     );
-    notify(spec.id, "verifying", offset, total, String::new());
+    notify(
+        spec.id,
+        "verifying",
+        offset,
+        total,
+        String::new(),
+    );
     let verified_part = part.clone();
     let verify_token = token.clone();
-    let digest =
-        super::runtime::blocking(move || digest_file(&verified_part, &verify_token)).await?;
+    let digest = super::runtime::blocking(move || {
+        digest_file(&verified_part, &verify_token)
+    })
+    .await?;
     if digest != spec.sha256 {
         let _ = std::fs::remove_file(&part);
-        anyhow::bail!("SHA-256 не совпадает. Повреждённая модель удалена");
+        anyhow::bail!(
+            "SHA-256 не совпадает. Повреждённая модель удалена"
+        );
     }
     ensure!(!token.is_cancelled(), "Пауза");
     std::fs::rename(&part, root.join(spec.filename))?;
-    notify(spec.id, "installed", offset, total, String::new());
+    notify(
+        spec.id,
+        "installed",
+        offset,
+        total,
+        String::new(),
+    );
     Ok(())
 }
 /// Копирует оригинальный файл и проверяет его до атомарной установки.
@@ -325,42 +400,69 @@ pub fn import(spec: Model, source: &Path) -> Result<()> {
     let _lease = lock(&root, spec)?;
     ensure!(source.is_file(), "Файл модели не найден");
     ensure!(
-        fs2::available_space(&root)? > source.metadata()?.len() + 64 * 1024 * 1024,
+        fs2::available_space(&root)?
+            > source.metadata()?.len() + 64 * 1024 * 1024,
         "Недостаточно места"
     );
-    let temporary = root.join(format!("{}.importing", spec.filename));
+    let temporary =
+        root.join(format!("{}.importing", spec.filename));
     let result = (|| -> Result<()> {
         std::fs::copy(source, &temporary)?;
         ensure!(
-            digest_file(&temporary, &CancellationToken::new())? == spec.sha256,
+            digest_file(
+                &temporary,
+                &CancellationToken::new()
+            )? == spec.sha256,
             "SHA-256 модели не совпадает"
         );
-        std::fs::rename(&temporary, root.join(spec.filename))?;
+        std::fs::rename(
+            &temporary,
+            root.join(spec.filename),
+        )?;
         Ok(())
     })();
     if result.is_err() {
         let _ = std::fs::remove_file(temporary);
     } else {
-        let total = root.join(spec.filename).metadata()?.len();
-        notify(spec.id, "installed", total, Some(total), String::new());
+        let total =
+            root.join(spec.filename).metadata()?.len();
+        notify(
+            spec.id,
+            "installed",
+            total,
+            Some(total),
+            String::new(),
+        );
     }
     result
 }
 /// Принимает уже проверенный поток импорта, не создавая вторую гигабайтную копию.
-pub(crate) fn install_staged(spec: Model, file: tempfile::NamedTempFile) -> Result<()> {
+pub(crate) fn install_staged(
+    spec: Model,
+    file: tempfile::NamedTempFile,
+) -> Result<()> {
     let root = super::paths::models_dir()?;
     let _lease = lock(&root, spec)?;
     file.persist(root.join(spec.filename))
         .map_err(|e| e.error)?;
     let size = root.join(spec.filename).metadata()?.len();
-    notify(spec.id, "installed", size, Some(size), String::new());
+    notify(
+        spec.id,
+        "installed",
+        size,
+        Some(size),
+        String::new(),
+    );
     Ok(())
 }
 /// Сохраняет явный выбор установленной локальной модели.
 pub fn select(store: &Store, id: &str) -> Result<String> {
     let spec = model(id)?;
     installed_path(spec)?;
-    ensure!(super::litert::available(), "LiteRT не включён в сборку");
+    ensure!(
+        super::litert::available(),
+        "LiteRT не включён в сборку"
+    );
     store.with(|db| {
         db.set_setting("chat_model", spec.filename)?;
         db.set_setting("chat_provider", "local")?;
@@ -395,17 +497,26 @@ mod tests {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     /// Проверяет Range-продолжение и SHA-256 до публикации файла.
     #[tokio::test]
-    async fn resume_checks_range_and_hash_before_publishing() {
+    async fn resume_checks_range_and_hash_before_publishing()
+     {
         let directory = tempfile::tempdir().unwrap();
         let payload = b"verified-model-payload";
-        let server = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let server =
+            tokio::net::TcpListener::bind("127.0.0.1:0")
+                .await
+                .unwrap();
         let address = server.local_addr().unwrap();
         let worker = tokio::spawn(async move {
-            let (mut stream, _) = server.accept().await.unwrap();
+            let (mut stream, _) =
+                server.accept().await.unwrap();
             let mut header = Vec::new();
             let mut bytes = [0; 1024];
-            while !header.windows(4).any(|w| w == b"\r\n\r\n") {
-                let n = stream.read(&mut bytes).await.unwrap();
+            while !header
+                .windows(4)
+                .any(|w| w == b"\r\n\r\n")
+            {
+                let n =
+                    stream.read(&mut bytes).await.unwrap();
                 assert!(n > 0);
                 header.extend_from_slice(&bytes[..n]);
             }
@@ -421,7 +532,10 @@ mod tests {
                 payload.len(),
                 tail.len()
             );
-            stream.write_all(response.as_bytes()).await.unwrap();
+            stream
+                .write_all(response.as_bytes())
+                .await
+                .unwrap();
             stream.write_all(tail).await.unwrap();
         });
         let spec = Model {
@@ -429,29 +543,56 @@ mod tests {
             name: "test",
             filename: "test.litertlm",
             size: "test",
-            url: Box::leak(format!("http://{address}/model").into_boxed_str()),
-            sha256: Box::leak(hex::encode(Sha256::digest(payload)).into_boxed_str()),
+            url: Box::leak(
+                format!("http://{address}/model")
+                    .into_boxed_str(),
+            ),
+            sha256: Box::leak(
+                hex::encode(Sha256::digest(payload))
+                    .into_boxed_str(),
+            ),
         };
-        std::fs::write(directory.path().join("test.litertlm.part"), &payload[..8]).unwrap();
-        download_to(spec, CancellationToken::new(), directory.path().into())
-            .await
-            .unwrap();
+        std::fs::write(
+            directory.path().join("test.litertlm.part"),
+            &payload[..8],
+        )
+        .unwrap();
+        download_to(
+            spec,
+            CancellationToken::new(),
+            directory.path().into(),
+        )
+        .await
+        .unwrap();
         worker.await.unwrap();
         assert_eq!(
-            std::fs::read(directory.path().join("test.litertlm")).unwrap(),
+            std::fs::read(
+                directory.path().join("test.litertlm")
+            )
+            .unwrap(),
             payload
         );
-        assert!(!directory.path().join("test.litertlm.part").exists());
+        assert!(
+            !directory
+                .path()
+                .join("test.litertlm.part")
+                .exists()
+        );
     }
     /// Запрещает выбор недокачанных или повреждённых весов.
     #[tokio::test]
-    async fn incomplete_or_corrupt_download_cannot_be_selected() {
+    async fn incomplete_or_corrupt_download_cannot_be_selected()
+     {
         let directory = tempfile::tempdir().unwrap();
         let payload = b"bad model";
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let listener =
+            tokio::net::TcpListener::bind("127.0.0.1:0")
+                .await
+                .unwrap();
         let address = listener.local_addr().unwrap();
         let server = tokio::spawn(async move {
-            let (mut stream, _) = listener.accept().await.unwrap();
+            let (mut stream, _) =
+                listener.accept().await.unwrap();
             let mut bytes = [0; 2048];
             let _ = stream.read(&mut bytes).await;
             stream
@@ -471,18 +612,35 @@ mod tests {
             name: "test",
             filename: "test.litertlm",
             size: "test",
-            url: Box::leak(format!("http://{address}/model").into_boxed_str()),
+            url: Box::leak(
+                format!("http://{address}/model")
+                    .into_boxed_str(),
+            ),
             sha256: "0000000000000000000000000000000000000000000000000000000000000000",
         };
         assert!(
-            download_to(spec, CancellationToken::new(), directory.path().into())
-                .await
-                .unwrap_err()
-                .to_string()
-                .contains("SHA-256")
+            download_to(
+                spec,
+                CancellationToken::new(),
+                directory.path().into()
+            )
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("SHA-256")
         );
         server.await.unwrap();
-        assert!(!directory.path().join("test.litertlm").exists());
-        assert!(!directory.path().join("test.litertlm.part").exists());
+        assert!(
+            !directory
+                .path()
+                .join("test.litertlm")
+                .exists()
+        );
+        assert!(
+            !directory
+                .path()
+                .join("test.litertlm.part")
+                .exists()
+        );
     }
 }

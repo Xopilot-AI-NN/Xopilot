@@ -10,24 +10,35 @@ use std::{
 pub const MAX_FILE: u64 = 1024 * 1024;
 
 /// Канонический путь проверяем после раскрытия симлинков.
-pub fn resolve(root: &Path, relative: &str) -> Result<PathBuf> {
-    let root = root.canonicalize().context("Папка проекта недоступна")?;
+pub fn resolve(
+    root: &Path,
+    relative: &str,
+) -> Result<PathBuf> {
+    let root = root
+        .canonicalize()
+        .context("Папка проекта недоступна")?;
     let relative = Path::new(relative);
     ensure!(
         !relative.is_absolute(),
         "Нужен путь относительно папки проекта"
     );
     ensure!(
-        !relative
-            .components()
-            .any(|c| matches!(c, std::path::Component::ParentDir)),
+        !relative.components().any(|c| matches!(
+            c,
+            std::path::Component::ParentDir
+        )),
         "Выход за пределы проекта запрещён"
     );
     ensure!(
         !relative.components().any(|c| {
             let name = c.as_os_str().to_string_lossy();
             name.starts_with('.')
-                && ![".github", ".gitignore", ".env.example"].contains(&name.as_ref())
+                && ![
+                    ".github",
+                    ".gitignore",
+                    ".env.example",
+                ]
+                .contains(&name.as_ref())
         }),
         "Скрытый личный файл недоступен"
     );
@@ -35,26 +46,38 @@ pub fn resolve(root: &Path, relative: &str) -> Result<PathBuf> {
         .join(relative)
         .canonicalize()
         .context("Файл проекта не найден")?;
-    ensure!(full.starts_with(&root), "Ссылка ведёт за пределы проекта");
+    ensure!(
+        full.starts_with(&root),
+        "Ссылка ведёт за пределы проекта"
+    );
     Ok(full)
 }
 
 /// Читает ограниченный текстовый файл внутри выбранного проекта.
-pub fn read_text(root: &Path, relative: &str) -> Result<String> {
+pub fn read_text(
+    root: &Path,
+    relative: &str,
+) -> Result<String> {
     let path = resolve(root, relative)?;
-    ensure!(path.metadata()?.len() <= MAX_FILE, "Файл больше 1 МиБ");
+    ensure!(
+        path.metadata()?.len() <= MAX_FILE,
+        "Файл больше 1 МиБ"
+    );
     let mut bytes = Vec::new();
     std::fs::File::open(path)?
         .take(MAX_FILE + 1)
         .read_to_end(&mut bytes)?;
     ensure!(
-        bytes.len() as u64 <= MAX_FILE && !bytes.contains(&0),
+        bytes.len() as u64 <= MAX_FILE
+            && !bytes.contains(&0),
         "Файл слишком большой или двоичный"
     );
     String::from_utf8(bytes).context("Файл не в UTF-8")
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Clone, Debug, PartialEq, Serialize, Deserialize,
+)]
 pub struct SearchHit {
     pub path: String,
     pub line: usize,
@@ -73,21 +96,37 @@ pub fn list_files(root: &Path) -> Result<Vec<String>> {
         for entry in std::fs::read_dir(dir)? {
             let entry = entry?;
             let file_type = entry.file_type()?;
-            let name = entry.file_name().to_string_lossy().into_owned();
+            let name = entry
+                .file_name()
+                .to_string_lossy()
+                .into_owned();
             if file_type.is_symlink()
-                || ["target", "node_modules", "build", "venv", "__pycache__"]
-                    .contains(&name.as_str())
+                || [
+                    "target",
+                    "node_modules",
+                    "build",
+                    "venv",
+                    "__pycache__",
+                ]
+                .contains(&name.as_str())
             {
                 continue;
             }
             if name.starts_with('.')
-                && ![".github", ".gitignore", ".env.example"].contains(&name.as_str())
+                && ![
+                    ".github",
+                    ".gitignore",
+                    ".env.example",
+                ]
+                .contains(&name.as_str())
             {
                 continue;
             }
             if file_type.is_dir() {
                 pending.push((entry.path(), depth + 1));
-            } else if file_type.is_file() && entry.metadata()?.len() <= MAX_FILE {
+            } else if file_type.is_file()
+                && entry.metadata()?.len() <= MAX_FILE
+            {
                 result.push(
                     entry
                         .path()
@@ -107,7 +146,10 @@ pub fn list_files(root: &Path) -> Result<Vec<String>> {
 }
 
 /// Ищет текст в разрешённых файлах выбранного проекта.
-pub fn search(root: &Path, query: &str) -> Result<Vec<SearchHit>> {
+pub fn search(
+    root: &Path,
+    query: &str,
+) -> Result<Vec<SearchHit>> {
     ensure!(!query.is_empty(), "Введите текст для поиска");
     let query = query.to_lowercase();
     let mut hits = Vec::new();
@@ -120,7 +162,9 @@ pub fn search(root: &Path, query: &str) -> Result<Vec<SearchHit>> {
                 hits.push(SearchHit {
                     path: path.clone(),
                     line: line + 1,
-                    text: super::attachments::truncate(text, 300),
+                    text: super::attachments::truncate(
+                        text, 300,
+                    ),
                 });
             }
             if hits.len() >= 200 {
@@ -132,7 +176,10 @@ pub fn search(root: &Path, query: &str) -> Result<Vec<SearchHit>> {
 }
 
 /// Получает состояние Git выбранного проекта без изменения файлов.
-pub async fn git(root: &Path, diff: bool) -> Result<String> {
+pub async fn git(
+    root: &Path,
+    diff: bool,
+) -> Result<String> {
     let mut command = tokio::process::Command::new("git");
     command
         .args([
@@ -146,12 +193,20 @@ pub async fn git(root: &Path, diff: bool) -> Result<String> {
         .arg(root)
         .kill_on_drop(true);
     if diff {
-        command.args(["diff", "--no-ext-diff", "--no-textconv", "--stat"]);
+        command.args([
+            "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--stat",
+        ]);
     } else {
         command.args(["status", "--short"]);
     }
-    let output =
-        tokio::time::timeout(std::time::Duration::from_secs(15), command.output()).await??;
+    let output = tokio::time::timeout(
+        std::time::Duration::from_secs(15),
+        command.output(),
+    )
+    .await??;
     ensure!(
         output.status.success(),
         "Git: {}",
@@ -170,7 +225,8 @@ mod tests {
     #[test]
     fn cannot_read_parent_or_hidden_secret() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join(".env"), "secret").unwrap();
+        std::fs::write(dir.path().join(".env"), "secret")
+            .unwrap();
         assert!(resolve(dir.path(), ".env").is_err());
         assert!(resolve(dir.path(), "../.env").is_err());
     }
@@ -180,8 +236,16 @@ mod tests {
     fn cannot_escape_through_symlink() {
         let dir = tempfile::tempdir().unwrap();
         let outside = tempfile::tempdir().unwrap();
-        std::fs::write(outside.path().join("secret"), "secret").unwrap();
-        std::os::unix::fs::symlink(outside.path().join("secret"), dir.path().join("link")).unwrap();
+        std::fs::write(
+            outside.path().join("secret"),
+            "secret",
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(
+            outside.path().join("secret"),
+            dir.path().join("link"),
+        )
+        .unwrap();
         assert!(read_text(dir.path(), "link").is_err());
     }
 }

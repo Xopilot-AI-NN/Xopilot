@@ -7,7 +7,9 @@ use std::collections::BTreeMap;
 
 pub const KEY: &str = "canvases_v1";
 
-#[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Clone, Default, Debug, PartialEq, Serialize, Deserialize,
+)]
 #[serde(default)]
 pub struct Document {
     pub id: String,
@@ -30,15 +32,24 @@ pub fn now() -> f64 {
 }
 
 /// Восстанавливает документы Canvas, включая неизвестные поля прежних версий.
-pub fn list_documents(store: &Store) -> Result<Vec<Document>> {
+pub fn list_documents(
+    store: &Store,
+) -> Result<Vec<Document>> {
     store.read(KEY)
 }
 
 /// Проверяет и сохраняет документ Canvas с постоянным ID.
-pub fn save_document(store: &Store, mut document: Document) -> Result<Document> {
-    ensure!(!document.title.trim().is_empty(), "Введите название Canvas");
+pub fn save_document(
+    store: &Store,
+    mut document: Document,
+) -> Result<Document> {
     ensure!(
-        ["text", "code", "web", "drawing"].contains(&document.kind.as_str()),
+        !document.title.trim().is_empty(),
+        "Введите название Canvas"
+    );
+    ensure!(
+        ["text", "code", "web", "drawing"]
+            .contains(&document.kind.as_str()),
         "Неизвестный вид Canvas"
     );
     store.with(|db| {
@@ -55,7 +66,10 @@ pub fn save_document(store: &Store, mut document: Document) -> Result<Document> 
 }
 
 /// Удаляет документ по ID после решения пользователя в интерфейсе.
-pub fn delete_document(store: &Store, id: &str) -> Result<()> {
+pub fn delete_document(
+    store: &Store,
+    id: &str,
+) -> Result<()> {
     store.with(|db| {
         let mut docs: Vec<Document> = read_json(db, KEY)?;
         docs.retain(|d| d.id != id);

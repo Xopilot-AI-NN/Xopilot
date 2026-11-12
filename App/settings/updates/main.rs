@@ -13,7 +13,8 @@ pub fn build_updates() -> Element {
     let state = use_context::<Signal<AppState>>();
     let mut busy = use_signal(|| false);
     let mut status = use_signal(String::new);
-    let mut release = use_signal(|| None::<services::updates::Release>);
+    let mut release =
+        use_signal(|| None::<services::updates::Release>);
     rsx! {
         div {
             class: "updates-page",

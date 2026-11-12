@@ -21,13 +21,18 @@ pub fn build_model_import() -> Element {
         let script = include_str!("model_picker.js");
         let mut bridge = document::eval(script);
         let mut upload = None::<model_import::Upload>;
-        while let Ok(event) = bridge.recv::<UploadEvent>().await {
+        while let Ok(event) =
+            bridge.recv::<UploadEvent>().await
+        {
             // Сообщение об ошибке JS не является запросом: лишний ack испортит следующий импорт.
             if let UploadEvent::Error { message } = event {
                 upload = None;
                 working.set(false);
                 model_import::fail(message.clone());
-                state::report(state, Err(anyhow::anyhow!(message)));
+                state::report(
+                    state,
+                    Err(anyhow::anyhow!(message)),
+                );
                 continue;
             }
             let result: anyhow::Result<()> = async {
@@ -82,7 +87,9 @@ pub fn build_model_import() -> Element {
         }
     });
     use_drop(move || {
-        document::eval("window.__xopilotModelPicker?.abort();");
+        document::eval(
+            "window.__xopilotModelPicker?.abort();",
+        );
     });
     rsx! {
         label {

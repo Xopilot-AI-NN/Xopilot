@@ -1,19 +1,29 @@
 // Описание: Настоящая Gemma выполняет задачу инструментами в отдельной временной папке.
 use anyhow::Result;
-use xopilot::services::{agent, db::Store, generation::Configuration, workspaces::Workspace};
+use xopilot::services::{
+    agent, db::Store, generation::Configuration,
+    workspaces::Workspace,
+};
 
 /// Проверяет изменение и повторное чтение настоящего файла без доступа к личной истории.
 fn main() -> Result<()> {
-    let model = std::env::args()
-        .nth(1)
-        .ok_or_else(|| anyhow::anyhow!("Укажите .litertlm"))?;
+    let model =
+        std::env::args().nth(1).ok_or_else(|| {
+            anyhow::anyhow!("Укажите .litertlm")
+        })?;
     let project = tempfile::tempdir()?;
-    std::fs::write(project.path().join("example.txt"), "old")?;
-    let store = Store::new(advanced_xopilot::db::Database::open(
-        ":memory:",
-        &"a".repeat(64),
-    )?);
-    let chat = store.with(|db| Ok(db.create_chat("Проверка локального агента")?))?;
+    std::fs::write(
+        project.path().join("example.txt"),
+        "old",
+    )?;
+    let store =
+        Store::new(advanced_xopilot::db::Database::open(
+            ":memory:",
+            &"a".repeat(64),
+        )?);
+    let chat = store.with(|db| {
+        Ok(db.create_chat("Проверка локального агента")?)
+    })?;
     let messages = vec![
         serde_json::json!({"role": "system", "content": "You are a helpful assistant."}),
         serde_json::json!({

@@ -26,6 +26,12 @@ fn progress_reports_only_known_amounts() {
     assert!(html.contains("aria-valuenow=50"), "{html}");
     assert!(html.contains("scaleX(0.5)"));
     assert!(html.contains("indeterminate"));
-    assert!(progress::byte_progress(1048576, Some(2097152)).contains("50%"));
-    assert!(!progress::byte_progress(1048576, None).contains('%'));
+    assert!(
+        progress::byte_progress(1048576, Some(2097152))
+            .contains("50%")
+    );
+    assert!(
+        !progress::byte_progress(1048576, None)
+            .contains('%')
+    );
 }

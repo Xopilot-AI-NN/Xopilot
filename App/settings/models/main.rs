@@ -31,7 +31,10 @@ pub fn build_model_catalog() -> Element {
                 statuses.set(next);
             }
             services::runtime::background(async {
-                tokio::time::sleep(std::time::Duration::from_millis(250)).await
+                tokio::time::sleep(
+                    std::time::Duration::from_millis(250),
+                )
+                .await
             })
             .await;
         }

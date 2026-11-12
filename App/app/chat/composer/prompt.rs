@@ -16,7 +16,8 @@ pub fn build_prompt() -> Element {
     let model = state.read().model.clone();
     let local = state.read().model_local;
     let busy = state.read().busy;
-    let has_prompt = !draft.text.is_empty() || !draft.files.is_empty();
+    let has_prompt =
+        !draft.text.is_empty() || !draft.files.is_empty();
     rsx! {
         div {
             class: "composer-area",

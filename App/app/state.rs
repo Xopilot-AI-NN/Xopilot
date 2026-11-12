@@ -30,9 +30,13 @@ pub struct AppState {
     pub agent: services::agent::Settings,
     pub agent_control: Option<services::agent::Control>,
     pub agent_progress: String,
-    pub action_history: std::collections::HashMap<i64, Vec<services::task_history::Action>>,
+    pub action_history: std::collections::HashMap<
+        i64,
+        Vec<services::task_history::Action>,
+    >,
     pub task_completion: Option<(String, bool)>,
-    pub dismissed_downloads: std::collections::HashSet<String>,
+    pub dismissed_downloads:
+        std::collections::HashSet<String>,
     pub approval: Option<services::agent::Approval>,
     pub busy: bool,
     pub uploading: bool,
@@ -47,7 +51,8 @@ pub struct AppState {
     pub notice: Option<String>,
     pub settings_section: Option<usize>,
     pub dialog_history: Vec<Screen>,
-    pub session_scrolls: std::collections::HashMap<String, f64>,
+    pub session_scrolls:
+        std::collections::HashMap<String, f64>,
     pub chat_scroll: f64,
 }
 
@@ -65,7 +70,10 @@ impl AppState {
 }
 
 /// Передаёт ошибку действия в общий блок уведомлений над вводом.
-pub fn report(mut state: Signal<AppState>, result: Result<()>) {
+pub fn report(
+    mut state: Signal<AppState>,
+    result: Result<()>,
+) {
     if let Err(error) = result {
         state.write().error = Some(format!("{error:#}"));
     }
@@ -81,21 +89,29 @@ pub fn store(state: Signal<AppState>) -> Result<Store> {
 }
 
 /// Открывает раздел с учётом несохранённой формы и истории возврата.
-pub fn navigate(mut state: Signal<AppState>, screen: Screen) {
+pub fn navigate(
+    mut state: Signal<AppState>,
+    screen: Screen,
+) {
     let mut value = state.write();
     if value.uploading {
-        value.error = Some("Дождитесь чтения вложений".into());
+        value.error =
+            Some("Дождитесь чтения вложений".into());
         return;
     }
     if value.unsaved && value.screen != screen {
         value.pending_screen = Some(screen);
     } else {
-        if screen == Screen::Settings && value.screen == Screen::Chat {
+        if screen == Screen::Settings
+            && value.screen == Screen::Chat
+        {
             value.settings_section = None;
         }
         if screen == Screen::Chat {
             value.dialog_history.clear();
-        } else if value.screen != Screen::Chat && value.screen != screen {
+        } else if value.screen != Screen::Chat
+            && value.screen != screen
+        {
             let previous = value.screen;
             value.dialog_history.push(previous);
         }
@@ -107,11 +123,18 @@ pub fn navigate(mut state: Signal<AppState>, screen: Screen) {
 /// Возвращается к предыдущему окну, не теряя изменённую форму.
 pub fn dismiss(mut state: Signal<AppState>) {
     let mut value = state.write();
-    let target = value.dialog_history.last().copied().unwrap_or(Screen::Chat);
+    let target = value
+        .dialog_history
+        .last()
+        .copied()
+        .unwrap_or(Screen::Chat);
     if value.unsaved {
         value.pending_screen = Some(target);
     } else {
-        value.screen = value.dialog_history.pop().unwrap_or(Screen::Chat);
+        value.screen = value
+            .dialog_history
+            .pop()
+            .unwrap_or(Screen::Chat);
     }
 }
 
@@ -136,7 +159,10 @@ pub fn discard_pending(mut state: Signal<AppState>) {
 }
 
 /// Возврат внутри настроек проходит ту же проверку, что и закрытие окна.
-pub fn select_settings_section(mut state: Signal<AppState>, section: Option<usize>) {
+pub fn select_settings_section(
+    mut state: Signal<AppState>,
+    section: Option<usize>,
+) {
     let mut value = state.write();
     if value.unsaved && value.settings_section != section {
         value.pending_section = Some(section);
@@ -159,7 +185,9 @@ pub async fn initialize(mut state: Signal<AppState>) {
             session,
         }) => {
             // Карта прокрутки устанавливается до эффектов вновь открываемых окон.
-            if let Ok(json) = serde_json::to_string(&session.scrolls) {
+            if let Ok(json) =
+                serde_json::to_string(&session.scrolls)
+            {
                 document::eval(&format!(
                     "window.xopilotDialogScroll = new Map(Object.entries({json}));"
                 ));
@@ -174,7 +202,8 @@ pub async fn initialize(mut state: Signal<AppState>) {
             value.action_history = actions;
             value.apply(snapshot);
             value.screen = session.screen;
-            value.settings_section = session.settings_section;
+            value.settings_section =
+                session.settings_section;
             value.sidebar = session.sidebar;
             value.dialog_history = session.history;
             value.session_scrolls = session.scrolls;
@@ -185,7 +214,11 @@ pub async fn initialize(mut state: Signal<AppState>) {
                     value.model = model;
                     value.model_local = local;
                 }
-                Err(error) => value.error = Some(format!("Проверьте настройки API: {error:#}")),
+                Err(error) => {
+                    value.error = Some(format!(
+                        "Проверьте настройки API: {error:#}"
+                    ))
+                }
             }
             value.ready = true;
             #[cfg(target_os = "android")]
@@ -197,26 +230,44 @@ pub async fn initialize(mut state: Signal<AppState>) {
         }
         Err(error) => {
             let mut value = state.write();
-            value.error = Some(format!("Не удалось открыть защищённую историю: {error:#}"));
+            value.error = Some(format!(
+                "Не удалось открыть защищённую историю: {error:#}"
+            ));
             value.ready = true;
         }
     }
 }
 
 /// Обновляет сообщения и действия текущего чата, сохраняя набираемый черновик.
-pub async fn refresh(mut state: Signal<AppState>, requested: Option<i64>) -> Result<()> {
+pub async fn refresh(
+    mut state: Signal<AppState>,
+    requested: Option<i64>,
+) -> Result<()> {
     let store = store(state)?;
-    let snapshot = services::runtime::background(async move {
-        let snapshot = services::chat_store::snapshot(&store, requested).await?;
-        let agent = services::agent::settings(&store, snapshot.active)?;
-        let actions = services::task_history::load(&store, &snapshot.messages)?;
-        Ok::<_, anyhow::Error>((snapshot, agent, actions))
-    })
-    .await?;
+    let snapshot =
+        services::runtime::background(async move {
+            let snapshot = services::chat_store::snapshot(
+                &store, requested,
+            )
+            .await?;
+            let agent = services::agent::settings(
+                &store,
+                snapshot.active,
+            )?;
+            let actions = services::task_history::load(
+                &store,
+                &snapshot.messages,
+            )?;
+            Ok::<_, anyhow::Error>((
+                snapshot, agent, actions,
+            ))
+        })
+        .await?;
     let (snapshot, agent, actions) = snapshot;
     let mut value = state.write();
     // Обновление заголовка/истории не должно затирать ещё набираемый текст.
-    let draft = (value.active == Some(snapshot.active)).then(|| value.draft.clone());
+    let draft = (value.active == Some(snapshot.active))
+        .then(|| value.draft.clone());
     value.apply(snapshot);
     value.agent = agent;
     value.action_history = actions;
@@ -227,7 +278,9 @@ pub async fn refresh(mut state: Signal<AppState>, requested: Option<i64>) -> Res
 }
 
 /// Сохраняет текст и вложения перед переключением чата.
-pub async fn persist_draft(state: Signal<AppState>) -> Result<()> {
+pub async fn persist_draft(
+    state: Signal<AppState>,
+) -> Result<()> {
     let store = store(state)?;
     let (active, draft) = {
         let value = state.read();
@@ -236,7 +289,11 @@ pub async fn persist_draft(state: Signal<AppState>) -> Result<()> {
     if let Some(id) = active {
         services::runtime::background(async move {
             store
-                .run(move |db| services::drafts::write_draft(db, id, &draft))
+                .run(move |db| {
+                    services::drafts::write_draft(
+                        db, id, &draft,
+                    )
+                })
                 .await
         })
         .await?;
@@ -245,17 +302,28 @@ pub async fn persist_draft(state: Signal<AppState>) -> Result<()> {
 }
 
 /// Переключает чат после проверки занятости и сбрасывает контекст модели.
-pub async fn switch_chat(mut state: Signal<AppState>, id: i64) -> Result<()> {
-    anyhow::ensure!(!state.read().uploading, "Дождитесь чтения вложений");
+pub async fn switch_chat(
+    mut state: Signal<AppState>,
+    id: i64,
+) -> Result<()> {
+    anyhow::ensure!(
+        !state.read().uploading,
+        "Дождитесь чтения вложений"
+    );
     anyhow::ensure!(
         !state.read().unsaved,
         "Сохраните или закройте редактор перед сменой чата"
     );
     if state.read().busy {
-        anyhow::bail!("Остановите текущий ответ перед сменой чата");
+        anyhow::bail!(
+            "Остановите текущий ответ перед сменой чата"
+        );
     }
     persist_draft(state).await?;
-    services::runtime::blocking(services::litert::reset_context).await?;
+    services::runtime::blocking(
+        services::litert::reset_context,
+    )
+    .await?;
     refresh(state, Some(id)).await?;
     let mut value = state.write();
     value.screen = Screen::Chat;
@@ -265,20 +333,32 @@ pub async fn switch_chat(mut state: Signal<AppState>, id: i64) -> Result<()> {
 }
 
 /// Создаёт пустой чат, предварительно сохранив предыдущий черновик.
-pub async fn new_chat(mut state: Signal<AppState>) -> Result<()> {
-    anyhow::ensure!(!state.read().uploading, "Дождитесь чтения вложений");
+pub async fn new_chat(
+    mut state: Signal<AppState>,
+) -> Result<()> {
+    anyhow::ensure!(
+        !state.read().uploading,
+        "Дождитесь чтения вложений"
+    );
     anyhow::ensure!(
         !state.read().unsaved,
         "Сохраните или закройте редактор перед созданием чата"
     );
     if state.read().busy {
-        anyhow::bail!("Остановите текущий ответ перед созданием чата");
+        anyhow::bail!(
+            "Остановите текущий ответ перед созданием чата"
+        );
     }
     persist_draft(state).await?;
-    services::runtime::blocking(services::litert::reset_context).await?;
+    services::runtime::blocking(
+        services::litert::reset_context,
+    )
+    .await?;
     let store = store(state)?;
     let id = services::runtime::background(async move {
-        store.run(|db| Ok(db.create_chat("Новый чат")?)).await
+        store
+            .run(|db| Ok(db.create_chat("Новый чат")?))
+            .await
     })
     .await?;
     refresh(state, Some(id)).await?;
@@ -289,10 +369,18 @@ pub async fn new_chat(mut state: Signal<AppState>) -> Result<()> {
 }
 
 /// Удаляет выбранный чат и обновляет доступную историю.
-pub async fn delete_chat(state: Signal<AppState>, id: i64) -> Result<()> {
-    anyhow::ensure!(!state.read().uploading, "Дождитесь чтения вложений");
+pub async fn delete_chat(
+    state: Signal<AppState>,
+    id: i64,
+) -> Result<()> {
+    anyhow::ensure!(
+        !state.read().uploading,
+        "Дождитесь чтения вложений"
+    );
     if state.read().busy {
-        anyhow::bail!("Остановите текущий ответ перед удалением чата");
+        anyhow::bail!(
+            "Остановите текущий ответ перед удалением чата"
+        );
     }
     let store = store(state)?;
     services::runtime::background(async move {
@@ -304,21 +392,34 @@ pub async fn delete_chat(state: Signal<AppState>, id: i64) -> Result<()> {
             .await
     })
     .await?;
-    services::runtime::blocking(services::litert::reset_context).await?;
+    services::runtime::blocking(
+        services::litert::reset_context,
+    )
+    .await?;
     refresh(state, None).await
 }
 
 /// Сохраняет запрос, принимает поток ответа и результаты инструментов, затем обновляет историю.
-pub async fn send(mut state: Signal<AppState>) -> Result<()> {
-    anyhow::ensure!(!state.read().uploading, "Дождитесь чтения вложений");
+pub async fn send(
+    mut state: Signal<AppState>,
+) -> Result<()> {
+    anyhow::ensure!(
+        !state.read().uploading,
+        "Дождитесь чтения вложений"
+    );
     if state.read().busy {
         return Ok(());
     }
     let (id, draft) = {
         let value = state.read();
-        (value.active.context("Чат не выбран")?, value.draft.clone())
+        (
+            value.active.context("Чат не выбран")?,
+            value.draft.clone(),
+        )
     };
-    if draft.text.trim().is_empty() && draft.files.is_empty() {
+    if draft.text.trim().is_empty()
+        && draft.files.is_empty()
+    {
         return Ok(());
     }
     let store = store(state)?;
@@ -485,35 +586,55 @@ pub async fn send(mut state: Signal<AppState>) -> Result<()> {
                 .iter()
                 .rev()
                 .find(|m| m.role == "user")
-                .and_then(|m| value.action_history.get(&m.id));
-            let tools_ok =
-                actions.is_none_or(|actions| actions.iter().all(|a| a.state == "completed"));
-            let count = actions.map_or(0, Vec::len);
-            value.task_completion = Some(if token.is_cancelled() {
-                ("Задача остановлена".into(), false)
-            } else if result.is_ok() && tools_ok {
-                (
-                    if count == 0 {
-                        "Ответ готов".into()
-                    } else {
-                        format!("Работа агента завершена · {count} действий")
-                    },
-                    true,
-                )
-            } else {
-                ("Есть невыполненные действия".into(), false)
+                .and_then(|m| {
+                    value.action_history.get(&m.id)
+                });
+            let tools_ok = actions.is_none_or(|actions| {
+                actions
+                    .iter()
+                    .all(|a| a.state == "completed")
             });
+            let count = actions.map_or(0, Vec::len);
+            value.task_completion = Some(
+                if token.is_cancelled() {
+                    ("Задача остановлена".into(), false)
+                } else if result.is_ok() && tools_ok {
+                    (
+                        if count == 0 {
+                            "Ответ готов".into()
+                        } else {
+                            format!(
+                                "Работа агента завершена · {count} действий"
+                            )
+                        },
+                        true,
+                    )
+                } else {
+                    (
+                        "Есть невыполненные действия"
+                            .into(),
+                        false,
+                    )
+                },
+            );
         }
     }
     if token.is_cancelled() { Ok(()) } else { result }
 }
 
 /// Отмечает ожидание решения в карточке и однократно отвечает запросу подтверждения.
-pub fn answer_action(mut state: Signal<AppState>, accepted: bool) {
+pub fn answer_action(
+    mut state: Signal<AppState>,
+    accepted: bool,
+) {
     let mut value = state.write();
-    for action in value.action_history.values_mut().flatten() {
+    for action in
+        value.action_history.values_mut().flatten()
+    {
         if action.state == "approval" {
-            action.state = if accepted { "running" } else { "failed" }.into();
+            action.state =
+                if accepted { "running" } else { "failed" }
+                    .into();
         }
     }
     if let Some(approval) = value.approval.take() {
@@ -529,10 +650,13 @@ pub fn cancel(state: Signal<AppState>) {
 }
 
 /// Записывает переписку выбранного чата в Markdown.
-pub async fn export_chat(mut state: Signal<AppState>) -> Result<()> {
+pub async fn export_chat(
+    mut state: Signal<AppState>,
+) -> Result<()> {
     let store = store(state)?;
     let root = services::paths::app_data_dir()?;
-    let id = state.read().active.context("Чат не выбран")?;
+    let id =
+        state.read().active.context("Чат не выбран")?;
     let path = services::runtime::blocking(move || {
         store.with(|db| {
             let title = db
@@ -541,10 +665,17 @@ pub async fn export_chat(mut state: Signal<AppState>) -> Result<()> {
                 .find(|c| c.0 == id)
                 .map(|c| c.1)
                 .unwrap_or_default();
-            services::exports::save_markdown_at(&root, &title, &db.get_messages(id)?)
+            services::exports::save_markdown_at(
+                &root,
+                &title,
+                &db.get_messages(id)?,
+            )
         })
     })
     .await?;
-    state.write().notice = Some(format!("Экспорт сохранён: {}", path.display()));
+    state.write().notice = Some(format!(
+        "Экспорт сохранён: {}",
+        path.display()
+    ));
     Ok(())
 }

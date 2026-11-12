@@ -6,7 +6,12 @@ pub fn open(url: &str) -> Result<()> {
     ensure!(
         parsed.scheme() == "https"
             || (parsed.scheme() == "http"
-                && matches!(parsed.host_str(), Some("127.0.0.1" | "localhost" | "[::1]"))),
+                && matches!(
+                    parsed.host_str(),
+                    Some(
+                        "127.0.0.1" | "localhost" | "[::1]"
+                    )
+                )),
         "Недопустимая ссылка"
     );
     #[cfg(target_os = "android")]
@@ -15,7 +20,9 @@ pub fn open(url: &str) -> Result<()> {
     }
     #[cfg(target_os = "linux")]
     {
-        std::process::Command::new("xdg-open").arg(url).spawn()?;
+        std::process::Command::new("xdg-open")
+            .arg(url)
+            .spawn()?;
     }
     #[cfg(target_os = "windows")]
     {
@@ -25,7 +32,9 @@ pub fn open(url: &str) -> Result<()> {
     }
     #[cfg(target_os = "macos")]
     {
-        std::process::Command::new("open").arg(url).spawn()?;
+        std::process::Command::new("open")
+            .arg(url)
+            .spawn()?;
     }
     Ok(())
 }

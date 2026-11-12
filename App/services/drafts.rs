@@ -5,7 +5,9 @@ use advanced_xopilot::db::Database;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Clone, Default, Debug, PartialEq, Serialize, Deserialize,
+)]
 pub struct Draft {
     #[serde(default)]
     pub text: String,
@@ -14,11 +16,18 @@ pub struct Draft {
 }
 
 /// Восстанавливает текст и пути вложений черновика выбранного чата.
-pub fn read_draft(db: &Database, chat_id: i64) -> Result<Draft> {
+pub fn read_draft(
+    db: &Database,
+    chat_id: i64,
+) -> Result<Draft> {
     read_json(db, &format!("draft:{chat_id}"))
 }
 
 /// Сохраняет черновик по ID чата, не затрагивая соседние разговоры.
-pub fn write_draft(db: &Database, chat_id: i64, draft: &Draft) -> Result<()> {
+pub fn write_draft(
+    db: &Database,
+    chat_id: i64,
+    draft: &Draft,
+) -> Result<()> {
     write_json(db, &format!("draft:{chat_id}"), draft)
 }

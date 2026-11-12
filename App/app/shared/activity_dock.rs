@@ -1,6 +1,9 @@
 // Описание: Уведомления и фактический прогресс расположены над строкой ввода.
 use crate::{
-    app::{shared::icons, state::AppState, tasks::task_messages},
+    app::{
+        shared::icons, state::AppState,
+        tasks::task_messages,
+    },
     services::{self, model_import, model_installer},
 };
 use dioxus::prelude::*;
@@ -8,21 +11,36 @@ use dioxus::prelude::*;
 /// Собирает сообщения, загрузки и состояние агента в одном месте без перекрытия ввода.
 pub fn build_activity_dock() -> Element {
     let mut state = use_context::<Signal<AppState>>();
-    let mut downloads = use_signal(Vec::<(String, model_installer::Progress)>::new);
+    let mut downloads = use_signal(
+        Vec::<(String, model_installer::Progress)>::new,
+    );
     let mut imported = use_signal(model_import::progress);
     let mut compute = use_signal(services::compute::status);
     use_future(move || async move {
         loop {
             let next = model_installer::MODELS
                 .iter()
-                .map(|m| (m.id.to_owned(), model_installer::progress(m.id)))
+                .map(|m| {
+                    (
+                        m.id.to_owned(),
+                        model_installer::progress(m.id),
+                    )
+                })
                 .collect::<Vec<_>>();
             if *downloads.peek() != next {
                 for (id, progress) in &next {
-                    if matches!(progress.phase.as_str(), "downloading" | "verifying")
-                        && state.peek().dismissed_downloads.contains(id)
+                    if matches!(
+                        progress.phase.as_str(),
+                        "downloading" | "verifying"
+                    ) && state
+                        .peek()
+                        .dismissed_downloads
+                        .contains(id)
                     {
-                        state.write().dismissed_downloads.remove(id);
+                        state
+                            .write()
+                            .dismissed_downloads
+                            .remove(id);
                     }
                 }
                 downloads.set(next);
@@ -36,7 +54,10 @@ pub fn build_activity_dock() -> Element {
                 compute.set(next);
             }
             services::runtime::background(async {
-                tokio::time::sleep(std::time::Duration::from_millis(250)).await
+                tokio::time::sleep(
+                    std::time::Duration::from_millis(250),
+                )
+                .await
             })
             .await;
         }

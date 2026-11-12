@@ -1,7 +1,9 @@
 // Описание: Открываем SQLCipher параллельно созданию WebView, а не после первого JS-кадра.
 // Это не кеш незашифрованной истории на диске: подготовленный Store живёт только в процессе.
 // Android Context уже установлен Tao/ndk-glue перед вызовом main, поэтому JNI доступен worker.
-use super::{agent, chat_store, db::Store, task_history, ui_session};
+use super::{
+    agent, chat_store, db::Store, task_history, ui_session,
+};
 use anyhow::{Result, anyhow};
 use std::{
     collections::HashMap,
@@ -18,7 +20,9 @@ pub struct Prepared {
     pub session: ui_session::Session,
 }
 
-static PREPARATION: OnceLock<Mutex<Option<JoinHandle<Result<Prepared>>>>> = OnceLock::new();
+static PREPARATION: OnceLock<
+    Mutex<Option<JoinHandle<Result<Prepared>>>>,
+> = OnceLock::new();
 
 /// Запускается до dioxus::launch и сразу возвращает управление созданию нативного окна.
 pub fn preload() {
@@ -38,10 +42,12 @@ fn load() -> Result<Prepared> {
     let began = std::time::Instant::now();
     let store = Store::open()?;
     super::profile::ensure_local(&store)?;
-    let snapshot = store.with(|db| chat_store::load(db, None))?;
+    let snapshot =
+        store.with(|db| chat_store::load(db, None))?;
     let model = super::generation::label(&store);
     let agent = agent::settings(&store, snapshot.active)?;
-    let actions = task_history::load(&store, &snapshot.messages)?;
+    let actions =
+        task_history::load(&store, &snapshot.messages)?;
     let session = ui_session::load(&store)?;
     tracing::info!(
         prepare_ms = began.elapsed().as_millis(),
@@ -60,11 +66,13 @@ fn load() -> Result<Prepared> {
 /// Передаёт подготовленный результат первому UI; повторное открытие после ошибки допускает retry.
 pub async fn take() -> Result<Prepared> {
     super::runtime::blocking(|| {
-        let worker = PREPARATION.get().and_then(|slot| slot.lock().ok()?.take());
+        let worker = PREPARATION
+            .get()
+            .and_then(|slot| slot.lock().ok()?.take());
         if let Some(worker) = worker {
-            worker
-                .join()
-                .map_err(|_| anyhow!("Подготовка истории была прервана"))?
+            worker.join().map_err(|_| {
+                anyhow!("Подготовка истории была прервана")
+            })?
         } else {
             load()
         }

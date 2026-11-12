@@ -6,8 +6,12 @@ fn main() {
     // NDK 27 и линкер DX по умолчанию могут оставить LOAD-сегменты с шагом 4 КиБ.
     // Явно собираем Android-библиотеку для устройств со страницами 16 КиБ.
     if target.contains("android") {
-        println!("cargo:rustc-link-arg=-Wl,-z,max-page-size=16384");
-        println!("cargo:rustc-link-arg=-Wl,-z,common-page-size=16384");
+        println!(
+            "cargo:rustc-link-arg=-Wl,-z,max-page-size=16384"
+        );
+        println!(
+            "cargo:rustc-link-arg=-Wl,-z,common-page-size=16384"
+        );
     }
     let platform = match target.as_str() {
         "x86_64-unknown-linux-gnu" => "linux_x86_64",
@@ -17,20 +21,24 @@ fn main() {
         "x86_64-pc-windows-msvc" => "windows_x86_64",
         _ => "unsupported",
     };
-    let source = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap())
-        .join("native")
-        .join(platform)
-        .join(if target.contains("windows") {
-            "litert-lm.dll"
-        } else {
-            "liblitert-lm.so"
-        });
+    let source = PathBuf::from(
+        env::var("CARGO_MANIFEST_DIR").unwrap(),
+    )
+    .join("native")
+    .join(platform)
+    .join(if target.contains("windows") {
+        "litert-lm.dll"
+    } else {
+        "liblitert-lm.so"
+    });
     println!("cargo:rerun-if-changed={}", source.display());
     println!(
         "cargo:rustc-env=XOPILOT_LITERT_BUNDLED={}",
         if source.is_file() { "1" } else { "0" }
     );
-    let destination = PathBuf::from(env::var("OUT_DIR").unwrap()).join("liblitert-lm.so");
+    let destination =
+        PathBuf::from(env::var("OUT_DIR").unwrap())
+            .join("liblitert-lm.so");
     // SDK поставляет .so с правами 0555; удаляем прежнюю копию перед пересборкой.
     if destination.exists() {
         fs::remove_file(&destination).unwrap();
@@ -38,17 +46,27 @@ fn main() {
     if source.is_file() && target.contains("android") {
         // DX копирует абсолютные .so из link args в jniLibs нужного ABI.
         // Android загружает библиотеку из APK, а не исполняет код из каталога данных.
-        println!("cargo:rustc-link-arg={}", source.display());
+        println!(
+            "cargo:rustc-link-arg={}",
+            source.display()
+        );
         fs::write(&destination, []).unwrap();
     } else if source.is_file() {
         fs::copy(source, &destination).unwrap();
     } else {
         fs::write(&destination, []).unwrap();
     }
-    let notices =
-        PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("native/runtime-licenses.zip");
-    println!("cargo:rerun-if-changed={}", notices.display());
-    let output = PathBuf::from(env::var("OUT_DIR").unwrap()).join("runtime-licenses.zip");
+    let notices = PathBuf::from(
+        env::var("CARGO_MANIFEST_DIR").unwrap(),
+    )
+    .join("native/runtime-licenses.zip");
+    println!(
+        "cargo:rerun-if-changed={}",
+        notices.display()
+    );
+    let output =
+        PathBuf::from(env::var("OUT_DIR").unwrap())
+            .join("runtime-licenses.zip");
     if notices.is_file() {
         fs::copy(notices, output).unwrap();
     } else {

@@ -5,19 +5,30 @@ use dioxus::prelude::*;
 #[component]
 pub fn build_mobile_viewport() -> Element {
     use_future(move || async move {
-        let _ = document::eval(include_str!("mobile_viewport.js")).await;
+        let _ = document::eval(include_str!(
+            "mobile_viewport.js"
+        ))
+        .await;
         let mut previous = None;
         loop {
-            if let Ok(Some(insets)) = crate::services::android::window_insets()
+            if let Ok(Some(insets)) =
+                crate::services::android::window_insets()
                 && previous != Some(insets)
             {
                 previous = Some(insets);
-                if let Ok(json) = serde_json::to_string(&insets) {
-                    document::eval(&format!("window.xopilotSetInsets?.({json});"));
+                if let Ok(json) =
+                    serde_json::to_string(&insets)
+                {
+                    document::eval(&format!(
+                        "window.xopilotSetInsets?.({json});"
+                    ));
                 }
             }
             crate::services::runtime::background(async {
-                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                tokio::time::sleep(
+                    std::time::Duration::from_millis(200),
+                )
+                .await;
             })
             .await;
         }

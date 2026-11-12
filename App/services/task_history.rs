@@ -5,7 +5,9 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
-#[derive(Clone, Default, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(
+    Clone, Default, Debug, Serialize, Deserialize, PartialEq,
+)]
 #[serde(default)]
 pub struct Action {
     pub id: usize,
@@ -16,14 +18,21 @@ pub struct Action {
     pub seconds: f64,
 }
 /// Восстанавливает карточки только для сообщений открытого чата.
-pub fn load(store: &Store, messages: &[StoredMessage]) -> Result<HashMap<i64, Vec<Action>>> {
+pub fn load(
+    store: &Store,
+    messages: &[StoredMessage],
+) -> Result<HashMap<i64, Vec<Action>>> {
     let mut result = HashMap::new();
     for message in messages {
         if message.role == "user" {
-            let mut actions: Vec<Action> =
-                store.read(&format!("agent_actions_v1:{}", message.id))?;
+            let mut actions: Vec<Action> = store.read(
+                &format!("agent_actions_v1:{}", message.id),
+            )?;
             for action in &mut actions {
-                if matches!(action.state.as_str(), "running" | "approval") {
+                if matches!(
+                    action.state.as_str(),
+                    "running" | "approval"
+                ) {
                     action.state = "interrupted".into();
                 }
             }
@@ -35,8 +44,15 @@ pub fn load(store: &Store, messages: &[StoredMessage]) -> Result<HashMap<i64, Ve
     Ok(result)
 }
 /// Записывает завершённые и прерванные шаги в ту же SQLCipher, что и переписку.
-pub fn save(store: &Store, message: i64, actions: &[Action]) -> Result<()> {
-    store.write(&format!("agent_actions_v1:{message}"), &actions)
+pub fn save(
+    store: &Store,
+    message: i64,
+    actions: &[Action],
+) -> Result<()> {
+    store.write(
+        &format!("agent_actions_v1:{message}"),
+        &actions,
+    )
 }
 /// Даёт человеку название действия вместо имени внутренней функции.
 pub fn title(tool: &str) -> &str {

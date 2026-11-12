@@ -23,21 +23,35 @@ const KEY_LEN: usize = 32;
 /// Генерируется один раз при первом запуске, дальше всегда читается оттуда же.
 /// `fallback_dir` — куда класть файл соли для фоллбэк-ветки (обычно — папка рядом с БД).
 #[cfg(not(target_os = "android"))]
-pub fn get_db_keys(fallback_dir: &Path, existing_database: bool) -> Result<Vec<String>, String> {
-    resolve_db_keys(fallback_dir, existing_database, get_or_create_from_keyring)
+pub fn get_db_keys(
+    fallback_dir: &Path,
+    existing_database: bool,
+) -> Result<Vec<String>, String> {
+    resolve_db_keys(
+        fallback_dir,
+        existing_database,
+        get_or_create_from_keyring,
+    )
 }
 
 /// Получает совместимые ключи истории, не заменяя утраченный ключ новым.
 #[cfg(target_os = "android")]
-pub fn get_db_keys(_fallback_dir: &Path, _existing_database: bool) -> Result<Vec<String>, String> {
-    Err("Для Android требуется ключ из Android Keystore.".into())
+pub fn get_db_keys(
+    _fallback_dir: &Path,
+    _existing_database: bool,
+) -> Result<Vec<String>, String> {
+    Err("Для Android требуется ключ из Android Keystore."
+        .into())
 }
 
 /// Сохраняет порядок прежнего fallback-ключа и системного хранилища.
 fn resolve_db_keys(
     dir: &Path,
     existing_database: bool,
-    keyring_key: impl FnOnce(bool) -> Result<String, keyring::Error>,
+    keyring_key: impl FnOnce(
+        bool,
+    )
+        -> Result<String, keyring::Error>,
 ) -> Result<Vec<String>, String> {
     let salt_exists = dir.join(".xopilot_salt").exists();
     let mut keys = Vec::new();
@@ -50,7 +64,8 @@ fn resolve_db_keys(
     }
     // A database opened with the fallback must keep using that key when the
     // system keyring becomes available. Try existing keys, never rotate them.
-    if let Ok(key) = keyring_key(!existing_database && !salt_exists)
+    if let Ok(key) =
+        keyring_key(!existing_database && !salt_exists)
         && !keys.contains(&key)
     {
         keys.push(key);
@@ -68,7 +83,9 @@ fn resolve_db_keys(
 }
 
 /// Читает секрет ОС и создаёт его только для новой истории.
-fn get_or_create_from_keyring(allow_create: bool) -> Result<String, keyring::Error> {
+fn get_or_create_from_keyring(
+    allow_create: bool,
+) -> Result<String, keyring::Error> {
     let entry = keyring::Entry::new(SERVICE, USERNAME)?;
     match entry.get_password() {
         Ok(existing) => Ok(existing),
@@ -83,13 +100,17 @@ fn get_or_create_from_keyring(allow_create: bool) -> Result<String, keyring::Err
 
 /// Использует совместимый резервный ключ; на Android требует Keystore.
 #[cfg(target_os = "android")]
-fn get_or_create_fallback_key(_dir: &Path) -> Result<String, String> {
+fn get_or_create_fallback_key(
+    _dir: &Path,
+) -> Result<String, String> {
     Err("На Android резервный ключ machine-id не используется.".into())
 }
 
 /// Использует совместимый резервный ключ; на Android требует Keystore.
 #[cfg(not(target_os = "android"))]
-fn get_or_create_fallback_key(dir: &Path) -> Result<String, String> {
+fn get_or_create_fallback_key(
+    dir: &Path,
+) -> Result<String, String> {
     let salt_path = dir.join(".xopilot_salt");
     let salt: Vec<u8> = match std::fs::read(&salt_path) {
         Ok(bytes) if bytes.len() == KEY_LEN => bytes,
@@ -125,8 +146,14 @@ fn get_or_create_fallback_key(dir: &Path) -> Result<String, String> {
 #[cfg(target_os = "linux")]
 fn read_machine_id() -> String {
     std::fs::read_to_string("/etc/machine-id")
-        .or_else(|_| std::fs::read_to_string("/var/lib/dbus/machine-id"))
-        .unwrap_or_else(|_| "xopilot-fallback-id".to_string())
+        .or_else(|_| {
+            std::fs::read_to_string(
+                "/var/lib/dbus/machine-id",
+            )
+        })
+        .unwrap_or_else(|_| {
+            "xopilot-fallback-id".to_string()
+        })
         .trim()
         .to_string()
 }
@@ -139,8 +166,12 @@ fn read_machine_id() -> String {
 
     RegKey::predef(HKEY_LOCAL_MACHINE)
         .open_subkey("SOFTWARE\\Microsoft\\Cryptography")
-        .and_then(|key| key.get_value::<String, _>("MachineGuid"))
-        .unwrap_or_else(|_| "xopilot-fallback-id".to_string())
+        .and_then(|key| {
+            key.get_value::<String, _>("MachineGuid")
+        })
+        .unwrap_or_else(|_| {
+            "xopilot-fallback-id".to_string()
+        })
 }
 
 /// Генерирует случайный 256-битный ключ в формате SQLCipher.
@@ -160,8 +191,10 @@ mod tests {
     impl TestDir {
         /// Создаёт владельца ресурса с исходным состоянием.
         fn new() -> Self {
-            let path =
-                std::env::temp_dir().join(format!("xopilot-key-test-{}", generate_hex_key()));
+            let path = std::env::temp_dir().join(format!(
+                "xopilot-key-test-{}",
+                generate_hex_key()
+            ));
             std::fs::create_dir_all(&path).unwrap();
             Self(path)
         }
@@ -177,21 +210,32 @@ mod tests {
     #[test]
     fn fallback_survives_keyring_becoming_available() {
         let dir = TestDir::new();
-        let first = resolve_db_keys(&dir.0, false, |_| Err(keyring::Error::NoEntry)).unwrap();
-        let salt = std::fs::read(dir.0.join(".xopilot_salt")).unwrap();
-        let reopened = resolve_db_keys(&dir.0, true, |allow_create| {
-            assert!(!allow_create);
-            Ok("existing-system-key".into())
+        let first = resolve_db_keys(&dir.0, false, |_| {
+            Err(keyring::Error::NoEntry)
         })
         .unwrap();
+        let salt =
+            std::fs::read(dir.0.join(".xopilot_salt"))
+                .unwrap();
+        let reopened =
+            resolve_db_keys(&dir.0, true, |allow_create| {
+                assert!(!allow_create);
+                Ok("existing-system-key".into())
+            })
+            .unwrap();
         assert_eq!(reopened[0], first[0]);
         assert_eq!(reopened.len(), 2);
-        assert_eq!(std::fs::read(dir.0.join(".xopilot_salt")).unwrap(), salt);
+        assert_eq!(
+            std::fs::read(dir.0.join(".xopilot_salt"))
+                .unwrap(),
+            salt
+        );
     }
 
     /// Проверяет отказ от создания нового ключа поверх существующей истории.
     #[test]
-    fn missing_key_never_creates_a_replacement_for_existing_history() {
+    fn missing_key_never_creates_a_replacement_for_existing_history()
+     {
         let dir = TestDir::new();
         assert!(
             resolve_db_keys(&dir.0, true, |allow_create| {
@@ -209,17 +253,33 @@ mod tests {
         let dir = TestDir::new();
         let salt = dir.0.join(".xopilot_salt");
         std::fs::write(&salt, b"damaged").unwrap();
-        assert!(resolve_db_keys(&dir.0, true, |_| Err(keyring::Error::NoEntry)).is_err());
-        assert_eq!(std::fs::read(salt).unwrap(), b"damaged");
+        assert!(
+            resolve_db_keys(&dir.0, true, |_| Err(
+                keyring::Error::NoEntry
+            ))
+            .is_err()
+        );
+        assert_eq!(
+            std::fs::read(salt).unwrap(),
+            b"damaged"
+        );
     }
 
     /// Проверяет возможность прежнего keyring-ключа при повреждении соли.
     #[test]
-    fn existing_keyring_key_remains_an_option_with_a_corrupt_salt() {
+    fn existing_keyring_key_remains_an_option_with_a_corrupt_salt()
+     {
         let dir = TestDir::new();
-        std::fs::write(dir.0.join(".xopilot_salt"), b"damaged").unwrap();
+        std::fs::write(
+            dir.0.join(".xopilot_salt"),
+            b"damaged",
+        )
+        .unwrap();
         assert_eq!(
-            resolve_db_keys(&dir.0, true, |_| Ok("existing-key".into())).unwrap(),
+            resolve_db_keys(&dir.0, true, |_| Ok(
+                "existing-key".into()
+            ))
+            .unwrap(),
             vec!["existing-key"]
         );
     }

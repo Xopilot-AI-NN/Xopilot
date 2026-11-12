@@ -41,7 +41,11 @@ pub fn build_templates() -> Element {
     let templates: Vec<_> = items
         .read()
         .iter()
-        .filter(|t| (t.title.clone() + &t.body).to_lowercase().contains(&needle))
+        .filter(|t| {
+            (t.title.clone() + &t.body)
+                .to_lowercase()
+                .contains(&needle)
+        })
         .cloned()
         .collect();
     rsx! {

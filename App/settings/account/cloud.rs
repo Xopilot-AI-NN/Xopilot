@@ -9,7 +9,9 @@ use zeroize::Zeroizing;
 
 /// Показывает Google и почту; сетевые запросы выполняются только по нажатию.
 #[component]
-pub fn build_cloud_card(onchange: EventHandler<()>) -> Element {
+pub fn build_cloud_card(
+    onchange: EventHandler<()>,
+) -> Element {
     let state = use_context::<Signal<AppState>>();
     let mut mode = use_signal(|| "".to_string());
     let mut email = use_signal(String::new);
@@ -136,6 +138,7 @@ pub fn build_cloud_card(onchange: EventHandler<()>) -> Element {
                     }
                     button {
                         class: "button",
+                        style: "margin-left: auto;",
                         disabled: *busy.read(),
                         onclick: move |_| {
                             mode.set("login".into());

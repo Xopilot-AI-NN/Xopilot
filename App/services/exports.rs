@@ -4,7 +4,10 @@ use anyhow::Result;
 use std::path::PathBuf;
 
 /// Формирует переносимую Markdown-переписку с ролями и вложениями.
-pub fn markdown(title: &str, messages: &[StoredMessage]) -> String {
+pub fn markdown(
+    title: &str,
+    messages: &[StoredMessage],
+) -> String {
     let mut out = format!("# {title}\n\n");
     for message in messages {
         out.push_str(if message.role == "user" {
@@ -22,8 +25,15 @@ pub fn markdown(title: &str, messages: &[StoredMessage]) -> String {
 }
 
 /// Сохраняет экспорт в каталоге текущего профиля.
-pub fn save_markdown(title: &str, messages: &[StoredMessage]) -> Result<PathBuf> {
-    save_markdown_at(&super::paths::app_data_dir()?, title, messages)
+pub fn save_markdown(
+    title: &str,
+    messages: &[StoredMessage],
+) -> Result<PathBuf> {
+    save_markdown_at(
+        &super::paths::app_data_dir()?,
+        title,
+        messages,
+    )
 }
 /// Пишет экспорт в заранее выбранный каталог, не следуя смене профиля.
 pub fn save_markdown_at(
@@ -33,7 +43,8 @@ pub fn save_markdown_at(
 ) -> Result<PathBuf> {
     let dir = root.join("exports");
     std::fs::create_dir_all(&dir)?;
-    let path = dir.join(format!("chat-{}.md", uuid::Uuid::new_v4()));
+    let path = dir
+        .join(format!("chat-{}.md", uuid::Uuid::new_v4()));
     std::fs::write(&path, markdown(title, messages))?;
     Ok(path)
 }

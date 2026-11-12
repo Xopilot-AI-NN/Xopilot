@@ -4,11 +4,14 @@ use serde_json::json;
 use xopilot::services::{db::Store, profile};
 /// Повторное открытие не меняет UUID, имя, память и неизведанные поля профиля.
 #[test]
-fn automatic_profile_is_stable_and_preserves_existing_data() {
+fn automatic_profile_is_stable_and_preserves_existing_data()
+{
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("profile.db");
     let id = {
-        let store = Store::new(Database::open(&path, &"a".repeat(64)).unwrap());
+        let store = Store::new(
+            Database::open(&path, &"a".repeat(64)).unwrap(),
+        );
         store
             .write(
                 "profile_v1",
@@ -20,7 +23,9 @@ fn automatic_profile_is_stable_and_preserves_existing_data() {
         assert_eq!(value["name"], "Денис");
         value["id"].as_str().unwrap().to_owned()
     };
-    let store = Store::new(Database::open(&path, &"a".repeat(64)).unwrap());
+    let store = Store::new(
+        Database::open(&path, &"a".repeat(64)).unwrap(),
+    );
     profile::ensure_local(&store).unwrap();
     let value = profile::read(&store).unwrap();
     assert_eq!(value["id"], id);

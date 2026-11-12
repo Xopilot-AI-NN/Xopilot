@@ -33,7 +33,11 @@ pub fn read(store: &Store) -> Result<Value> {
 }
 
 /// Обновляет существующую запись с сохранением её идентичности.
-pub fn update(store: &Store, name: &str, memory: &str) -> Result<()> {
+pub fn update(
+    store: &Store,
+    name: &str,
+    memory: &str,
+) -> Result<()> {
     ensure!(
         !name.trim().is_empty()
             && name.chars().count() <= 50
@@ -71,26 +75,42 @@ pub fn rename(store: &Store, name: &str) -> Result<()> {
     })
 }
 /// Ограничивает декодирование изображения, обрезает до 256×256 и сохраняет в SQLCipher.
-pub fn avatar(store: &Store, bytes: &[u8]) -> Result<String> {
+pub fn avatar(
+    store: &Store,
+    bytes: &[u8],
+) -> Result<String> {
     use base64::Engine as _;
-    ensure!(bytes.len() <= 8 * 1024 * 1024, "Изображение больше 8 МиБ");
-    let mut reader = image::ImageReader::new(std::io::Cursor::new(bytes)).with_guessed_format()?;
+    ensure!(
+        bytes.len() <= 8 * 1024 * 1024,
+        "Изображение больше 8 МиБ"
+    );
+    let mut reader = image::ImageReader::new(
+        std::io::Cursor::new(bytes),
+    )
+    .with_guessed_format()?;
     let mut limits = image::Limits::default();
     limits.max_image_width = Some(8192);
     limits.max_image_height = Some(8192);
     limits.max_alloc = Some(96 * 1024 * 1024);
     reader.limits(limits);
-    let picture = reader
-        .decode()?
-        .resize_to_fill(256, 256, image::imageops::FilterType::Triangle);
+    let picture = reader.decode()?.resize_to_fill(
+        256,
+        256,
+        image::imageops::FilterType::Triangle,
+    );
     let mut result = std::io::Cursor::new(Vec::new());
-    picture.write_to(&mut result, image::ImageFormat::Png)?;
-    let encoded = base64::prelude::BASE64_STANDARD.encode(result.into_inner());
+    picture
+        .write_to(&mut result, image::ImageFormat::Png)?;
+    let encoded = base64::prelude::BASE64_STANDARD
+        .encode(result.into_inner());
     store.with(|db|{let mut value=read_json::<Value>(db,"profile_v1")?;if !value.is_object(){value=json!({"name":db.get_setting("profile_name")?.unwrap_or_else(||"Пользователь".into())});}value["avatar"]=encoded.clone().into();write_json(db,"profile_v1",&value)})?;
     Ok(encoded)
 }
 /// Читает выбранное изображение с ограничением 8 МиБ и передаёт нормализатору.
-pub fn avatar_file(store: &Store, path: &std::path::Path) -> Result<String> {
+pub fn avatar_file(
+    store: &Store,
+    path: &std::path::Path,
+) -> Result<String> {
     use std::io::Read;
     let mut bytes = Vec::new();
     std::fs::File::open(path)?

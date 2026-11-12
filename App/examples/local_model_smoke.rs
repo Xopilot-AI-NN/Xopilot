@@ -1,8 +1,9 @@
 // Описание: Настоящая локальная генерация без WebView, сети и пользовательской базы.
 fn main() -> anyhow::Result<()> {
-    let path = std::env::args()
-        .nth(1)
-        .ok_or_else(|| anyhow::anyhow!("Укажите путь к .litertlm"))?;
+    let path =
+        std::env::args().nth(1).ok_or_else(|| {
+            anyhow::anyhow!("Укажите путь к .litertlm")
+        })?;
     let custom = std::env::args().nth(2);
     let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
     let answer = xopilot::services::litert::generate(

@@ -16,7 +16,10 @@ pub fn read(store: &Store) -> Result<Value> {
 }
 
 /// Изменяет память в одной транзакции с сохранением остальных полей профиля.
-fn modify(store: &Store, operation: impl FnOnce(&mut Value) -> Result<()>) -> Result<()> {
+fn modify(
+    store: &Store,
+    operation: impl FnOnce(&mut Value) -> Result<()>,
+) -> Result<()> {
     store.with(|db| {
         let mut profile: Value = read_json(db, "profile_v1")?;
         ensure!(profile.is_object(), "Профиль ещё не создан");
@@ -29,7 +32,11 @@ fn modify(store: &Store, operation: impl FnOnce(&mut Value) -> Result<()>) -> Re
 }
 
 /// Сохраняет переключатели без изменения существующих записей.
-pub fn configure(store: &Store, enabled: bool, automatic: bool) -> Result<()> {
+pub fn configure(
+    store: &Store,
+    enabled: bool,
+    automatic: bool,
+) -> Result<()> {
     modify(store, |memory| {
         memory["enabled"] = enabled.into();
         memory["automatic"] = automatic.into();
@@ -47,31 +54,39 @@ pub fn save(
     automatic: bool,
 ) -> Result<()> {
     ensure!(
-        !text.trim().is_empty() && text.chars().count() <= 1000,
+        !text.trim().is_empty()
+            && text.chars().count() <= 1000,
         "Введите от 1 до 1000 символов"
     );
     ensure!(
-        ["fact", "name", "preferences", "work", "goals"].contains(&category),
+        ["fact", "name", "preferences", "work", "goals"]
+            .contains(&category),
         "Неизвестная категория"
     );
     modify(store, |memory| {
         let items = memory["items"]
             .as_array_mut()
-            .ok_or_else(|| anyhow::anyhow!("Повреждён список памяти"))?;
+            .ok_or_else(|| {
+                anyhow::anyhow!("Повреждён список памяти")
+            })?;
         if id.is_empty() {
-            if items
-                .iter()
-                .any(|item| item["text"].as_str() == Some(text.trim()))
-            {
+            if items.iter().any(|item| {
+                item["text"].as_str() == Some(text.trim())
+            }) {
                 return Ok(());
             }
-            ensure!(items.len() < 500, "Память заполнена, удалите лишние записи");
+            ensure!(
+                items.len() < 500,
+                "Память заполнена, удалите лишние записи"
+            );
             items.push(json!({"id":uuid::Uuid::new_v4().to_string(),"text":text.trim(),"category":category,"automatic":automatic,"updated":super::canvases::now()}));
         } else {
             let item = items
                 .iter_mut()
                 .find(|item| item["id"] == id)
-                .ok_or_else(|| anyhow::anyhow!("Запись уже удалена"))?;
+                .ok_or_else(|| {
+                    anyhow::anyhow!("Запись уже удалена")
+                })?;
             ensure!(
                 item["text"].as_str() == Some(original),
                 "Запись изменена в другом окне. Откройте её заново"
@@ -86,14 +101,23 @@ pub fn save(
 }
 
 /// Удаляет только выбранную версию записи, сохраняя конкурентные изменения.
-pub fn remove(store: &Store, id: &str, original: &str) -> Result<()> {
+pub fn remove(
+    store: &Store,
+    id: &str,
+    original: &str,
+) -> Result<()> {
     modify(store, |memory| {
         let items = memory["items"]
             .as_array_mut()
-            .ok_or_else(|| anyhow::anyhow!("Повреждён список памяти"))?;
-        if let Some(index) = items.iter().position(|item| item["id"] == id) {
+            .ok_or_else(|| {
+                anyhow::anyhow!("Повреждён список памяти")
+            })?;
+        if let Some(index) =
+            items.iter().position(|item| item["id"] == id)
+        {
             ensure!(
-                items[index]["text"].as_str() == Some(original),
+                items[index]["text"].as_str()
+                    == Some(original),
                 "Запись изменилась. Обновите список"
             );
             items.remove(index);
@@ -106,7 +130,9 @@ pub fn remove(store: &Store, id: &str, original: &str) -> Result<()> {
 /// Точная цитата сохраняется без отправки дополнительного запроса модели.
 pub fn capture(store: &Store, text: &str) -> Result<()> {
     let memory = read(store)?;
-    if memory["enabled"] == false || memory["automatic"] == false {
+    if memory["enabled"] == false
+        || memory["automatic"] == false
+    {
         return Ok(());
     }
     let lower = text.trim().to_lowercase();

@@ -18,15 +18,22 @@ pub fn build_memory() -> Element {
     let _load = use_resource(move || {
         let _revision = *revision.read();
         async move {
-            match state::store(state).and_then(|store| user_memory::read(&store)) {
+            match state::store(state)
+                .and_then(|store| user_memory::read(&store))
+            {
                 Ok(value) => data.set(value),
-                Err(error) => state::report(state, Err(error)),
+                Err(error) => {
+                    state::report(state, Err(error))
+                }
             }
         }
     });
     let enabled = data.read()["enabled"] != false;
     let automatic = data.read()["automatic"] != false;
-    let items = data.read()["items"].as_array().cloned().unwrap_or_default();
+    let items = data.read()["items"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
     rsx! {
         h2 {
             class: "section-title",

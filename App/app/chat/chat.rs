@@ -50,7 +50,8 @@ pub fn build_chat() -> Element {
         .rev()
         .filter(|m| {
             m.content.to_lowercase().contains(&needle)
-                && (!*bookmarks_only.read() || bookmarks.contains(&m.id))
+                && (!*bookmarks_only.read()
+                    || bookmarks.contains(&m.id))
         })
         .cloned()
         .collect();

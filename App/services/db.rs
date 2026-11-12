@@ -12,15 +12,24 @@ impl Store {
     /// Открывает прежнюю SQLCipher с совместимым ключом ОС или Android Keystore.
     pub fn open() -> Result<Self> {
         let root = super::paths::base_data_dir()?;
-        super::account_deletion::perform_pending_erasure(&root)?;
+        super::account_deletion::perform_pending_erasure(
+            &root,
+        )?;
         let path = root.join("xopilot.db");
         #[cfg(not(target_os = "android"))]
-        let db = advanced_xopilot::open_database(&path).map_err(|e| anyhow!(e))?;
+        let db = advanced_xopilot::open_database(&path)
+            .map_err(|e| anyhow!(e))?;
         #[cfg(target_os = "android")]
         let db = {
-            std::fs::create_dir_all(path.parent().unwrap())?;
-            let existing = path.metadata().map(|m| m.len() > 0).unwrap_or(false);
-            let key = super::android::database_key(existing)?;
+            std::fs::create_dir_all(
+                path.parent().unwrap(),
+            )?;
+            let existing = path
+                .metadata()
+                .map(|m| m.len() > 0)
+                .unwrap_or(false);
+            let key =
+                super::android::database_key(existing)?;
             Database::open(&path, &key)?
         };
         Ok(Self::new(db))
@@ -36,36 +45,53 @@ impl Store {
     }
 
     /// Сериализует доступ к базе в пределах одной короткой операции.
-    pub fn with<T>(&self, call: impl FnOnce(&Database) -> Result<T>) -> Result<T> {
-        let db = self
-            .0
-            .lock()
-            .map_err(|_| anyhow!("Хранилище занято после ошибки"))?;
+    pub fn with<T>(
+        &self,
+        call: impl FnOnce(&Database) -> Result<T>,
+    ) -> Result<T> {
+        let db = self.0.lock().map_err(|_| {
+            anyhow!("Хранилище занято после ошибки")
+        })?;
         call(&db)
     }
 
     /// Переносит блокирующую работу с базой в worker Tokio.
     pub async fn run<T: Send + 'static>(
         &self,
-        call: impl FnOnce(&Database) -> Result<T> + Send + 'static,
+        call: impl FnOnce(&Database) -> Result<T>
+        + Send
+        + 'static,
     ) -> Result<T> {
         let store = self.clone();
-        tokio::task::spawn_blocking(move || store.with(call)).await?
+        tokio::task::spawn_blocking(move || {
+            store.with(call)
+        })
+        .await?
     }
 
     /// Читает сохранённое значение без изменения неизвестных полей.
-    pub fn read<T: DeserializeOwned + Default>(&self, key: &str) -> Result<T> {
+    pub fn read<T: DeserializeOwned + Default>(
+        &self,
+        key: &str,
+    ) -> Result<T> {
         self.with(|db| read_json(db, key))
     }
 
     /// Записывает значение через общее хранилище.
-    pub fn write<T: Serialize>(&self, key: &str, value: &T) -> Result<()> {
+    pub fn write<T: Serialize>(
+        &self,
+        key: &str,
+        value: &T,
+    ) -> Result<()> {
         self.with(|db| write_json(db, key, value))
     }
 }
 
 /// Читает JSON-настройку, используя значение по умолчанию при её отсутствии.
-pub fn read_json<T: DeserializeOwned + Default>(db: &Database, key: &str) -> Result<T> {
+pub fn read_json<T: DeserializeOwned + Default>(
+    db: &Database,
+    key: &str,
+) -> Result<T> {
     match db.get_setting(key)? {
         Some(raw) => serde_json::from_str(&raw)
             .with_context(|| format!("Повреждена настройка {key}; исходные данные сохранены")),
@@ -74,7 +100,11 @@ pub fn read_json<T: DeserializeOwned + Default>(db: &Database, key: &str) -> Res
 }
 
 /// Сериализует значение и сохраняет его под прежним ключом настройки.
-pub fn write_json<T: Serialize>(db: &Database, key: &str, value: &T) -> Result<()> {
+pub fn write_json<T: Serialize>(
+    db: &Database,
+    key: &str,
+    value: &T,
+) -> Result<()> {
     db.set_setting(key, &serde_json::to_string(value)?)?;
     Ok(())
 }

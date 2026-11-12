@@ -71,7 +71,9 @@ pub fn build_add_material_button() -> Element {
 /// Android использует системный файловый chooser WebView: не rfd и не Flutter.
 #[component]
 pub fn build_android_material_button() -> Element {
-    use crate::services::mobile_documents::{Upload, UploadEvent};
+    use crate::services::mobile_documents::{
+        Upload, UploadEvent,
+    };
     let mut state = use_context::<Signal<AppState>>();
     use_drop(move || {
         if let Ok(mut value) = state.try_write() {
@@ -79,13 +81,19 @@ pub fn build_android_material_button() -> Element {
         }
     });
     use_future(move || async move {
-        let mut bridge = document::eval(services::mobile_documents::PICKER_SCRIPT);
+        let mut bridge = document::eval(
+            services::mobile_documents::PICKER_SCRIPT,
+        );
         let mut upload = Upload::default();
         let mut active = None;
-        while let Ok(event) = bridge.recv::<UploadEvent>().await {
+        while let Ok(event) =
+            bridge.recv::<UploadEvent>().await
+        {
             let expects_ack = matches!(
                 &event,
-                UploadEvent::Start { .. } | UploadEvent::Chunk { .. } | UploadEvent::End
+                UploadEvent::Start { .. }
+                    | UploadEvent::Chunk { .. }
+                    | UploadEvent::End
             );
             let result = async {
                 match event {

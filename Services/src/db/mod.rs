@@ -13,7 +13,9 @@
 // на chats/messages, пока это явно не согласовано с тем, что уже есть в реальной БД (user_version там выше,
 // чем CURRENT_SCHEMA_VERSION ниже, и migrate() корректно ничего не трогает в этом случае).
 
-use rusqlite::{Connection, OptionalExtension, Result, params};
+use rusqlite::{
+    Connection, OptionalExtension, Result, params,
+};
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -22,7 +24,13 @@ const CURRENT_SCHEMA_VERSION: i32 = 3;
 
 /// Одно сообщение со всеми полями: цитата/ответ — произвольный текст (не ссылка на другое сообщение по id),
 /// вложения — список (имя_файла, путь_к_файлу).
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    serde::Serialize,
+    serde::Deserialize,
+)]
 pub struct StoredMessage {
     #[serde(default, skip_serializing)]
     pub id: i64,
@@ -32,7 +40,10 @@ pub struct StoredMessage {
     pub reply_to: Option<String>,
     pub attachments: Vec<(String, String)>,
     pub created_at: i64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub elapsed_seconds: Option<f64>,
 }
 
@@ -43,7 +54,10 @@ pub struct Database {
 impl Database {
     /// Открывает (или создаёт) зашифрованную БД по пути и применяет миграции до актуальной схемы.
     /// `key` — ключ шифрования (генерируется из OS keyring на стороне модуля защиты — сюда приходит уже готовый хеш).
-    pub fn open<P: AsRef<Path>>(path: P, key: &str) -> Result<Self> {
+    pub fn open<P: AsRef<Path>>(
+        path: P,
+        key: &str,
+    ) -> Result<Self> {
         let conn = Connection::open(path)?;
 
         // SQLCipher-ключ должен быть установлен первым запросом, до любых других операций
@@ -61,9 +75,11 @@ impl Database {
     /// Применяет последовательно все недостающие миграции в одной транзакции,
     /// чтобы сбой посередине не оставил БД в половинчатом состоянии.
     fn migrate(&self) -> Result<()> {
-        let version: i32 = self
-            .conn
-            .query_row("PRAGMA user_version", [], |row| row.get(0))?;
+        let version: i32 = self.conn.query_row(
+            "PRAGMA user_version",
+            [],
+            |row| row.get(0),
+        )?;
 
         if version >= CURRENT_SCHEMA_VERSION {
             return Ok(());
@@ -71,10 +87,14 @@ impl Database {
 
         self.conn.execute_batch("BEGIN;")?;
 
-        let result = self.run_migrations(version).and_then(|_| {
-            self.conn
-                .pragma_update(None, "user_version", CURRENT_SCHEMA_VERSION)
-        });
+        let result =
+            self.run_migrations(version).and_then(|_| {
+                self.conn.pragma_update(
+                    None,
+                    "user_version",
+                    CURRENT_SCHEMA_VERSION,
+                )
+            });
 
         match result {
             Ok(()) => {
@@ -83,7 +103,8 @@ impl Database {
             }
             Err(e) => {
                 // откат при любой ошибке посреди миграции — старая схема остаётся целой и рабочей
-                let _ = self.conn.execute_batch("ROLLBACK;");
+                let _ =
+                    self.conn.execute_batch("ROLLBACK;");
                 Err(e)
             }
         }
@@ -92,7 +113,10 @@ impl Database {
     /// Последовательные шаги миграции. Каждый `if version < N` — отдельная версия схемы,
     /// выполняется ровно один раз для каждой БД. Старые ветки никогда не редактируются задним числом —
     /// только добавляются новые.
-    fn run_migrations(&self, from_version: i32) -> Result<()> {
+    fn run_migrations(
+        &self,
+        from_version: i32,
+    ) -> Result<()> {
         if from_version < 1 {
             self.conn.execute_batch(
                 "
@@ -153,7 +177,11 @@ impl Database {
 
     // ---------- settings (key-value, updated_at для будущей cloud-синхронизации) ----------
 
-    pub fn set_setting(&self, key: &str, value: &str) -> Result<()> {
+    pub fn set_setting(
+        &self,
+        key: &str,
+        value: &str,
+    ) -> Result<()> {
         self.conn.execute(
             "INSERT INTO settings (key, value, updated_at) VALUES (?1, ?2, ?3)
              ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
@@ -163,7 +191,10 @@ impl Database {
     }
 
     /// Читает настройку по ключу без изменения схемы.
-    pub fn get_setting(&self, key: &str) -> Result<Option<String>> {
+    pub fn get_setting(
+        &self,
+        key: &str,
+    ) -> Result<Option<String>> {
         self.conn
             .query_row(
                 "SELECT value FROM settings WHERE key = ?1",
@@ -174,25 +205,37 @@ impl Database {
     }
 
     /// Возвращает сохранённые настройки для совместимого экспорта.
-    pub fn all_settings(&self) -> Result<Vec<(String, String, i64)>> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT key, value, updated_at FROM settings")?;
-        let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?;
+    pub fn all_settings(
+        &self,
+    ) -> Result<Vec<(String, String, i64)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT key, value, updated_at FROM settings",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        })?;
         rows.collect()
     }
 
     /// SQLCipher export сохраняет целостный снимок с новым ключом; WAL не копируется вслепую.
-    pub fn export_encrypted(&self, path: &Path, key: &str) -> Result<()> {
+    pub fn export_encrypted(
+        &self,
+        path: &Path,
+        key: &str,
+    ) -> Result<()> {
         if path.exists() {
-            return Err(rusqlite::Error::InvalidPath(path.to_owned()));
+            return Err(rusqlite::Error::InvalidPath(
+                path.to_owned(),
+            ));
         }
         self.conn.execute(
             "ATTACH DATABASE ?1 AS xopilot_export KEY ?2",
             params![path.to_string_lossy(), key],
         )?;
         let result=self.conn.execute_batch(&format!("SELECT sqlcipher_export('xopilot_export'); PRAGMA xopilot_export.user_version = {CURRENT_SCHEMA_VERSION};"));
-        let detach = self.conn.execute_batch("DETACH DATABASE xopilot_export");
+        let detach = self.conn.execute_batch(
+            "DETACH DATABASE xopilot_export",
+        );
         if result.is_err() || detach.is_err() {
             let _ = std::fs::remove_file(path);
         }
@@ -222,10 +265,13 @@ impl Database {
         attachments: &[(String, String)],
         elapsed_seconds: Option<f64>,
     ) -> Result<i64> {
-        if elapsed_seconds.is_some_and(|v| !v.is_finite() || v < 0.0) {
+        if elapsed_seconds
+            .is_some_and(|v| !v.is_finite() || v < 0.0)
+        {
             return Err(rusqlite::Error::InvalidQuery);
         }
-        let transaction = self.conn.unchecked_transaction()?;
+        let transaction =
+            self.conn.unchecked_transaction()?;
         transaction.execute(
             "INSERT INTO messages (chat_id, role, content, quote, reply_to, created_at, elapsed_seconds) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![chat_id, role, content, quote, reply_to, now(), elapsed_seconds],
@@ -245,7 +291,11 @@ impl Database {
 
     /// Правит текст уже отправленного сообщения (редактирование в UI). Цитату/ответ/вложения пока не трогает (известное ограничение, будет расширено при необходимости).
     /// Возвращает Ok(false), если сообщение с таким id не найдено.
-    pub fn update_message(&self, message_id: i64, content: &str) -> Result<bool> {
+    pub fn update_message(
+        &self,
+        message_id: i64,
+        content: &str,
+    ) -> Result<bool> {
         let affected = self.conn.execute(
             "UPDATE messages SET content = ?1 WHERE id = ?2",
             params![content, message_id],
@@ -260,7 +310,8 @@ impl Database {
         content: &str,
         attachments: &[(String, String)],
     ) -> Result<bool> {
-        let transaction = self.conn.unchecked_transaction()?;
+        let transaction =
+            self.conn.unchecked_transaction()?;
         let affected = transaction.execute(
             "UPDATE messages SET content = ?1 WHERE id = ?2",
             params![content, message_id],
@@ -283,7 +334,11 @@ impl Database {
     }
 
     /// Записывает длительность ответа после завершения генерации.
-    pub fn set_message_elapsed(&self, message_id: i64, seconds: f64) -> Result<bool> {
+    pub fn set_message_elapsed(
+        &self,
+        message_id: i64,
+        seconds: f64,
+    ) -> Result<bool> {
         if !seconds.is_finite() || seconds < 0.0 {
             return Err(rusqlite::Error::InvalidQuery);
         }
@@ -294,23 +349,28 @@ impl Database {
     }
 
     /// Загружает сообщения чата в порядке истории со всеми вложениями.
-    pub fn get_messages(&self, chat_id: i64) -> Result<Vec<StoredMessage>> {
+    pub fn get_messages(
+        &self,
+        chat_id: i64,
+    ) -> Result<Vec<StoredMessage>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, role, content, quote, reply_to, created_at, elapsed_seconds FROM messages WHERE chat_id = ?1 ORDER BY id ASC",
         )?;
-        let rows = stmt.query_map(params![chat_id], |row| {
-            Ok(StoredMessage {
-                id: row.get(0)?,
-                role: row.get(1)?,
-                content: row.get(2)?,
-                quote: row.get(3)?,
-                reply_to: row.get(4)?,
-                attachments: Vec::new(),
-                created_at: row.get(5)?,
-                elapsed_seconds: row.get(6)?,
-            })
-        })?;
-        let mut messages = rows.collect::<Result<Vec<_>>>()?;
+        let rows =
+            stmt.query_map(params![chat_id], |row| {
+                Ok(StoredMessage {
+                    id: row.get(0)?,
+                    role: row.get(1)?,
+                    content: row.get(2)?,
+                    quote: row.get(3)?,
+                    reply_to: row.get(4)?,
+                    attachments: Vec::new(),
+                    created_at: row.get(5)?,
+                    elapsed_seconds: row.get(6)?,
+                })
+            })?;
+        let mut messages =
+            rows.collect::<Result<Vec<_>>>()?;
 
         // N+1 на вложения — нормально для локального десктопа и типичного размера чата; при необходимости легко заменить на JOIN.
         let mut attach_stmt = self.conn.prepare(
@@ -318,7 +378,9 @@ impl Database {
         )?;
         for message in messages.iter_mut() {
             let attachments = attach_stmt
-                .query_map(params![message.id], |row| Ok((row.get(0)?, row.get(1)?)))?
+                .query_map(params![message.id], |row| {
+                    Ok((row.get(0)?, row.get(1)?))
+                })?
                 .collect::<Result<Vec<_>>>()?;
             message.attachments = attachments;
         }
@@ -327,16 +389,24 @@ impl Database {
     }
 
     /// Возвращает доступные ID, названия и даты разговоров.
-    pub fn list_chats(&self) -> Result<Vec<(i64, String, i64)>> {
+    pub fn list_chats(
+        &self,
+    ) -> Result<Vec<(i64, String, i64)>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, COALESCE(title, ''), created_at FROM chats ORDER BY created_at DESC",
         )?;
-        let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        })?;
         rows.collect()
     }
 
     /// Меняет название чата, не создавая новую историю.
-    pub fn rename_chat(&self, chat_id: i64, title: &str) -> Result<bool> {
+    pub fn rename_chat(
+        &self,
+        chat_id: i64,
+        title: &str,
+    ) -> Result<bool> {
         Ok(self.conn.execute(
             "UPDATE chats SET title = ?1 WHERE id = ?2",
             params![title, chat_id],
@@ -344,49 +414,74 @@ impl Database {
     }
 
     /// Собирает краткие сведения о разговорах для навигации.
-    pub fn list_chat_summaries(&self) -> Result<Vec<(i64, String, i64)>> {
+    pub fn list_chat_summaries(
+        &self,
+    ) -> Result<Vec<(i64, String, i64)>> {
         let mut stmt = self.conn.prepare(
             "SELECT c.id, COALESCE(c.title, ''), COUNT(m.id) FROM chats c
              LEFT JOIN messages m ON m.chat_id = c.id
              GROUP BY c.id ORDER BY c.created_at DESC, c.id DESC",
         )?;
-        stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
-            .collect()
+        stmt.query_map([], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        })?
+        .collect()
     }
 
     /// Удаляет все сообщения чата (вложения удаляются каскадно через FK). Сам чат остаётся.
-    pub fn clear_chat_messages(&self, chat_id: i64) -> Result<()> {
+    pub fn clear_chat_messages(
+        &self,
+        chat_id: i64,
+    ) -> Result<()> {
         let tx = self.conn.unchecked_transaction()?;
         tx.execute("DELETE FROM settings WHERE key IN (SELECT 'agent_actions_v1:' || id FROM messages WHERE chat_id=?1) OR key='agent_trace:' || ?1",params![chat_id])?;
-        tx.execute("DELETE FROM messages WHERE chat_id=?1", params![chat_id])?;
+        tx.execute(
+            "DELETE FROM messages WHERE chat_id=?1",
+            params![chat_id],
+        )?;
         tx.commit()?;
         Ok(())
     }
 
     /// Удаляет сообщение вместе с его карточками агента в одной транзакции.
-    pub fn delete_message(&self, message_id: i64) -> Result<bool> {
+    pub fn delete_message(
+        &self,
+        message_id: i64,
+    ) -> Result<bool> {
         let tx = self.conn.unchecked_transaction()?;
         tx.execute(
             "DELETE FROM settings WHERE key='agent_actions_v1:' || ?1",
             params![message_id],
         )?;
-        let deleted = tx.execute("DELETE FROM messages WHERE id=?1", params![message_id])? > 0;
+        let deleted = tx.execute(
+            "DELETE FROM messages WHERE id=?1",
+            params![message_id],
+        )? > 0;
         tx.commit()?;
         Ok(deleted)
     }
 
     /// Каскадно удаляет чат и его действия; освободившийся ID не унаследует старый журнал.
-    pub fn delete_chat(&self, chat_id: i64) -> Result<bool> {
+    pub fn delete_chat(
+        &self,
+        chat_id: i64,
+    ) -> Result<bool> {
         let tx = self.conn.unchecked_transaction()?;
         tx.execute("DELETE FROM settings WHERE key IN (SELECT 'agent_actions_v1:' || id FROM messages WHERE chat_id=?1) OR key='agent_trace:' || ?1",params![chat_id])?;
-        let deleted = tx.execute("DELETE FROM chats WHERE id=?1", params![chat_id])? > 0;
+        let deleted = tx.execute(
+            "DELETE FROM chats WHERE id=?1",
+            params![chat_id],
+        )? > 0;
         tx.commit()?;
         Ok(deleted)
     }
 
     /// Общее число сообщений во всех чатах — для статистики на странице «Аккаунт».
     /// A consistent semantic snapshot for the account-scoped sync bridge.
-    pub fn sync_chat_snapshot(&self, chat_id: i64) -> Result<Option<String>> {
+    pub fn sync_chat_snapshot(
+        &self,
+        chat_id: i64,
+    ) -> Result<Option<String>> {
         let header: Option<(String, i64)> = self
             .conn
             .query_row(
@@ -416,25 +511,38 @@ impl Database {
     ) -> Result<Option<i64>> {
         let tx = self.conn.unchecked_transaction()?;
         if let Some(id) = chat_id
-            && self.sync_chat_snapshot(id)?.as_deref() != expected
+            && self.sync_chat_snapshot(id)?.as_deref()
+                != expected
         {
             return Ok(None);
         }
         let id = if let Some(payload) = payload {
             let value: serde_json::Value =
-                serde_json::from_str(payload).map_err(|_| rusqlite::Error::InvalidQuery)?;
+                serde_json::from_str(payload).map_err(
+                    |_| rusqlite::Error::InvalidQuery,
+                )?;
             let title = value["title"]
                 .as_str()
                 .ok_or(rusqlite::Error::InvalidQuery)?;
-            let created = value["created_at"].as_i64().unwrap_or_else(now);
-            let messages: Vec<StoredMessage> = serde_json::from_value(value["messages"].clone())
-                .map_err(|_| rusqlite::Error::InvalidQuery)?;
+            let created = value["created_at"]
+                .as_i64()
+                .unwrap_or_else(now);
+            let messages: Vec<StoredMessage> =
+                serde_json::from_value(
+                    value["messages"].clone(),
+                )
+                .map_err(|_| {
+                    rusqlite::Error::InvalidQuery
+                })?;
             let id = if let Some(id) = chat_id {
                 tx.execute(
                     "UPDATE chats SET title=?1,created_at=?2 WHERE id=?3",
                     params![title, created, id],
                 )?;
-                tx.execute("DELETE FROM messages WHERE chat_id=?1", [id])?;
+                tx.execute(
+                    "DELETE FROM messages WHERE chat_id=?1",
+                    [id],
+                )?;
                 id
             } else {
                 tx.execute(
@@ -444,8 +552,12 @@ impl Database {
                 tx.last_insert_rowid()
             };
             for m in messages {
-                if m.elapsed_seconds.is_some_and(|v| !v.is_finite() || v < 0.0) {
-                    return Err(rusqlite::Error::InvalidQuery);
+                if m.elapsed_seconds.is_some_and(|v| {
+                    !v.is_finite() || v < 0.0
+                }) {
+                    return Err(
+                        rusqlite::Error::InvalidQuery,
+                    );
                 }
                 tx.execute("INSERT INTO messages(chat_id,role,content,quote,reply_to,created_at,elapsed_seconds) VALUES(?1,?2,?3,?4,?5,?6,?7)",params![id,m.role,m.content,m.quote,m.reply_to,m.created_at,m.elapsed_seconds])?;
                 let mid = tx.last_insert_rowid();
@@ -459,12 +571,17 @@ impl Database {
             id
         } else {
             if let Some(id) = chat_id {
-                tx.execute("DELETE FROM chats WHERE id=?1", [id])?;
+                tx.execute(
+                    "DELETE FROM chats WHERE id=?1",
+                    [id],
+                )?;
             }
             chat_id.unwrap_or(0)
         };
         let mut receipt: serde_json::Value =
-            serde_json::from_str(ledger).map_err(|_| rusqlite::Error::InvalidQuery)?;
+            serde_json::from_str(ledger).map_err(|_| {
+                rusqlite::Error::InvalidQuery
+            })?;
         if let Some(entity) = receipt
             .get("applying")
             .and_then(|v| v.as_str())
@@ -476,7 +593,10 @@ impl Database {
                 .and_then(|v| v.get_mut(&entity))
                 .and_then(|v| v.as_object_mut())
                 .ok_or(rusqlite::Error::InvalidQuery)?;
-            entry.insert("local_id".into(), serde_json::json!(id));
+            entry.insert(
+                "local_id".into(),
+                serde_json::json!(id),
+            );
             receipt
                 .as_object_mut()
                 .ok_or(rusqlite::Error::InvalidQuery)?
@@ -512,14 +632,20 @@ impl Database {
 
     /// Подсчитывает сообщения в зашифрованной базе.
     pub fn total_message_count(&self) -> Result<i64> {
-        self.conn
-            .query_row("SELECT COUNT(*) FROM messages", [], |row| row.get(0))
+        self.conn.query_row(
+            "SELECT COUNT(*) FROM messages",
+            [],
+            |row| row.get(0),
+        )
     }
 
     /// Текущая версия схемы этой ОТКРЫТОЙ БД (полезно для диагностики/UI «O приложении»).
     pub fn schema_version(&self) -> Result<i32> {
-        self.conn
-            .query_row("PRAGMA user_version", [], |row| row.get(0))
+        self.conn.query_row(
+            "PRAGMA user_version",
+            [],
+            |row| row.get(0),
+        )
     }
 }
 

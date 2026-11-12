@@ -13,18 +13,26 @@ use dioxus::prelude::*;
 
 /// Показывает состояние модели и действия справа внутри карточки.
 #[component]
-pub fn build_model_row(id: String, progress: Progress) -> Element {
+pub fn build_model_row(
+    id: String,
+    progress: Progress,
+) -> Element {
     let mut state = use_context::<Signal<AppState>>();
     let spec = model_installer::model(&id).unwrap();
-    let installed = model_installer::installed_path(spec).is_ok();
-    let running = ["downloading", "verifying", "waiting"].contains(&progress.phase.as_str());
+    let installed =
+        model_installer::installed_path(spec).is_ok();
+    let running = ["downloading", "verifying", "waiting"]
+        .contains(&progress.phase.as_str());
     let mut deleting = use_signal(|| false);
-    let selected = state.read().model_local && state.read().model == spec.name;
+    let selected = state.read().model_local
+        && state.read().model == spec.name;
     let status = match progress.phase.as_str() {
         "downloading" => "Загрузка",
         "verifying" => "Проверка SHA-256",
         "paused" => "На паузе",
-        "waiting" => "Android ожидает сеть и продолжит автоматически",
+        "waiting" => {
+            "Android ожидает сеть и продолжит автоматически"
+        }
         "error" => "Ошибка",
         _ => {
             if installed {

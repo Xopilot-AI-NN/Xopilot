@@ -17,17 +17,30 @@ pub fn snapshot() -> serde_json::Value {
 
 /// Записывает ZIP атомарно в exports. Отчёт создаётся только явным действием в UI.
 pub fn create() -> Result<PathBuf> {
-    let root = super::paths::app_data_dir()?.join("exports");
+    let root =
+        super::paths::app_data_dir()?.join("exports");
     std::fs::create_dir_all(&root)?;
-    let output = root.join(format!("diagnostics-{}.zip", uuid::Uuid::new_v4()));
-    let mut temporary = tempfile::NamedTempFile::new_in(&root)?;
+    let output = root.join(format!(
+        "diagnostics-{}.zip",
+        uuid::Uuid::new_v4()
+    ));
+    let mut temporary =
+        tempfile::NamedTempFile::new_in(&root)?;
     {
-        let mut archive = zip::ZipWriter::new(temporary.as_file_mut());
-        archive.start_file("diagnostics.json", zip::write::SimpleFileOptions::default())?;
-        archive.write_all(&serde_json::to_vec_pretty(&snapshot())?)?;
+        let mut archive =
+            zip::ZipWriter::new(temporary.as_file_mut());
+        archive.start_file(
+            "diagnostics.json",
+            zip::write::SimpleFileOptions::default(),
+        )?;
+        archive.write_all(&serde_json::to_vec_pretty(
+            &snapshot(),
+        )?)?;
         archive.finish()?;
     }
     temporary.as_file().sync_all()?;
-    temporary.persist(&output).map_err(|error| error.error)?;
+    temporary
+        .persist(&output)
+        .map_err(|error| error.error)?;
     Ok(output)
 }

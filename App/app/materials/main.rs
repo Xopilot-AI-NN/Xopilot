@@ -9,24 +9,31 @@ use dioxus::prelude::*;
 #[component]
 pub fn build_materials() -> Element {
     let state = use_context::<Signal<AppState>>();
-    let mut materials = use_signal(Vec::<(String, String)>::new);
+    let mut materials =
+        use_signal(Vec::<(String, String)>::new);
     let mut query = use_signal(String::new);
     use_future(move || async move {
         let result = async {
             let store = state::store(state)?;
-            let items = crate::services::runtime::blocking(move || {
-                store.with(|db| {
-                    let mut files = Vec::new();
-                    for (id, _, _) in db.list_chats()? {
-                        for message in db.get_messages(id)? {
-                            files.extend(message.attachments);
+            let items = crate::services::runtime::blocking(
+                move || {
+                    store.with(|db| {
+                        let mut files = Vec::new();
+                        for (id, _, _) in db.list_chats()? {
+                            for message in
+                                db.get_messages(id)?
+                            {
+                                files.extend(
+                                    message.attachments,
+                                );
+                            }
                         }
-                    }
-                    files.sort();
-                    files.dedup();
-                    Ok(files)
-                })
-            })
+                        files.sort();
+                        files.dedup();
+                        Ok(files)
+                    })
+                },
+            )
             .await?;
             materials.set(items);
             Ok(())

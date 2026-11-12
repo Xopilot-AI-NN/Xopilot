@@ -15,16 +15,25 @@ pub(crate) fn with_context<T>(
 ) -> Result<T> {
     let context = ndk_context::android_context();
     // VM и Activity принадлежат Dioxus/wry и живут до завершения Activity.
-    let vm = unsafe { JavaVM::from_raw(context.vm().cast()) };
+    let vm =
+        unsafe { JavaVM::from_raw(context.vm().cast()) };
     vm.attach_current_thread(|env| {
         let result = env.with_local_frame(96, |env| {
             // Activity — глобальная ссылка Tao. Создаём собственную локальную
             // ссылку перед передачей владения JObject в текущий JNI frame.
             let raw_env = env.get_raw();
-            let local =
-                unsafe { ((**raw_env).v1_2.NewLocalRef)(raw_env, context.context().cast()) };
-            ensure!(!local.is_null(), "Не удалось получить Android Activity");
-            let activity = unsafe { JObject::from_raw(env, local) };
+            let local = unsafe {
+                ((**raw_env).v1_2.NewLocalRef)(
+                    raw_env,
+                    context.context().cast(),
+                )
+            };
+            ensure!(
+                !local.is_null(),
+                "Не удалось получить Android Activity"
+            );
+            let activity =
+                unsafe { JObject::from_raw(env, local) };
             call(env, activity)
         });
         if env.exception_check() {
@@ -50,13 +59,21 @@ pub fn move_to_background() -> Result<()> {
 /// Отмечает готовый интерфейс после кадра и шрифтов для честного Android startup timing.
 pub fn report_fully_drawn() -> Result<()> {
     with_context(|env, activity| {
-        env.call_method(activity, jni_str!("reportFullyDrawn"), jni_sig!("()V"), &[])?;
+        env.call_method(
+            activity,
+            jni_str!("reportFullyDrawn"),
+            jni_sig!("()V"),
+            &[],
+        )?;
         Ok(())
     })
 }
 
 /// Преобразует Java String в Rust с проверкой JNI-ошибок.
-fn java_string(env: &mut Env<'_>, object: JObject<'_>) -> Result<Option<String>> {
+fn java_string(
+    env: &mut Env<'_>,
+    object: JObject<'_>,
+) -> Result<Option<String>> {
     if object.is_null() {
         return Ok(None);
     }
@@ -64,7 +81,9 @@ fn java_string(env: &mut Env<'_>, object: JObject<'_>) -> Result<Option<String>>
     Ok(Some(string.try_to_string(env)?))
 }
 
-#[derive(Clone, Copy, Default, PartialEq, serde::Serialize)]
+#[derive(
+    Clone, Copy, Default, PartialEq, serde::Serialize,
+)]
 pub struct WindowInsets {
     pub top: i32,
     pub right: i32,
@@ -112,7 +131,9 @@ pub fn window_insets() -> Result<Option<WindowInsets>> {
         if sdk >= 30 {
             let bars = env
                 .call_static_method(
-                    jni_str!("android/view/WindowInsets$Type"),
+                    jni_str!(
+                        "android/view/WindowInsets$Type"
+                    ),
                     jni_str!("systemBars"),
                     jni_sig!("()I"),
                     &[],
@@ -120,7 +141,9 @@ pub fn window_insets() -> Result<Option<WindowInsets>> {
                 .i()?;
             let cutout = env
                 .call_static_method(
-                    jni_str!("android/view/WindowInsets$Type"),
+                    jni_str!(
+                        "android/view/WindowInsets$Type"
+                    ),
                     jni_str!("displayCutout"),
                     jni_sig!("()I"),
                     &[],
@@ -130,27 +153,52 @@ pub fn window_insets() -> Result<Option<WindowInsets>> {
                 .call_method(
                     insets,
                     jni_str!("getInsets"),
-                    jni_sig!("(I)Landroid/graphics/Insets;"),
+                    jni_sig!(
+                        "(I)Landroid/graphics/Insets;"
+                    ),
                     &[JValue::Int(bars | cutout)],
                 )?
                 .l()?;
             Ok(Some(WindowInsets {
-                top: env.get_field(&edges, jni_str!("top"), jni_sig!("I"))?.i()?,
+                top: env
+                    .get_field(
+                        &edges,
+                        jni_str!("top"),
+                        jni_sig!("I"),
+                    )?
+                    .i()?,
                 right: env
-                    .get_field(&edges, jni_str!("right"), jni_sig!("I"))?
+                    .get_field(
+                        &edges,
+                        jni_str!("right"),
+                        jni_sig!("I"),
+                    )?
                     .i()?,
                 bottom: env
-                    .get_field(&edges, jni_str!("bottom"), jni_sig!("I"))?
+                    .get_field(
+                        &edges,
+                        jni_str!("bottom"),
+                        jni_sig!("I"),
+                    )?
                     .i()?,
                 left: env
-                    .get_field(&edges, jni_str!("left"), jni_sig!("I"))?
+                    .get_field(
+                        &edges,
+                        jni_str!("left"),
+                        jni_sig!("I"),
+                    )?
                     .i()?,
             }))
         } else {
             // API 26–29: стабильные отступы исключают высоту клавиатуры.
             Ok(Some(WindowInsets {
                 top: env
-                    .call_method(&insets, jni_str!("getStableInsetTop"), jni_sig!("()I"), &[])?
+                    .call_method(
+                        &insets,
+                        jni_str!("getStableInsetTop"),
+                        jni_sig!("()I"),
+                        &[],
+                    )?
                     .i()?,
                 right: env
                     .call_method(
@@ -188,15 +236,23 @@ pub fn open_url(url: &str) -> Result<()> {
             .call_static_method(
                 jni_str!("android/net/Uri"),
                 jni_str!("parse"),
-                jni_sig!("(Ljava/lang/String;)Landroid/net/Uri;"),
+                jni_sig!(
+                    "(Ljava/lang/String;)Landroid/net/Uri;"
+                ),
                 &[JValue::Object(&text)],
             )?
             .l()?;
-        let action = env.new_string("android.intent.action.VIEW")?;
+        let action =
+            env.new_string("android.intent.action.VIEW")?;
         let intent = env.new_object(
             jni_str!("android/content/Intent"),
-            jni_sig!("(Ljava/lang/String;Landroid/net/Uri;)V"),
-            &[JValue::Object(&action), JValue::Object(&uri)],
+            jni_sig!(
+                "(Ljava/lang/String;Landroid/net/Uri;)V"
+            ),
+            &[
+                JValue::Object(&action),
+                JValue::Object(&uri),
+            ],
         )?;
         env.call_method(
             &activity,
@@ -227,8 +283,11 @@ pub fn data_dir() -> Result<PathBuf> {
                 &[],
             )?
             .l()?;
-        let files =
-            PathBuf::from(java_string(env, absolute)?.context("Android не предоставил filesDir")?);
+        let files = PathBuf::from(
+            java_string(env, absolute)?.context(
+                "Android не предоставил filesDir",
+            )?,
+        );
         // В прежних сборках private root мог лежать глубже filesDir.
         let mut histories = Vec::new();
         find_history(&files, 0, &mut histories)?;
@@ -236,12 +295,18 @@ pub fn data_dir() -> Result<PathBuf> {
             histories.len() <= 1,
             "Найдено несколько историй. Автоматический выбор отключён, данные не изменены"
         );
-        Ok(histories.pop().unwrap_or_else(|| files.join("Xopilot")))
+        Ok(histories
+            .pop()
+            .unwrap_or_else(|| files.join("Xopilot")))
     })
 }
 
 /// Ищет существующую историю в совместимых каталогах приложения.
-fn find_history(dir: &Path, depth: usize, found: &mut Vec<PathBuf>) -> Result<()> {
+fn find_history(
+    dir: &Path,
+    depth: usize,
+    found: &mut Vec<PathBuf>,
+) -> Result<()> {
     if dir.join("xopilot.db").is_file() {
         found.push(dir.to_owned());
         return Ok(());
@@ -252,8 +317,12 @@ fn find_history(dir: &Path, depth: usize, found: &mut Vec<PathBuf>) -> Result<()
     for entry in std::fs::read_dir(dir)? {
         let entry = entry?;
         if entry.file_type()?.is_dir()
-            && !["cache", "models", "materials"]
-                .contains(&entry.file_name().to_string_lossy().as_ref())
+            && !["cache", "models", "materials"].contains(
+                &entry
+                    .file_name()
+                    .to_string_lossy()
+                    .as_ref(),
+            )
         {
             find_history(&entry.path(), depth + 1, found)?;
         }
@@ -317,7 +386,8 @@ pub fn database_key(existing: bool) -> Result<String> {
             jni_sig!("(Ljava/io/InputStream;[C)V"),
             &[JValue::Object(&null), JValue::Object(&null)],
         )?;
-        let alias = env.new_string("xopilot.database.v1")?;
+        let alias =
+            env.new_string("xopilot.database.v1")?;
         let has_alias = env
             .call_method(
                 &store,
@@ -352,7 +422,11 @@ pub fn database_key(existing: bool) -> Result<String> {
                 &[JValue::Int(256)],
             )?;
             let gcm = env.new_string("GCM")?;
-            let modes = env.new_object_array(1, jni_str!("java/lang/String"), &gcm)?;
+            let modes = env.new_object_array(
+                1,
+                jni_str!("java/lang/String"),
+                &gcm,
+            )?;
             env.call_method(
                 &builder,
                 jni_str!("setBlockModes"),
@@ -362,7 +436,11 @@ pub fn database_key(existing: bool) -> Result<String> {
                 &[JValue::Object(&modes)],
             )?;
             let padding = env.new_string("NoPadding")?;
-            let paddings = env.new_object_array(1, jni_str!("java/lang/String"), &padding)?;
+            let paddings = env.new_object_array(
+                1,
+                jni_str!("java/lang/String"),
+                &padding,
+            )?;
             env.call_method(
                 &builder,
                 jni_str!("setEncryptionPaddings"),
@@ -400,7 +478,8 @@ pub fn database_key(existing: bool) -> Result<String> {
                 &[JValue::Object(&alias), JValue::Object(&null)],
             )?
             .l()?;
-        let transformation = env.new_string("AES/GCM/NoPadding")?;
+        let transformation =
+            env.new_string("AES/GCM/NoPadding")?;
         let cipher = env
             .call_static_method(
                 jni_str!("javax/crypto/Cipher"),
@@ -411,9 +490,13 @@ pub fn database_key(existing: bool) -> Result<String> {
             .l()?;
         let mut secret;
         if let (Some(wrapped), Some(iv)) = (wrapped, iv) {
-            let iv = env.byte_array_from_slice(&BASE64_STANDARD.decode(iv)?)?;
+            let iv = env.byte_array_from_slice(
+                &BASE64_STANDARD.decode(iv)?,
+            )?;
             let params = env.new_object(
-                jni_str!("javax/crypto/spec/GCMParameterSpec"),
+                jni_str!(
+                    "javax/crypto/spec/GCMParameterSpec"
+                ),
                 jni_sig!("(I[B)V"),
                 &[JValue::Int(128), JValue::Object(&iv)],
             )?;
@@ -427,7 +510,9 @@ pub fn database_key(existing: bool) -> Result<String> {
                     JValue::Object(&params),
                 ],
             )?;
-            let bytes = env.byte_array_from_slice(&BASE64_STANDARD.decode(wrapped)?)?;
+            let bytes = env.byte_array_from_slice(
+                &BASE64_STANDARD.decode(wrapped)?,
+            )?;
             let bytes = env
                 .call_method(
                     &cipher,
@@ -437,12 +522,16 @@ pub fn database_key(existing: bool) -> Result<String> {
                 )?
                 .l()?;
             secret = {
-                let array = JByteArray::cast_local(env, bytes)?;
+                let array =
+                    JByteArray::cast_local(env, bytes)?;
                 env.convert_byte_array(array)?
             };
         } else {
-            let random =
-                env.new_object(jni_str!("java/security/SecureRandom"), jni_sig!("()V"), &[])?;
+            let random = env.new_object(
+                jni_str!("java/security/SecureRandom"),
+                jni_sig!("()V"),
+                &[],
+            )?;
             let bytes = env.new_byte_array(32)?;
             env.call_method(
                 random,
@@ -466,14 +555,21 @@ pub fn database_key(existing: bool) -> Result<String> {
                 )?
                 .l()?;
             let encrypted = {
-                let array = JByteArray::cast_local(env, encrypted)?;
+                let array =
+                    JByteArray::cast_local(env, encrypted)?;
                 env.convert_byte_array(array)?
             };
             let iv = env
-                .call_method(cipher, jni_str!("getIV"), jni_sig!("()[B"), &[])?
+                .call_method(
+                    cipher,
+                    jni_str!("getIV"),
+                    jni_sig!("()[B"),
+                    &[],
+                )?
                 .l()?;
             let iv = {
-                let array = JByteArray::cast_local(env, iv)?;
+                let array =
+                    JByteArray::cast_local(env, iv)?;
                 env.convert_byte_array(array)?
             };
             let editor = env
@@ -485,21 +581,32 @@ pub fn database_key(existing: bool) -> Result<String> {
                 )?
                 .l()?;
             for (field, value) in [
-                (&database_field, BASE64_STANDARD.encode(encrypted)),
+                (
+                    &database_field,
+                    BASE64_STANDARD.encode(encrypted),
+                ),
                 (&iv_field, BASE64_STANDARD.encode(iv)),
             ] {
                 let value = env.new_string(value)?;
                 env.call_method(&editor, jni_str!("putString"), jni_sig!("(Ljava/lang/String;Ljava/lang/String;)Landroid/content/SharedPreferences$Editor;"), &[JValue::Object(field), JValue::Object(&value)])?;
             }
             if !env
-                .call_method(editor, jni_str!("commit"), jni_sig!("()Z"), &[])?
+                .call_method(
+                    editor,
+                    jni_str!("commit"),
+                    jni_sig!("()Z"),
+                    &[],
+                )?
                 .z()?
             {
                 secret.fill(0);
                 bail!("Не удалось сохранить ключ истории");
             }
         }
-        ensure!(secret.len() == 32, "Некорректный ключ истории");
+        ensure!(
+            secret.len() == 32,
+            "Некорректный ключ истории"
+        );
         let hex = hex::encode(&secret);
         secret.fill(0);
         Ok(hex)

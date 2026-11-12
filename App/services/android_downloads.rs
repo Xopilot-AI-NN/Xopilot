@@ -37,7 +37,12 @@ fn state() -> &'static Mutex<State> {
             .ok()
             .and_then(|p| std::fs::read(p).ok())
             .filter(|b| b.len() <= 16_384)
-            .and_then(|b| serde_json::from_slice::<HashMap<String, i64>>(&b).ok())
+            .and_then(|b| {
+                serde_json::from_slice::<
+                        HashMap<String, i64>,
+                    >(&b)
+                    .ok()
+            })
             .unwrap_or_default();
         Mutex::new(State {
             tickets,
@@ -47,27 +52,36 @@ fn state() -> &'static Mutex<State> {
 }
 /// Выбирает метаданные возобновления рядом с каталогом весов.
 fn metadata() -> Result<PathBuf> {
-    Ok(super::paths::models_dir()?.join("android-downloads.json"))
+    Ok(super::paths::models_dir()?
+        .join("android-downloads.json"))
 }
 /// Заменяет метаданные атомарно, чтобы выключение процесса не теряло системный ID.
 fn save(value: &State) -> Result<()> {
     use std::io::Write;
     let path = metadata()?;
     std::fs::create_dir_all(path.parent().unwrap())?;
-    let mut temporary = tempfile::NamedTempFile::new_in(path.parent().unwrap())?;
-    temporary.write_all(&serde_json::to_vec(&value.tickets)?)?;
+    let mut temporary = tempfile::NamedTempFile::new_in(
+        path.parent().unwrap(),
+    )?;
+    temporary
+        .write_all(&serde_json::to_vec(&value.tickets)?)?;
     temporary.as_file().sync_all()?;
     temporary.persist(path).map_err(|e| e.error)?;
     Ok(())
 }
 /// Возвращает Android-сервис через Application Context, без отдельного Java/Kotlin сервиса.
-fn manager<'a>(env: &mut Env<'a>, activity: &JObject<'_>) -> Result<JObject<'a>> {
+fn manager<'a>(
+    env: &mut Env<'a>,
+    activity: &JObject<'_>,
+) -> Result<JObject<'a>> {
     let name = env.new_string("download")?;
     let service = env
         .call_method(
             activity,
             jni_str!("getSystemService"),
-            jni_sig!("(Ljava/lang/String;)Ljava/lang/Object;"),
+            jni_sig!(
+                "(Ljava/lang/String;)Ljava/lang/Object;"
+            ),
             &[JValue::Object(&name)],
         )?
         .l()?;
@@ -84,11 +98,16 @@ fn staging(spec: Model) -> Result<PathBuf> {
             .call_method(
                 &activity,
                 jni_str!("getExternalFilesDir"),
-                jni_sig!("(Ljava/lang/String;)Ljava/io/File;"),
+                jni_sig!(
+                    "(Ljava/lang/String;)Ljava/io/File;"
+                ),
                 &[JValue::Object(&JObject::null())],
             )?
             .l()?;
-        ensure!(!file.is_null(), "Android не предоставил каталог загрузки");
+        ensure!(
+            !file.is_null(),
+            "Android не предоставил каталог загрузки"
+        );
         let path = env
             .call_method(
                 file,
@@ -97,7 +116,8 @@ fn staging(spec: Model) -> Result<PathBuf> {
                 &[],
             )?
             .l()?;
-        let path = JString::cast_local(env, path)?.try_to_string(env)?;
+        let path = JString::cast_local(env, path)?
+            .try_to_string(env)?;
         Ok(PathBuf::from(path)
             .join("models")
             .join(format!("{}.download", spec.filename)))
@@ -116,7 +136,9 @@ fn enqueue(spec: Model) -> Result<i64> {
             .call_static_method(
                 jni_str!("android/net/Uri"),
                 jni_str!("parse"),
-                jni_sig!("(Ljava/lang/String;)Landroid/net/Uri;"),
+                jni_sig!(
+                    "(Ljava/lang/String;)Landroid/net/Uri;"
+                ),
                 &[JValue::Object(&url)],
             )?
             .l()?;
@@ -125,7 +147,10 @@ fn enqueue(spec: Model) -> Result<i64> {
             jni_sig!("(Landroid/net/Uri;)V"),
             &[JValue::Object(&uri)],
         )?;
-        let title = env.new_string(format!("Xopilot · {}", spec.name))?;
+        let title = env.new_string(format!(
+            "Xopilot · {}",
+            spec.name
+        ))?;
         env.call_method(
             &request,
             jni_str!("setTitle"),
@@ -142,16 +167,23 @@ fn enqueue(spec: Model) -> Result<i64> {
         env.call_method(
             &request,
             jni_str!("setNotificationVisibility"),
-            jni_sig!("(I)Landroid/app/DownloadManager$Request;"),
+            jni_sig!(
+                "(I)Landroid/app/DownloadManager$Request;"
+            ),
             &[JValue::Int(1)],
         )?;
-        let file_uri = env.new_string(format!("file://{}", destination.display()))?;
+        let file_uri = env.new_string(format!(
+            "file://{}",
+            destination.display()
+        ))?;
         // setDestinationUri принимает файл в app-specific каталоге и не требует STORAGE permission.
         let uri = env
             .call_static_method(
                 jni_str!("android/net/Uri"),
                 jni_str!("parse"),
-                jni_sig!("(Ljava/lang/String;)Landroid/net/Uri;"),
+                jni_sig!(
+                    "(Ljava/lang/String;)Landroid/net/Uri;"
+                ),
                 &[JValue::Object(&file_uri)],
             )?
             .l()?;
@@ -193,7 +225,9 @@ fn query(id: i64) -> Result<Option<Status>> {
         env.call_method(
             &query,
             jni_str!("setFilterById"),
-            jni_sig!("([J)Landroid/app/DownloadManager$Query;"),
+            jni_sig!(
+                "([J)Landroid/app/DownloadManager$Query;"
+            ),
             &[JValue::Object(&filter)],
         )?;
         let manager = manager(env, &activity)?;
@@ -211,7 +245,12 @@ fn query(id: i64) -> Result<Option<Status>> {
         );
         let result = (|| -> Result<Option<Status>> {
             if !env
-                .call_method(&cursor, jni_str!("moveToFirst"), jni_sig!("()Z"), &[])?
+                .call_method(
+                    &cursor,
+                    jni_str!("moveToFirst"),
+                    jni_sig!("()Z"),
+                    &[],
+                )?
                 .z()?
             {
                 return Ok(None);
@@ -243,7 +282,12 @@ fn query(id: i64) -> Result<Option<Status>> {
                 reason: get("reason")? as i32,
             }))
         })();
-        let _ = env.call_method(cursor, jni_str!("close"), jni_sig!("()V"), &[]);
+        let _ = env.call_method(
+            cursor,
+            jni_str!("close"),
+            jni_sig!("()V"),
+            &[],
+        );
         result
     })
 }
@@ -276,7 +320,9 @@ pub fn progress(id: &str) -> Option<Progress> {
 pub fn start(spec: Model) -> Result<()> {
     let existing = state()
         .lock()
-        .map_err(|_| anyhow::anyhow!("Реестр загрузок занят"))?
+        .map_err(|_| {
+            anyhow::anyhow!("Реестр загрузок занят")
+        })?
         .tickets
         .get(spec.id)
         .copied();
@@ -289,9 +335,9 @@ pub fn start(spec: Model) -> Result<()> {
     }
     let id = enqueue(spec)?;
     let result = (|| {
-        let mut value = state()
-            .lock()
-            .map_err(|_| anyhow::anyhow!("Реестр загрузок занят"))?;
+        let mut value = state().lock().map_err(|_| {
+            anyhow::anyhow!("Реестр загрузок занят")
+        })?;
         value.tickets.insert(spec.id.into(), id);
         value.progress.insert(
             spec.id.into(),
@@ -314,9 +360,9 @@ pub fn cancel(id: &str) -> Result<()> {
     // Держим один guard от проверки до удаления квитанции. Иначе monitor может
     // начать SHA-проверку между двумя lock(), а отмена удалит читаемый им файл.
     // Системный remove короткий; многогигабайтное копирование под mutex не идёт.
-    let mut value = state()
-        .lock()
-        .map_err(|_| anyhow::anyhow!("Реестр загрузок занят"))?;
+    let mut value = state().lock().map_err(|_| {
+        anyhow::anyhow!("Реестр загрузок занят")
+    })?;
     ensure!(
         !value.verifying.contains(id),
         "Дождитесь окончания проверки модели"

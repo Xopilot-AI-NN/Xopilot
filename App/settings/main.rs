@@ -27,7 +27,11 @@ const SECTIONS: &[(&str, &str, &str)] = &[
         "Модели",
         "Загрузка Gemma 4 и голосов Live",
     ),
-    ("history", "История", "Удаление и управление сообщениями"),
+    (
+        "history",
+        "История",
+        "Удаление и управление сообщениями",
+    ),
     (
         "system_update_outlined",
         "Обновления",
@@ -35,7 +39,7 @@ const SECTIONS: &[(&str, &str, &str)] = &[
     ),
     (
         "info_outline",
-        "О программе",
+        "О приложении",
         "Версия, описание и разработчик",
     ),
 ];
@@ -48,8 +52,11 @@ pub fn build_settings_dialog() -> Element {
     let title = selected
         .map(|index| SECTIONS[index].1)
         .unwrap_or("Настройки");
-    let back =
-        selected.map(|_| EventHandler::new(move |_| state::select_settings_section(state, None)));
+    let back = selected.map(|_| {
+        EventHandler::new(move |_| {
+            state::select_settings_section(state, None)
+        })
+    });
     rsx! {
         dialog::build_dialog {
             title,

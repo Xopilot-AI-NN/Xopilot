@@ -24,7 +24,9 @@ pub fn build_canvas_dialog() -> Element {
     let mut dirty = use_signal(|| false);
     let mut pending = use_signal(|| None::<Document>);
     let mut deleting = use_signal(|| false);
-    use_effect(move || state.write().unsaved = *dirty.read());
+    use_effect(move || {
+        state.write().unsaved = *dirty.read()
+    });
     use_drop(move || state.write().unsaved = false);
     let _load = use_resource(move || {
         let _revision = *revision.read();
@@ -32,7 +34,12 @@ pub fn build_canvas_dialog() -> Element {
             let result = async {
                 let store = state::store(state)?;
                 docs.set(
-                    services::runtime::blocking(move || canvases::list_documents(&store)).await?,
+                    services::runtime::blocking(
+                        move || {
+                            canvases::list_documents(&store)
+                        },
+                    )
+                    .await?,
                 );
                 Ok(())
             }

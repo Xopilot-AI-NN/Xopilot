@@ -1,14 +1,19 @@
 // Описание: Поиск, чтение, Git и сохранение с обнаружением внешних правок.
 use crate::{
     app::state::{self, AppState},
-    services::{self, project_inspection, project_tools, workspaces::Workspace},
+    services::{
+        self, project_inspection, project_tools,
+        workspaces::Workspace,
+    },
 };
 use dioxus::prelude::*;
 use std::path::PathBuf;
 
 /// Читает и сохраняет файл проекта с проверкой внешней правки.
 #[component]
-pub fn build_project_editor(workspace: Workspace) -> Element {
+pub fn build_project_editor(
+    workspace: Workspace,
+) -> Element {
     let mut state = use_context::<Signal<AppState>>();
     let mut path = use_signal(String::new);
     let mut content = use_signal(String::new);
@@ -18,7 +23,9 @@ pub fn build_project_editor(workspace: Workspace) -> Element {
     let mut output = use_signal(String::new);
     let mut dirty = use_signal(|| false);
     let mut closing = use_signal(|| false);
-    use_effect(move || state.write().unsaved = *dirty.read());
+    use_effect(move || {
+        state.write().unsaved = *dirty.read()
+    });
     use_drop(move || state.write().unsaved = false);
     let root = PathBuf::from(&workspace.folder);
     rsx! {

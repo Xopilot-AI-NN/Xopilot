@@ -1,0 +1,190 @@
+// Создано ChatGPT для Xopilot: диагностическая трассировка шагов выполнения.
+// Содержимое файлов и значения переменных не записываются без отдельного согласия.
+
+use serde_json::json;
+use std::fmt::Debug;
+use std::fs::{self, File, OpenOptions};
+use std::io::{self, Write};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
+
+struct TraceState {
+    started: Instant,
+    sequence: AtomicU64,
+    output: Mutex<File>,
+}
+
+static STATE: OnceLock<Option<TraceState>> = OnceLock::new();
+
+fn state() -> Option<&'static TraceState> {
+    STATE
+        .get_or_init(|| {
+            if std::env::var("XOPILOT_FLOW_TRACE").as_deref() != Ok("1") {
+                return None;
+            }
+
+            let path = std::env::var_os("XOPILOT_FLOW_PATH")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| {
+                    PathBuf::from(format!(
+                        "target/flow-traces/xopilot-{}.jsonl",
+                        std::process::id()
+                    ))
+                });
+
+            let result = (|| -> io::Result<File> {
+                if let Some(parent) = path.parent().filter(|parent| !parent.as_os_str().is_empty()) {
+                    fs::create_dir_all(parent)?;
+                }
+                let mut options = OpenOptions::new();
+                options.create(true).append(true);
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::OpenOptionsExt;
+                    options.mode(0o600);
+                }
+                options.open(&path)
+            })();
+
+            match result {
+                Ok(file) => {
+                    eprintln!("[Flow Map] Трассировка: {}", path.display());
+                    Some(TraceState {
+                        started: Instant::now(),
+                        sequence: AtomicU64::new(0),
+                        output: Mutex::new(file),
+                    })
+                }
+                Err(err) => {
+                    eprintln!("[Flow Map] Не удалось открыть трассировку: {err}");
+                    None
+                }
+            }
+        })
+        .as_ref()
+}
+
+fn record(kind: &str, name: &str, detail: &str) {
+    let Some(state) = state() else {
+        return;
+    };
+    let event = json!({
+        "seq": state.sequence.fetch_add(1, Ordering::Relaxed) + 1,
+        "ms": state.started.elapsed().as_millis(),
+        "kind": kind,
+        "name": name,
+        "detail": detail,
+        "thread": format!("{:?}", std::thread::current().id()),
+    });
+    if let Ok(mut file) = state.output.lock() {
+        // По одной JSON-строке на событие; сбой записи не должен обрушать приложение.
+        let _ = writeln!(file, "{event}");
+    }
+}
+
+pub fn begin(name: &str) {
+    record("start", name, "");
+}
+
+pub fn step(name: &str) {
+    record("step", name, "");
+}
+
+pub fn call(name: &str) {
+    record("call", name, "");
+}
+
+pub fn decision(name: &str, condition: bool) {
+    record("branch", name, if condition { "true" } else { "false" });
+}
+
+pub fn error(name: &str, err: &impl std::fmt::Display) {
+    record("error", name, &err.to_string());
+}
+
+pub fn end(name: &str) {
+    record("end", name, "");
+}
+
+/// Значение записывается только при XOPILOT_FLOW_VALUES=1.
+/// Не передавай сюда секреты, токены, пароли или содержимое пользовательских чатов.
+pub fn variable(name: &str, value: &impl Debug) {
+    if state().is_none() {
+        return;
+    }
+    let detail = if std::env::var("XOPILOT_FLOW_VALUES").as_deref() == Ok("1") {
+        let rendered = format!("{value:?}");
+        truncate_utf8(&rendered, 200)
+    } else {
+        "[значение скрыто; XOPILOT_FLOW_VALUES=1]".to_string()
+    };
+    record("variable", name, &detail);
+}
+
+fn truncate_utf8(value: &str, max_chars: usize) -> String {
+    let mut chars = value.chars();
+    let result: String = chars.by_ref().take(max_chars).collect();
+    if chars.next().is_some() {
+        format!("{result}…")
+    } else {
+        result
+    }
+}
+
+/// Обёртка для чтения файла. Содержимое не сохраняется в трассировке.
+pub fn read_to_string(path: &Path) -> io::Result<String> {
+    let started = Instant::now();
+    record("file_read", "Чтение файла", &path.display().to_string());
+    match fs::read_to_string(path) {
+        Ok(content) => {
+            record(
+                "step",
+                "Файл прочитан",
+                &format!("{} байт, {} мс", content.len(), elapsed_ms(started.elapsed())),
+            );
+            Ok(content)
+        }
+        Err(err) => {
+            error("Ошибка чтения файла", &err);
+            Err(err)
+        }
+    }
+}
+
+/// Обёртка для записи. ВНИМАНИЕ: std::fs::write перезаписывает существующий файл.
+pub fn write(path: &Path, content: &str) -> io::Result<()> {
+    let started = Instant::now();
+    record("file_write", "Запись файла", &path.display().to_string());
+    match fs::write(path, content) {
+        Ok(()) => {
+            record(
+                "step",
+                "Файл записан",
+                &format!("{} байт, {} мс", content.len(), elapsed_ms(started.elapsed())),
+            );
+            Ok(())
+        }
+        Err(err) => {
+            error("Ошибка записи файла", &err);
+            Err(err)
+        }
+    }
+}
+
+fn elapsed_ms(duration: Duration) -> u128 {
+    duration.as_millis()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::truncate_utf8;
+
+    #[test]
+    fn utf8_truncation_preserves_char_boundaries() {
+        assert_eq!(truncate_utf8("абвг", 3), "абв…");
+        assert_eq!(truncate_utf8("hello", 5), "hello");
+        assert_eq!(truncate_utf8("", 3), "");
+    }
+}

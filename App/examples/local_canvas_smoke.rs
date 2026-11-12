@@ -1,18 +1,23 @@
 // Описание: Настоящие разговоры Gemma о Canvas, проверка результата и единственной загрузки весов.
 use anyhow::Result;
-use xopilot::services::{self, agent, db::Store, generation::Configuration};
+use xopilot::services::{
+    self, agent, db::Store, generation::Configuration,
+};
 
 /// Повторяет три последовательных вопроса через тот же путь контекста, что и интерфейс.
 fn main() -> Result<()> {
-    let path = std::env::args()
-        .nth(1)
-        .ok_or_else(|| anyhow::anyhow!("Укажите .litertlm"))?;
-    let store = Store::new(advanced_xopilot::db::Database::open(
-        ":memory:",
-        &"d".repeat(64),
-    )?);
+    let path =
+        std::env::args().nth(1).ok_or_else(|| {
+            anyhow::anyhow!("Укажите .litertlm")
+        })?;
+    let store =
+        Store::new(advanced_xopilot::db::Database::open(
+            ":memory:",
+            &"d".repeat(64),
+        )?);
     services::profile::ensure_local(&store)?;
-    let chat = store.with(|db| Ok(db.create_chat("Canvas smoke")?))?;
+    let chat = store
+        .with(|db| Ok(db.create_chat("Canvas smoke")?))?;
     let questions = [
         "Привет!",
         "Сколько у меня канвасов? Проверь список.",

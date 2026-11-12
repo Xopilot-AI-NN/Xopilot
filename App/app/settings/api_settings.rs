@@ -24,7 +24,10 @@ pub fn build_api_settings() -> Element {
         let result = async {
             let store = state::store(state)?;
             let config =
-                services::runtime::blocking(move || api_chat::configuration(&store)).await?;
+                services::runtime::blocking(move || {
+                    api_chat::configuration(&store)
+                })
+                .await?;
             url.set(config.url);
             model.set(config.model);
             key.set(config.key);

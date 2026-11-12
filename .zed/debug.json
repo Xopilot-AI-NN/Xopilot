@@ -1,0 +1,23 @@
+[
+  {
+    "label": "Xopilot: Debug Desktop",
+    "adapter": "CodeLLDB",
+    "request": "launch",
+    "program": "$ZED_WORKTREE_ROOT/target/debug/xopilot",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "sourceLanguages": [
+      "rust"
+    ],
+    "build": {
+      "command": "cargo",
+      "args": [
+        "build",
+        "-p",
+        "xopilot",
+        "--features",
+        "desktop",
+        "--locked"
+      ]
+    }
+  }
+]

@@ -7,7 +7,9 @@ use std::collections::{BTreeMap, HashMap};
 
 pub const KEY: &str = "workspaces_v1";
 
-#[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Clone, Default, Debug, PartialEq, Serialize, Deserialize,
+)]
 #[serde(default)]
 pub struct Workspace {
     pub id: String,
@@ -44,15 +46,23 @@ impl Default for Workspaces {
 }
 
 /// Читает проекты, сохраняя поля прежних записей.
-pub fn list_workspaces(store: &Store) -> Result<Workspaces> {
+pub fn list_workspaces(
+    store: &Store,
+) -> Result<Workspaces> {
     store.with(|db| {
         let mut state: Workspaces = read_json(db, KEY)?;
         for item in &mut state.items {
             if item.folder.is_empty() {
-                let access: serde_json::Value =
-                    read_json(db, &format!("project_access:{}", item.id))?;
-                if access["enabled"].as_bool() == Some(true) {
-                    item.folder = access["root"].as_str().unwrap_or_default().into();
+                let access: serde_json::Value = read_json(
+                    db,
+                    &format!("project_access:{}", item.id),
+                )?;
+                if access["enabled"].as_bool() == Some(true)
+                {
+                    item.folder = access["root"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .into();
                 }
             }
         }
@@ -61,9 +71,15 @@ pub fn list_workspaces(store: &Store) -> Result<Workspaces> {
 }
 
 /// Проверяет и сохраняет проект вместе с инструкциями и папкой.
-pub fn save_workspace(store: &Store, mut item: Workspace) -> Result<()> {
+pub fn save_workspace(
+    store: &Store,
+    mut item: Workspace,
+) -> Result<()> {
     item.name = item.name.trim().into();
-    ensure!(!item.name.is_empty(), "Введите название пространства");
+    ensure!(
+        !item.name.is_empty(),
+        "Введите название пространства"
+    );
     if !item.folder.is_empty() {
         ensure!(
             std::path::Path::new(&item.folder).is_dir(),
@@ -89,7 +105,10 @@ pub fn save_workspace(store: &Store, mut item: Workspace) -> Result<()> {
 }
 
 /// Удаляет пространство, сохраняя его файлы и переписку.
-pub fn delete_workspace(store: &Store, id: &str) -> Result<()> {
+pub fn delete_workspace(
+    store: &Store,
+    id: &str,
+) -> Result<()> {
     store.with(|db| {
         let mut state: Workspaces = read_json(db, KEY)?;
         state.items.retain(|w| w.id != id);
@@ -102,25 +121,41 @@ pub fn delete_workspace(store: &Store, id: &str) -> Result<()> {
 }
 
 /// Меняет привязку чата к проекту.
-pub fn assign_chat(store: &Store, chat_id: i64, workspace_id: &str) -> Result<()> {
+pub fn assign_chat(
+    store: &Store,
+    chat_id: i64,
+    workspace_id: &str,
+) -> Result<()> {
     store.with(|db| {
         let mut state: Workspaces = read_json(db, KEY)?;
         ensure!(
-            workspace_id == "all" || state.items.iter().any(|w| w.id == workspace_id),
+            workspace_id == "all"
+                || state
+                    .items
+                    .iter()
+                    .any(|w| w.id == workspace_id),
             "Пространство удалено"
         );
-        state.chats.insert(chat_id.to_string(), workspace_id.into());
+        state.chats.insert(
+            chat_id.to_string(),
+            workspace_id.into(),
+        );
         write_json(db, KEY, &state)
     })
 }
 
 /// Возвращает инструкции и папку проекта выбранного разговора.
-pub fn chat_workspace(store: &Store, chat_id: i64) -> Result<Workspace> {
+pub fn chat_workspace(
+    store: &Store,
+    chat_id: i64,
+) -> Result<Workspace> {
     let state = list_workspaces(store)?;
     Ok(state
         .chats
         .get(&chat_id.to_string())
-        .and_then(|id| state.items.iter().find(|w| &w.id == id))
+        .and_then(|id| {
+            state.items.iter().find(|w| &w.id == id)
+        })
         .cloned()
         .unwrap_or_default())
 }

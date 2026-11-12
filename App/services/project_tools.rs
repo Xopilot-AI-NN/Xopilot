@@ -5,25 +5,35 @@ use sha2::{Digest, Sha256};
 use std::path::Path;
 
 /// Новый файл публикуется без перезаписи появившегося извне файла.
-pub fn create_file(root: &Path, path: &str, content: &str) -> Result<()> {
+pub fn create_file(
+    root: &Path,
+    path: &str,
+    content: &str,
+) -> Result<()> {
     ensure!(
-        content.len() <= super::project_inspection::MAX_FILE as usize,
+        content.len()
+            <= super::project_inspection::MAX_FILE as usize,
         "Файл больше 1 МиБ"
     );
     let relative = Path::new(path);
     ensure!(
         !relative.is_absolute()
-            && !relative
-                .components()
-                .any(|c| matches!(c, std::path::Component::ParentDir)),
+            && !relative.components().any(|c| matches!(
+                c,
+                std::path::Component::ParentDir
+            )),
         "Нужен путь внутри проекта"
     );
     let name = relative
         .file_name()
         .and_then(|s| s.to_str())
-        .ok_or_else(|| anyhow::anyhow!("Неверное имя файла"))?;
+        .ok_or_else(|| {
+            anyhow::anyhow!("Неверное имя файла")
+        })?;
     ensure!(
-        !name.starts_with('.') || [".gitignore", ".env.example"].contains(&name),
+        !name.starts_with('.')
+            || [".gitignore", ".env.example"]
+                .contains(&name),
         "Скрытый личный файл недоступен"
     );
     let parent = super::project_inspection::resolve(
@@ -32,11 +42,19 @@ pub fn create_file(root: &Path, path: &str, content: &str) -> Result<()> {
             .parent()
             .unwrap_or(Path::new(""))
             .to_str()
-            .ok_or_else(|| anyhow::anyhow!("Неверный путь"))?,
+            .ok_or_else(|| {
+                anyhow::anyhow!("Неверный путь")
+            })?,
     )?;
-    ensure!(parent.is_dir(), "Родительская папка не найдена");
+    ensure!(
+        parent.is_dir(),
+        "Родительская папка не найдена"
+    );
     let full = parent.join(name);
-    let temporary = parent.join(format!(".xopilot-{}.tmp", uuid::Uuid::new_v4()));
+    let temporary = parent.join(format!(
+        ".xopilot-{}.tmp",
+        uuid::Uuid::new_v4()
+    ));
     let result = (|| -> Result<()> {
         use std::io::Write;
         let mut file = std::fs::OpenOptions::new()
@@ -58,18 +76,27 @@ pub fn fingerprint(text: &str) -> String {
 }
 
 /// Сверяет отпечаток и сохраняет файл, сохраняя конфликтующую внешнюю версию.
-pub fn save_existing(root: &Path, path: &str, content: &str, original: &str) -> Result<String> {
+pub fn save_existing(
+    root: &Path,
+    path: &str,
+    content: &str,
+    original: &str,
+) -> Result<String> {
     let full = resolve(root, path)?;
     ensure!(
         fingerprint(&read_text(root, path)?) == original,
         "Файл изменён извне. Откройте его заново перед сохранением"
     );
     ensure!(
-        content.len() <= super::project_inspection::MAX_FILE as usize,
+        content.len()
+            <= super::project_inspection::MAX_FILE as usize,
         "Файл больше 1 МиБ"
     );
     // Пишем соседний файл, затем атомарно заменяем исходник.
-    let temp = full.with_file_name(format!(".xopilot-{}.tmp", uuid::Uuid::new_v4()));
+    let temp = full.with_file_name(format!(
+        ".xopilot-{}.tmp",
+        uuid::Uuid::new_v4()
+    ));
     let result = (|| -> Result<()> {
         use std::io::Write;
         let permissions = full.metadata()?.permissions();
@@ -81,7 +108,8 @@ pub fn save_existing(root: &Path, path: &str, content: &str, original: &str) -> 
         file.set_permissions(permissions)?;
         file.sync_all()?;
         ensure!(
-            fingerprint(&read_text(root, path)?) == original,
+            fingerprint(&read_text(root, path)?)
+                == original,
             "Файл изменён во время сохранения"
         );
         std::fs::rename(&temp, &full)?;
@@ -105,7 +133,18 @@ mod tests {
         std::fs::write(&path, "old").unwrap();
         let original = fingerprint("old");
         std::fs::write(&path, "external").unwrap();
-        assert!(save_existing(dir.path(), "main.rs", "mine", &original).is_err());
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), "external");
+        assert!(
+            save_existing(
+                dir.path(),
+                "main.rs",
+                "mine",
+                &original
+            )
+            .is_err()
+        );
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "external"
+        );
     }
 }

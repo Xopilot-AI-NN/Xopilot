@@ -11,15 +11,18 @@ pub fn build_popover(
 ) -> Element {
     let cleanup = id.clone();
     let focus_anchor = anchor.clone();
-    use_effect(use_reactive((&id, &anchor), move |(id, anchor)| {
-        let script = format!(
-            "const menuId={};const anchorId={};{}",
-            serde_json::to_string(&id).unwrap(),
-            serde_json::to_string(&anchor).unwrap(),
-            include_str!("popover.js")
-        );
-        document::eval(&script);
-    }));
+    use_effect(use_reactive(
+        (&id, &anchor),
+        move |(id, anchor)| {
+            let script = format!(
+                "const menuId={};const anchorId={};{}",
+                serde_json::to_string(&id).unwrap(),
+                serde_json::to_string(&anchor).unwrap(),
+                include_str!("popover.js")
+            );
+            document::eval(&script);
+        },
+    ));
     use_drop(move || {
         document::eval(&format!(
             "window.__xopilotPopovers?.[{}]?.abort();",

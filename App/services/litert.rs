@@ -12,7 +12,8 @@ use std::{
     sync::{Mutex, OnceLock},
 };
 use tokio_util::sync::CancellationToken;
-static ENGINE_LOADS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+static ENGINE_LOADS: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
 type Handle = *mut c_void;
 type Callback = unsafe extern "C" fn(Handle, *const c_void);
 
@@ -106,7 +107,10 @@ fn owned(
 ) -> Result<Owned<'_>> {
     let mut pointer = ptr::null_mut();
     api.check(create(&mut pointer))?;
-    ensure!(!pointer.is_null(), "LiteRT вернул пустой объект");
+    ensure!(
+        !pointer.is_null(),
+        "LiteRT вернул пустой объект"
+    );
     Ok(Owned {
         pointer,
         delete,
@@ -115,8 +119,14 @@ fn owned(
 }
 
 #[cfg(not(target_os = "android"))]
-const EMBEDDED: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/liblitert-lm.so"));
-const NOTICES: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/runtime-licenses.zip"));
+const EMBEDDED: &[u8] = include_bytes!(concat!(
+    env!("OUT_DIR"),
+    "/liblitert-lm.so"
+));
+const NOTICES: &[u8] = include_bytes!(concat!(
+    env!("OUT_DIR"),
+    "/runtime-licenses.zip"
+));
 /// Проверяет, включён ли нативный runtime в данную сборку.
 pub fn available() -> bool {
     env!("XOPILOT_LITERT_BUNDLED") == "1"
@@ -125,10 +135,14 @@ pub fn available() -> bool {
 #[cfg(target_os = "android")]
 fn library_path() -> Result<PathBuf> {
     ensure!(available(), "В APK отсутствует LiteRT");
-    let root = super::paths::base_data_dir()?.join("runtime");
+    let root =
+        super::paths::base_data_dir()?.join("runtime");
     std::fs::create_dir_all(&root)?;
     if !NOTICES.is_empty() {
-        std::fs::write(root.join("runtime-licenses.zip"), NOTICES)?;
+        std::fs::write(
+            root.join("runtime-licenses.zip"),
+            NOTICES,
+        )?;
     }
     Ok(PathBuf::from("liblitert-lm.so"))
 }
@@ -147,7 +161,10 @@ fn library_path() -> Result<PathBuf> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700))?;
+        std::fs::set_permissions(
+            &root,
+            std::fs::Permissions::from_mode(0o700),
+        )?;
     }
     let path = root.join(if cfg!(target_os = "windows") {
         "litert-lm.dll"
@@ -155,17 +172,26 @@ fn library_path() -> Result<PathBuf> {
         "liblitert-lm.so"
     });
     if !NOTICES.is_empty() {
-        std::fs::write(root.join("runtime-licenses.zip"), NOTICES)?;
+        std::fs::write(
+            root.join("runtime-licenses.zip"),
+            NOTICES,
+        )?;
     }
     if !path.is_file()
-        || super::model_installer::digest_file(&path, &CancellationToken::new())? != digest
+        || super::model_installer::digest_file(
+            &path,
+            &CancellationToken::new(),
+        )? != digest
     {
         use std::io::Write;
-        let mut temporary = tempfile::NamedTempFile::new_in(&root)?;
+        let mut temporary =
+            tempfile::NamedTempFile::new_in(&root)?;
         temporary.write_all(EMBEDDED)?;
         temporary.as_file().sync_all()?;
         // persist заменяет испорченный файл также на Windows, где обычный rename не заменяет DLL.
-        temporary.persist(&path).map_err(|error| error.error)?;
+        temporary
+            .persist(&path)
+            .map_err(|error| error.error)?;
     }
     Ok(path)
 }
@@ -209,12 +235,18 @@ impl Engine {
     fn open(path: &Path, backend: &str) -> Result<Self> {
         let api = unsafe { Api::load(&library_path()?)? };
         let (mut major, mut minor, mut patch) = (0, 0, 0);
-        api.check(unsafe { (api.version)(&mut major, &mut minor, &mut patch) })?;
+        api.check(unsafe {
+            (api.version)(
+                &mut major, &mut minor, &mut patch,
+            )
+        })?;
         ensure!(
             major == 1,
             "Нужен LiteRT C API 1.x, найден {major}.{minor}.{patch}"
         );
-        let filename = CString::new(path.to_string_lossy().as_bytes())?;
+        let filename = CString::new(
+            path.to_string_lossy().as_bytes(),
+        )?;
         let device = CString::new(backend)?;
         let settings = owned(
             &api,
@@ -229,14 +261,22 @@ impl Engine {
             },
             api.settings_delete,
         )?;
-        api.check(unsafe { (api.tokens)(settings.pointer, 4096) })?;
+        api.check(unsafe {
+            (api.tokens)(settings.pointer, 4096)
+        })?;
         let threads = std::thread::available_parallelism()
             .map(|n| n.get().min(6) as i32)
             .unwrap_or(2);
-        api.check(unsafe { (api.threads)(settings.pointer, threads) })?;
-        api.check(unsafe { (api.single_threaded)(settings.pointer, true) })?;
+        api.check(unsafe {
+            (api.threads)(settings.pointer, threads)
+        })?;
+        api.check(unsafe {
+            (api.single_threaded)(settings.pointer, true)
+        })?;
         let mut engine = ptr::null_mut();
-        api.check(unsafe { (api.engine)(settings.pointer, &mut engine) })?;
+        api.check(unsafe {
+            (api.engine)(settings.pointer, &mut engine)
+        })?;
         drop(settings);
         ensure!(!engine.is_null(), "Модель не загрузилась");
         Ok(Self {
@@ -246,7 +286,10 @@ impl Engine {
             backend: backend.into(),
             cached: None,
             statistics: ContextStats {
-                engine_loads: ENGINE_LOADS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1,
+                engine_loads: ENGINE_LOADS.fetch_add(
+                    1,
+                    std::sync::atomic::Ordering::Relaxed,
+                ) + 1,
                 ..Default::default()
             },
         })
@@ -255,7 +298,9 @@ impl Engine {
     fn clear_context(&mut self) {
         if let Some(cache) = self.cached.take() {
             unsafe {
-                (self.api.conversation_delete)(cache.pointer);
+                (self.api.conversation_delete)(
+                    cache.pointer,
+                );
                 (self.api.config_delete)(cache.config);
                 (self.api.session_delete)(cache.session);
                 (self.api.sampler_delete)(cache.sampler);
@@ -272,10 +317,15 @@ impl Engine {
         output_limit: i32,
     ) -> Result<String> {
         ensure!(!token.is_cancelled(), "Запрос отменён");
-        ensure!(!messages.is_empty(), "Нет сообщения пользователя");
-        let reusable = self.cached.as_ref().is_some_and(|cache| {
-            cache.output_limit == output_limit && can_extend(&cache.history, &messages)
-        });
+        ensure!(
+            !messages.is_empty(),
+            "Нет сообщения пользователя"
+        );
+        let reusable =
+            self.cached.as_ref().is_some_and(|cache| {
+                cache.output_limit == output_limit
+                    && can_extend(&cache.history, &messages)
+            });
         let suffix = if reusable {
             self.cached.as_ref().unwrap().history.len()
         } else {
@@ -288,9 +338,16 @@ impl Engine {
             let images = tempfile::tempdir()?;
             convert_images(&mut initial, images.path())?;
             let api = &self.api;
-            let session = owned(api, |out| unsafe { (api.session)(out) }, api.session_delete)?;
+            let session = owned(
+                api,
+                |out| unsafe { (api.session)(out) },
+                api.session_delete,
+            )?;
             api.check(unsafe {
-                (api.output_tokens)(session.pointer, output_limit.clamp(1, 2048))
+                (api.output_tokens)(
+                    session.pointer,
+                    output_limit.clamp(1, 2048),
+                )
             })?;
             // Top-K=1 снижает случайные изменения аргументов и лишних знаков в точных данных.
             let sampler = owned(
@@ -298,15 +355,44 @@ impl Engine {
                 |out| unsafe { (api.sampler)(2, out) },
                 api.sampler_delete,
             )?;
-            api.check(unsafe { (api.sampler_top_k)(sampler.pointer, 1) })?;
-            api.check(unsafe { (api.set_sampler)(session.pointer, sampler.pointer) })?;
-            let config = owned(api, |out| unsafe { (api.config)(out) }, api.config_delete)?;
-            api.check(unsafe { (api.set_session)(config.pointer, session.pointer) })?;
-            let history = CString::new(serde_json::to_string(&initial)?)?;
-            api.check(unsafe { (api.messages)(config.pointer, history.as_ptr()) })?;
+            api.check(unsafe {
+                (api.sampler_top_k)(sampler.pointer, 1)
+            })?;
+            api.check(unsafe {
+                (api.set_sampler)(
+                    session.pointer,
+                    sampler.pointer,
+                )
+            })?;
+            let config = owned(
+                api,
+                |out| unsafe { (api.config)(out) },
+                api.config_delete,
+            )?;
+            api.check(unsafe {
+                (api.set_session)(
+                    config.pointer,
+                    session.pointer,
+                )
+            })?;
+            let history = CString::new(
+                serde_json::to_string(&initial)?,
+            )?;
+            api.check(unsafe {
+                (api.messages)(
+                    config.pointer,
+                    history.as_ptr(),
+                )
+            })?;
             let conversation = owned(
                 api,
-                |out| unsafe { (api.conversation)(self.engine, config.pointer, out) },
+                |out| unsafe {
+                    (api.conversation)(
+                        self.engine,
+                        config.pointer,
+                        out,
+                    )
+                },
                 api.conversation_delete,
             )?;
             let (pointer, config, session) = (
@@ -332,10 +418,20 @@ impl Engine {
         } else {
             vec![messages.last().unwrap().clone()]
         };
-        convert_images(&mut new_messages, cache.images.path())?;
+        convert_images(
+            &mut new_messages,
+            cache.images.path(),
+        )?;
         let message = merge_new_messages(new_messages)?;
-        let message = CString::new(serde_json::to_string(&message)?)?;
-        let result = stream_reply(&self.api, cache.pointer, &message, token, updates);
+        let message =
+            CString::new(serde_json::to_string(&message)?)?;
+        let result = stream_reply(
+            &self.api,
+            cache.pointer,
+            &message,
+            token,
+            updates,
+        );
         match result {
             Ok(answer) => {
                 let cache = self.cached.as_mut().unwrap();
@@ -344,7 +440,12 @@ impl Engine {
                     .history
                     .push(serde_json::json!({"role":"assistant","content":answer}));
                 let mut tokens = 0;
-                let _ = unsafe { (self.api.token_count)(cache.pointer, &mut tokens) };
+                let _ = unsafe {
+                    (self.api.token_count)(
+                        cache.pointer,
+                        &mut tokens,
+                    )
+                };
                 self.statistics.tokens = tokens;
                 if reusable {
                     self.statistics.reused += 1;
@@ -361,7 +462,10 @@ impl Engine {
     }
 }
 /// Разрешает дополнение KV-кеша только для точного продолжения прежней истории.
-pub fn can_extend(previous: &[Value], incoming: &[Value]) -> bool {
+pub fn can_extend(
+    previous: &[Value],
+    incoming: &[Value],
+) -> bool {
     incoming.len() > previous.len()
         && incoming.starts_with(previous)
         && incoming[previous.len()..]
@@ -369,8 +473,13 @@ pub fn can_extend(previous: &[Value], incoming: &[Value]) -> bool {
             .all(|m| m["role"] == "user")
 }
 /// Объединяет новые пользовательские данные в один допустимый запрос LiteRT.
-fn merge_new_messages(mut messages: Vec<Value>) -> Result<Value> {
-    ensure!(!messages.is_empty(), "Нет новых данных для модели");
+fn merge_new_messages(
+    mut messages: Vec<Value>,
+) -> Result<Value> {
+    ensure!(
+        !messages.is_empty(),
+        "Нет новых данных для модели"
+    );
     if messages.len() == 1 {
         return Ok(messages.pop().unwrap());
     }
@@ -415,7 +524,10 @@ fn stream_reply(
     })?;
     // После cancel callback всё ещё может выполняться. Освобождаем данные лишь после wait.
     let code = unsafe { (api.wait)(conversation) };
-    ensure!(!context.token.is_cancelled(), "Запрос отменён");
+    ensure!(
+        !context.token.is_cancelled(),
+        "Запрос отменён"
+    );
     api.check(code)?;
     if let Some(error) = context.error {
         bail!("{error}");
@@ -435,57 +547,78 @@ struct Stream<'a> {
     error: Option<String>,
 }
 /// Накапливает текст и обрабатывает отмену, не выпуская panic через C ABI.
-unsafe extern "C" fn on_chunk(data: Handle, chunk: *const c_void) {
+unsafe extern "C" fn on_chunk(
+    data: Handle,
+    chunk: *const c_void,
+) {
     // В single-threaded режиме callback вызывается только внутри wait этого worker.
     // Через FFI никогда не выпускаем panic.
-    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let context = unsafe { &mut *data.cast::<Stream<'_>>() };
-        let mut is_final = false;
-        unsafe {
-            (context.api.final_chunk)(chunk, &mut is_final);
-        }
-        if (context.token.is_cancelled() || context.error.is_some()) && !is_final {
+    let _ = std::panic::catch_unwind(
+        std::panic::AssertUnwindSafe(|| {
+            let context =
+                unsafe { &mut *data.cast::<Stream<'_>>() };
+            let mut is_final = false;
             unsafe {
-                (context.api.cancel)(context.conversation);
+                (context.api.final_chunk)(
+                    chunk,
+                    &mut is_final,
+                );
             }
-            return;
-        }
-        let mut error = ptr::null();
-        let mut text = ptr::null();
-        unsafe {
-            (context.api.chunk_error)(chunk, &mut error);
-            (context.api.text)(chunk, &mut text);
-        }
-        if !error.is_null() {
-            context.error = Some(
-                unsafe { CStr::from_ptr(error) }
-                    .to_string_lossy()
-                    .into_owned(),
-            );
-        }
-        if !text.is_null() {
-            let raw = unsafe { CStr::from_ptr(text) }
-                .to_string_lossy()
-                .into_owned();
-            let text = match decode_chunk(&raw) {
-                Ok(text) => text,
-                Err(error) => {
-                    context.error = Some(format!("{error:#}"));
-                    return;
+            if (context.token.is_cancelled()
+                || context.error.is_some())
+                && !is_final
+            {
+                unsafe {
+                    (context.api.cancel)(
+                        context.conversation,
+                    );
                 }
-            };
-            if context.answer.len() + text.len() > 8 * 1024 * 1024 {
-                context.error = Some("Ответ больше 8 МиБ".into());
                 return;
             }
-            context.answer.push_str(&text);
-            let _ = context.updates.send(text);
-        }
-    }));
+            let mut error = ptr::null();
+            let mut text = ptr::null();
+            unsafe {
+                (context.api.chunk_error)(
+                    chunk, &mut error,
+                );
+                (context.api.text)(chunk, &mut text);
+            }
+            if !error.is_null() {
+                context.error = Some(
+                    unsafe { CStr::from_ptr(error) }
+                        .to_string_lossy()
+                        .into_owned(),
+                );
+            }
+            if !text.is_null() {
+                let raw = unsafe { CStr::from_ptr(text) }
+                    .to_string_lossy()
+                    .into_owned();
+                let text = match decode_chunk(&raw) {
+                    Ok(text) => text,
+                    Err(error) => {
+                        context.error =
+                            Some(format!("{error:#}"));
+                        return;
+                    }
+                };
+                if context.answer.len() + text.len()
+                    > 8 * 1024 * 1024
+                {
+                    context.error =
+                        Some("Ответ больше 8 МиБ".into());
+                    return;
+                }
+                context.answer.push_str(&text);
+                let _ = context.updates.send(text);
+            }
+        }),
+    );
 }
 /// Conversation API передаёт JSON-сообщение, а не готовую строку токена.
 pub fn decode_chunk(raw: &str) -> Result<String> {
-    let value: Value = serde_json::from_str(raw).context("Неверный JSON-чанк LiteRT")?;
+    let value: Value = serde_json::from_str(raw)
+        .context("Неверный JSON-чанк LiteRT")?;
     if let Some(content) = value["content"].as_str() {
         return Ok(content.into());
     }
@@ -502,22 +635,32 @@ pub fn decode_chunk(raw: &str) -> Result<String> {
 }
 
 /// Заменяет подготовленные JPEG-данные временными файлами для LiteRT.
-fn convert_images(messages: &mut [Value], root: &Path) -> Result<()> {
+fn convert_images(
+    messages: &mut [Value],
+    root: &Path,
+) -> Result<()> {
     use base64::Engine as _;
     for message in messages {
-        if let Some(parts) = message["content"].as_array_mut() {
+        if let Some(parts) =
+            message["content"].as_array_mut()
+        {
             for part in parts {
                 if part["type"] == "image_url" {
                     let data = part["image_url"]["url"]
                         .as_str()
                         .and_then(|url| url.strip_prefix("data:image/jpeg;base64,"))
                         .context("Локальная модель принимает только подготовленные изображения")?;
-                    let bytes = base64::prelude::BASE64_STANDARD.decode(data)?;
+                    let bytes =
+                        base64::prelude::BASE64_STANDARD
+                            .decode(data)?;
                     ensure!(
                         bytes.len() <= super::attachments::MAX_FILE_BYTES as usize,
                         "Слишком большое изображение"
                     );
-                    let path = root.join(format!("{}.jpg", uuid::Uuid::new_v4()));
+                    let path = root.join(format!(
+                        "{}.jpg",
+                        uuid::Uuid::new_v4()
+                    ));
                     std::fs::write(&path, bytes)?;
                     *part = serde_json::json!({"type":"image","path":path});
                 }
@@ -526,7 +669,8 @@ fn convert_images(messages: &mut [Value], root: &Path) -> Result<()> {
     }
     Ok(())
 }
-static ENGINE: OnceLock<Mutex<Option<Engine>>> = OnceLock::new();
+static ENGINE: OnceLock<Mutex<Option<Engine>>> =
+    OnceLock::new();
 /// Не пересчитываем свободную VRAM для уже загруженной модели: её память уже занята нами.
 pub fn loaded_backend(path: &Path) -> Option<String> {
     ENGINE
@@ -542,7 +686,9 @@ pub fn reset_context() -> Result<()> {
     let mut engine = ENGINE
         .get_or_init(|| Mutex::new(None))
         .try_lock()
-        .map_err(|_| anyhow::anyhow!("Модель сейчас отвечает"))?;
+        .map_err(|_| {
+            anyhow::anyhow!("Модель сейчас отвечает")
+        })?;
     if let Some(engine) = engine.as_mut() {
         engine.clear_context();
     }
@@ -553,15 +699,22 @@ pub fn context_stats() -> Result<ContextStats> {
     let engine = ENGINE
         .get_or_init(|| Mutex::new(None))
         .try_lock()
-        .map_err(|_| anyhow::anyhow!("Модель сейчас отвечает"))?;
-    Ok(engine.as_ref().map(|e| e.statistics).unwrap_or_default())
+        .map_err(|_| {
+            anyhow::anyhow!("Модель сейчас отвечает")
+        })?;
+    Ok(engine
+        .as_ref()
+        .map(|e| e.statistics)
+        .unwrap_or_default())
 }
 /// Освобождает engine, кеш и память выбранной локальной модели.
 pub fn unload() -> Result<()> {
     let mut engine = ENGINE
         .get_or_init(|| Mutex::new(None))
         .try_lock()
-        .map_err(|_| anyhow::anyhow!("Модель сейчас отвечает"))?;
+        .map_err(|_| {
+            anyhow::anyhow!("Модель сейчас отвечает")
+        })?;
     *engine = None;
     Ok(())
 }
@@ -578,25 +731,29 @@ pub fn generate(
     let mut engine = ENGINE
         .get_or_init(|| Mutex::new(None))
         .lock()
-        .map_err(|_| anyhow::anyhow!("Ошибка состояния модели"))?;
-    if engine
-        .as_ref()
-        .is_none_or(|item| item.path != path || item.backend != backend)
-    {
+        .map_err(|_| {
+            anyhow::anyhow!("Ошибка состояния модели")
+        })?;
+    if engine.as_ref().is_none_or(|item| {
+        item.path != path || item.backend != backend
+    }) {
         *engine = None;
         *engine = Some(Engine::open(&path, &backend)?);
     }
-    engine
-        .as_mut()
-        .unwrap()
-        .reply(messages, token, updates, output_limit)
+    engine.as_mut().unwrap().reply(
+        messages,
+        token,
+        updates,
+        output_limit,
+    )
 }
 
 #[cfg(test)]
 mod chunk_tests {
     /// Проверяет извлечение текста без JSON-оболочки и скрытых рассуждений.
     #[test]
-    fn conversation_chunks_expose_text_instead_of_the_json_envelope() {
+    fn conversation_chunks_expose_text_instead_of_the_json_envelope()
+     {
         assert_eq!(super::decode_chunk(r#"{"role":"assistant","content":[{"type":"text","text":"Привет"},{"type":"text","text":"!"}]}"#).unwrap(),"Привет!");
         assert_eq!(
             super::decode_chunk(r#"{"content":[{"type":"thought","text":"internal"}]}"#).unwrap(),

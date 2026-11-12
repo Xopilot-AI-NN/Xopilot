@@ -2645,6 +2645,89 @@ select.preference-select,
     padding: 10px 14px;
 }
 
+.profile-name-inline-editor {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    max-width: 340px;
+}
+
+.profile-name-inline-editor .profile-name-input {
+    flex: 1;
+    min-width: 0;
+    height: 44px;
+    padding: 0 14px;
+
+    background: var(--selection);
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+
+    font: inherit;
+    font-size: 17px;
+    font-weight: 600;
+
+    outline: none;
+    box-sizing: border-box;
+    transition:
+        border-color 180ms ease,
+        box-shadow 180ms ease,
+        background 180ms ease;
+}
+
+.profile-name-inline-editor .profile-name-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent);
+}
+
+.profile-name-inline-editor .profile-name-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+
+    width: 40px;
+    height: 40px;
+    padding: 0;
+
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: var(--raised);
+    color: var(--text);
+
+    font-size: 20px;
+    transition:
+        background 180ms ease,
+        border-radius 180ms ease,
+        transform 180ms ease;
+}
+
+.profile-name-inline-editor .profile-name-action[type="submit"] {
+    background: var(--accent);
+    color: var(--surface);
+    border-color: transparent;
+}
+
+.profile-name-inline-editor .profile-name-action:hover {
+    border-radius: 20px;
+    transform: scale(1.04);
+}
+
+.profile-name-inline-editor .profile-name-action[type="button"]:hover {
+    background: var(--selection);
+}
+
+.profile-name-inline-editor .profile-name-action:active {
+    transform: scale(0.96);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .profile-name-inline-editor * {
+        transition: none;
+    }
+}
+
 .action-details pre {
     max-height: 240px;
     overflow: auto;

@@ -51,7 +51,8 @@ pub fn claims_change(text: &str) -> bool {
     .any(|phrase| {
         text.match_indices(phrase).any(|(offset, _)| {
             let before = &text[..offset];
-            !before.ends_with("не ") && !before.ends_with("not ")
+            !before.ends_with("не ")
+                && !before.ends_with("not ")
         })
     })
 }
@@ -62,13 +63,20 @@ fn embedded(text: &str) -> Result<Vec<Value>> {
     let mut offset = 0;
     while let Some(relative) = text[offset..].find('{') {
         let start = offset + relative;
-        let mut stream = serde_json::Deserializer::from_str(&text[start..]).into_iter::<Value>();
+        let mut stream =
+            serde_json::Deserializer::from_str(
+                &text[start..],
+            )
+            .into_iter::<Value>();
         match stream.next() {
             Some(Ok(value)) => {
                 offset = start + stream.byte_offset();
                 if is_protocol(&value) {
                     values.push(value);
-                    ensure!(values.len() <= 4, "Слишком много действий в ответе");
+                    ensure!(
+                        values.len() <= 4,
+                        "Слишком много действий в ответе"
+                    );
                 }
             }
             _ => {
@@ -77,7 +85,9 @@ fn embedded(text: &str) -> Result<Vec<Value>> {
                     .iter()
                     .any(|key| fragment.contains(key))
                 {
-                    bail!("Незавершённое действие: нужен целый JSON");
+                    bail!(
+                        "Незавершённое действие: нужен целый JSON"
+                    );
                 }
                 offset = start + 1;
             }
@@ -92,13 +102,18 @@ fn is_protocol(value: &Value) -> bool {
         .any(|key| value.get(key).is_some())
 }
 /// Убирает внешний маркер final, но не скрывает ошибочно вложенную команду.
-fn clean_final(text: &str, bare_marker: bool) -> Result<String> {
+fn clean_final(
+    text: &str,
+    bare_marker: bool,
+) -> Result<String> {
     let text = text.trim();
     let prefixed = text.get(..6).is_some_and(|prefix| {
         prefix.eq_ignore_ascii_case("final:")
-            || (bare_marker && prefix.eq_ignore_ascii_case("final "))
+            || (bare_marker
+                && prefix.eq_ignore_ascii_case("final "))
     });
-    let mut text = if prefixed { text[6..].trim() } else { text };
+    let mut text =
+        if prefixed { text[6..].trim() } else { text };
     if prefixed && text.starts_with("[]") {
         text = text[2..].trim();
     }
@@ -124,23 +139,30 @@ pub fn parse(text: &str) -> Result<Reply> {
             .into_iter::<Value>()
             .take(5)
             .collect::<std::result::Result<Vec<_>, _>>()
-            .context("Модель вернула незавершённое действие")?
+            .context(
+                "Модель вернула незавершённое действие",
+            )?
     } else {
         embedded(text)?
     };
     if values.is_empty() {
         return Ok(Reply::Final(clean_final(text, true)?));
     }
-    ensure!(values.len() <= 4, "В ответе слишком много объектов");
-    if values.len() == 1 && values[0].get("final").is_some() {
+    ensure!(
+        values.len() <= 4,
+        "В ответе слишком много объектов"
+    );
+    if values.len() == 1 && values[0].get("final").is_some()
+    {
         ensure!(
-            values[0].get("tool").is_none() && values[0].get("actions").is_none(),
+            values[0].get("tool").is_none()
+                && values[0].get("actions").is_none(),
             "Нельзя смешивать ответ с действием"
         );
         return Ok(Reply::Final(clean_final(
-            values[0]["final"]
-                .as_str()
-                .context("final должен быть обычным текстом")?,
+            values[0]["final"].as_str().context(
+                "final должен быть обычным текстом",
+            )?,
             false,
         )?));
     }
@@ -151,11 +173,17 @@ pub fn parse(text: &str) -> Result<Reply> {
             "Нельзя смешивать final с действиями"
         );
         if let Some(actions) = value.get("actions") {
-            let packet: Vec<Call> = serde_json::from_value(actions.clone())?;
-            ensure!(!packet.is_empty(), "Пакет действий пуст");
+            let packet: Vec<Call> =
+                serde_json::from_value(actions.clone())?;
+            ensure!(
+                !packet.is_empty(),
+                "Пакет действий пуст"
+            );
             calls.extend(packet);
         } else {
-            calls.push(serde_json::from_value::<Call>(value)?);
+            calls.push(serde_json::from_value::<Call>(
+                value,
+            )?);
         }
     }
     ensure!(
@@ -169,12 +197,22 @@ mod tests {
     /// Отличает обещание выполнить действие от описания отсутствующих документов.
     #[test]
     fn change_claim_requires_receipt() {
-        assert!(super::claims_change("Создаю Canvas с названием «Привет!»"));
+        assert!(super::claims_change(
+            "Создаю Canvas с названием «Привет!»"
+        ));
         assert!(super::claims_change("Я создал документ."));
-        assert!(super::claims_change("Создан новый канвас."));
-        assert!(!super::claims_change("У вас пока нет созданных канвасов."));
-        assert!(!super::claims_change("Какое содержимое добавить?"));
-        assert!(!super::claims_change("Я не создал документ."));
+        assert!(super::claims_change(
+            "Создан новый канвас."
+        ));
+        assert!(!super::claims_change(
+            "У вас пока нет созданных канвасов."
+        ));
+        assert!(!super::claims_change(
+            "Какое содержимое добавить?"
+        ));
+        assert!(!super::claims_change(
+            "Я не создал документ."
+        ));
         assert!(!super::claims_change(
             "Создание документа доступно через Canvas."
         ));

@@ -8,8 +8,13 @@ fn escaped(text: &str) -> String {
 }
 
 /// Создаёт переносимый документ OOXML и атомарно публикует его в exports.
-pub fn save(title: &str, content: &str, format: &str) -> Result<PathBuf> {
-    let root = super::paths::app_data_dir()?.join("exports");
+pub fn save(
+    title: &str,
+    content: &str,
+    format: &str,
+) -> Result<PathBuf> {
+    let root =
+        super::paths::app_data_dir()?.join("exports");
     save_at(&root, title, content, format)
 }
 
@@ -20,27 +25,50 @@ pub fn save_at(
     content: &str,
     format: &str,
 ) -> Result<PathBuf> {
-    ensure!(["docx", "xlsx"].contains(&format), "Выберите DOCX или XLSX");
-    ensure!(content.len() <= 1024 * 1024, "Документ превышает 1 МиБ");
     ensure!(
-        title.chars().chain(content.chars()).all(|character| {
-            matches!(character, '\t' | '\n' | '\r')
-                || (character >= ' ' && character != '\u{fffe}' && character != '\u{ffff}')
-        }),
+        ["docx", "xlsx"].contains(&format),
+        "Выберите DOCX или XLSX"
+    );
+    ensure!(
+        content.len() <= 1024 * 1024,
+        "Документ превышает 1 МиБ"
+    );
+    ensure!(
+        title.chars().chain(content.chars()).all(
+            |character| {
+                matches!(character, '\t' | '\n' | '\r')
+                    || (character >= ' '
+                        && character != '\u{fffe}'
+                        && character != '\u{ffff}')
+            }
+        ),
         "Документ содержит недопустимые символы XML"
     );
     std::fs::create_dir_all(root)?;
-    let output = root.join(format!("document-{}.{format}", uuid::Uuid::new_v4()));
-    let mut temporary = tempfile::NamedTempFile::new_in(root)?;
+    let output = root.join(format!(
+        "document-{}.{format}",
+        uuid::Uuid::new_v4()
+    ));
+    let mut temporary =
+        tempfile::NamedTempFile::new_in(root)?;
     {
-        let mut archive = zip::ZipWriter::new(temporary.as_file_mut());
-        let mut write = |name: &str, text: &str| -> Result<()> {
-            archive.start_file(name, zip::write::SimpleFileOptions::default())?;
+        let mut archive =
+            zip::ZipWriter::new(temporary.as_file_mut());
+        let mut write = |name: &str,
+                         text: &str|
+         -> Result<()> {
+            archive.start_file(
+                name,
+                zip::write::SimpleFileOptions::default(),
+            )?;
             archive.write_all(text.as_bytes())?;
             Ok(())
         };
         let (part, kind) = if format == "docx" {
-            ("word/document.xml", "wordprocessingml.document")
+            (
+                "word/document.xml",
+                "wordprocessingml.document",
+            )
         } else {
             ("xl/workbook.xml", "spreadsheetml.sheet")
         };
@@ -88,9 +116,17 @@ pub fn save_at(
             )?;
             let mut rows = String::new();
             for (row, line) in content.lines().enumerate() {
-                rows.push_str(&format!("<row r=\"{}\">", row + 1));
-                for (column, value) in line.split('\t').enumerate() {
-                    ensure!(column < 16384 && row < 100000, "Превышен размер таблицы");
+                rows.push_str(&format!(
+                    "<row r=\"{}\">",
+                    row + 1
+                ));
+                for (column, value) in
+                    line.split('\t').enumerate()
+                {
+                    ensure!(
+                        column < 16384 && row < 100000,
+                        "Превышен размер таблицы"
+                    );
                     rows.push_str(&format!(
                         "<c t=\"inlineStr\"><is><t xml:space=\"preserve\">{}</t></is></c>",
                         escaped(value)
@@ -108,6 +144,8 @@ pub fn save_at(
         archive.finish()?;
     }
     temporary.as_file().sync_all()?;
-    temporary.persist(&output).map_err(|error| error.error)?;
+    temporary
+        .persist(&output)
+        .map_err(|error| error.error)?;
     Ok(output)
 }

@@ -21,7 +21,8 @@ pub struct AttachmentParts {
 /// Ограничивает текст по символам, не разрезая UTF-8.
 pub fn truncate(text: &str, limit: usize) -> String {
     let mut chars = text.chars();
-    let mut value: String = chars.by_ref().take(limit).collect();
+    let mut value: String =
+        chars.by_ref().take(limit).collect();
     if chars.next().is_some() {
         value.push_str("\n…[обрезано]");
     }
@@ -29,8 +30,11 @@ pub fn truncate(text: &str, limit: usize) -> String {
 }
 
 /// Декодирует ограниченное изображение и уменьшает его перед передачей модели.
-pub fn downscale_image_bytes(raw: &[u8]) -> Result<Vec<u8>> {
-    let mut reader = ImageReader::new(Cursor::new(raw)).with_guessed_format()?;
+pub fn downscale_image_bytes(
+    raw: &[u8],
+) -> Result<Vec<u8>> {
+    let mut reader = ImageReader::new(Cursor::new(raw))
+        .with_guessed_format()?;
     let mut limits = image::Limits::default();
     limits.max_image_width = Some(16_384);
     limits.max_image_height = Some(16_384);
@@ -41,14 +45,17 @@ pub fn downscale_image_bytes(raw: &[u8]) -> Result<Vec<u8>> {
         .thumbnail(MAX_IMAGE_SIDE, MAX_IMAGE_SIDE)
         .to_rgb8();
     let mut bytes = Vec::new();
-    JpegEncoder::new_with_quality(&mut bytes, 87).encode_image(&image)?;
+    JpegEncoder::new_with_quality(&mut bytes, 87)
+        .encode_image(&image)?;
     Ok(bytes)
 }
 
 /// Извлекает текст DOCX из XML внутри архива без выполнения содержимого.
 fn read_docx(raw: &[u8]) -> Result<String> {
-    let mut archive = zip::ZipArchive::new(Cursor::new(raw))?;
-    let mut document = archive.by_name("word/document.xml")?;
+    let mut archive =
+        zip::ZipArchive::new(Cursor::new(raw))?;
+    let mut document =
+        archive.by_name("word/document.xml")?;
     ensure!(
         document.size() <= 4 * 1024 * 1024,
         "DOCX содержит слишком много текста"
@@ -68,13 +75,31 @@ fn read_docx(raw: &[u8]) -> Result<String> {
     loop {
         use quick_xml::events::Event;
         match reader.read_event()? {
-            Event::Start(tag) if tag.name().as_ref() == "w:t" => in_text = true,
-            Event::End(tag) if tag.name().as_ref() == "w:t" => in_text = false,
-            Event::End(tag) if tag.name().as_ref() == "w:p" => text.push('\n'),
-            Event::Text(value) if in_text => text.push_str(&value.xml10_content()),
+            Event::Start(tag)
+                if tag.name().as_ref() == "w:t" =>
+            {
+                in_text = true
+            }
+            Event::End(tag)
+                if tag.name().as_ref() == "w:t" =>
+            {
+                in_text = false
+            }
+            Event::End(tag)
+                if tag.name().as_ref() == "w:p" =>
+            {
+                text.push('\n')
+            }
+            Event::Text(value) if in_text => {
+                text.push_str(&value.xml10_content())
+            }
             Event::GeneralRef(value) if in_text => {
                 let name = value.xml10_content();
-                text.push_str(&quick_xml::escape::unescape(&format!("&{name};"))?);
+                text.push_str(
+                    &quick_xml::escape::unescape(
+                        &format!("&{name};"),
+                    )?,
+                );
             }
             Event::Eof => break,
             _ => {}
@@ -107,19 +132,24 @@ fn read_attachment(path: &Path) -> Result<AttachmentParts> {
         .to_string_lossy()
         .to_lowercase();
     let mut result = AttachmentParts::default();
-    if ["jpg", "jpeg", "png", "webp", "bmp", "gif"].contains(&ext.as_str()) {
+    if ["jpg", "jpeg", "png", "webp", "bmp", "gif"]
+        .contains(&ext.as_str())
+    {
         result.images.push(downscale_image_bytes(&raw)?);
         return Ok(result);
     }
     let text = match ext.as_str() {
         "pdf" => truncate(
-            &pdf_extract::extract_text_from_mem(&raw).context("Не удалось прочитать PDF")?,
+            &pdf_extract::extract_text_from_mem(&raw)
+                .context("Не удалось прочитать PDF")?,
             MAX_TEXT_CHARS,
         ),
         "docx" => read_docx(&raw)?,
         "xlsx" => super::spreadsheets::read(&raw)?,
         "mp4" | "mov" | "avi" | "mkv" | "webm" => {
-            bail!("Прикрепите кадры видео как изображения: извлечение видео ещё не перенесено")
+            bail!(
+                "Прикрепите кадры видео как изображения: извлечение видео ещё не перенесено"
+            )
         }
         _ => {
             ensure!(
@@ -127,7 +157,11 @@ fn read_attachment(path: &Path) -> Result<AttachmentParts> {
                 "Двоичный формат не поддерживается для анализа"
             );
             truncate(
-                &String::from_utf8_lossy(&raw[..raw.len().min(MAX_TEXT_CHARS * 4)]),
+                &String::from_utf8_lossy(
+                    &raw[..raw
+                        .len()
+                        .min(MAX_TEXT_CHARS * 4)],
+                ),
                 MAX_TEXT_CHARS,
             )
         }
@@ -137,28 +171,35 @@ fn read_attachment(path: &Path) -> Result<AttachmentParts> {
 }
 
 /// Ошибка одного вложения становится пометкой и не прерывает остальные.
-pub fn build_attachment_message_parts(attachments: &[(String, String)]) -> AttachmentParts {
+pub fn build_attachment_message_parts(
+    attachments: &[(String, String)],
+) -> AttachmentParts {
     let mut parts = AttachmentParts::default();
     for (name, path) in attachments.iter().take(10) {
         match read_attachment(Path::new(path)) {
             Ok(item) => {
                 parts.text_notes.extend(
-                    item.text_notes
-                        .into_iter()
-                        .map(|s| format!("--- Файл «{name}» ---\n{s}")),
+                    item.text_notes.into_iter().map(|s| {
+                        format!(
+                            "--- Файл «{name}» ---\n{s}"
+                        )
+                    }),
                 );
                 parts.images.extend(item.images);
             }
-            Err(error) => parts
-                .text_notes
-                .push(format!("[Ошибка чтения «{name}»: {error}]")),
+            Err(error) => parts.text_notes.push(format!(
+                "[Ошибка чтения «{name}»: {error}]"
+            )),
         }
     }
     parts
 }
 
 /// Собственная копия нужна для Android content:// и для истории после удаления исходника.
-pub fn store_material(name: &str, bytes: &[u8]) -> Result<(String, String)> {
+pub fn store_material(
+    name: &str,
+    bytes: &[u8],
+) -> Result<(String, String)> {
     ensure!(
         bytes.len() as u64 <= MAX_FILE_BYTES,
         "Размер вложения превышает 32 МиБ"
@@ -178,9 +219,13 @@ pub fn store_material(name: &str, bytes: &[u8]) -> Result<(String, String)> {
 }
 
 /// Копирует выбранный материал в каталог данных текущего профиля.
-pub fn import_material(name: &str, path: &Path) -> Result<(String, String)> {
+pub fn import_material(
+    name: &str,
+    path: &Path,
+) -> Result<(String, String)> {
     ensure!(
-        path.is_file() && path.metadata()?.len() <= MAX_FILE_BYTES,
+        path.is_file()
+            && path.metadata()?.len() <= MAX_FILE_BYTES,
         "Выберите файл до 32 МиБ"
     );
     let mut bytes = Vec::new();
@@ -196,7 +241,10 @@ mod tests {
     /// Проверяет корректную границу UTF-8 при ограничении текста.
     #[test]
     fn unicode_limit_does_not_cut_a_codepoint() {
-        assert_eq!(truncate("Привет", 3), "При\n…[обрезано]");
+        assert_eq!(
+            truncate("Привет", 3),
+            "При\n…[обрезано]"
+        );
     }
     /// Проверяет обработку отсутствующего файла без потери остальных вложений.
     #[test]
@@ -206,7 +254,10 @@ mod tests {
         std::fs::write(&path, "fn main() {}").unwrap();
         let result = build_attachment_message_parts(&[
             ("lost".into(), "/missing/xopilot".into()),
-            ("code".into(), path.to_string_lossy().into_owned()),
+            (
+                "code".into(),
+                path.to_string_lossy().into_owned(),
+            ),
         ]);
         assert_eq!(result.text_notes.len(), 2);
         assert!(result.text_notes[1].contains("fn main"));
@@ -214,6 +265,8 @@ mod tests {
     /// Проверяет отказ от отправки повреждённого изображения модели.
     #[test]
     fn invalid_image_is_not_sent_to_a_model() {
-        assert!(downscale_image_bytes(b"not an image").is_err());
+        assert!(
+            downscale_image_bytes(b"not an image").is_err()
+        );
     }
 }

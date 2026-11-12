@@ -9,7 +9,10 @@ use crate::{
 use dioxus::prelude::*;
 /// Открывает системный выбор изображения и сохраняет нормализованный аватар.
 #[component]
-pub fn build_avatar(value: String, onchange: EventHandler<String>) -> Element {
+pub fn build_avatar(
+    value: String,
+    onchange: EventHandler<String>,
+) -> Element {
     let mut state = use_context::<Signal<AppState>>();
     let mut working = use_signal(|| false);
     use_drop(move || {
@@ -21,16 +24,26 @@ pub fn build_avatar(value: String, onchange: EventHandler<String>) -> Element {
         if !cfg!(target_os = "android") {
             return;
         }
-        use services::mobile_documents::{Upload, UploadEvent};
-        let script = services::mobile_documents::PICKER_SCRIPT
-            .replace("xopilot-android-materials", "profile-avatar-file");
+        use services::mobile_documents::{
+            Upload, UploadEvent,
+        };
+        let script =
+            services::mobile_documents::PICKER_SCRIPT
+                .replace(
+                    "xopilot-android-materials",
+                    "profile-avatar-file",
+                );
         let mut bridge = document::eval(&script);
         let mut upload = Upload::default();
         let mut store = None;
-        while let Ok(event) = bridge.recv::<UploadEvent>().await {
+        while let Ok(event) =
+            bridge.recv::<UploadEvent>().await
+        {
             let ack = matches!(
                 &event,
-                UploadEvent::Start { .. } | UploadEvent::Chunk { .. } | UploadEvent::End
+                UploadEvent::Start { .. }
+                    | UploadEvent::Chunk { .. }
+                    | UploadEvent::End
             );
             let result = async {
                 match event {

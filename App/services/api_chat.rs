@@ -1,6 +1,8 @@
 // Файл: App/services/api_chat.rs
 // Описание: Потоковый совместимый API; поддерживает также локальный llama-server/Ollama.
-use super::{attachments::build_attachment_message_parts, db::Store};
+use super::{
+    attachments::build_attachment_message_parts, db::Store,
+};
 use advanced_xopilot::db::StoredMessage;
 use anyhow::{Context, Result, bail, ensure};
 use base64::{Engine, prelude::BASE64_STANDARD};
@@ -12,7 +14,9 @@ use tokio_util::sync::CancellationToken;
 
 pub const KEY: &str = "api_config_v1";
 
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Clone, Debug, Default, PartialEq, Serialize, Deserialize,
+)]
 #[serde(default)]
 pub struct ApiConfig {
     pub url: String,
@@ -24,7 +28,9 @@ impl ApiConfig {
     /// Проверяет обязательные параметры до сохранения или сетевого обращения.
     pub fn validate(&self) -> Result<Self> {
         let url = reqwest::Url::parse(self.url.trim())
-            .context("Введите URL API: https://example.com/v1")?;
+            .context(
+                "Введите URL API: https://example.com/v1",
+            )?;
         ensure!(
             url.username().is_empty()
                 && url.password().is_none()
@@ -34,18 +40,26 @@ impl ApiConfig {
         );
         let local = matches!(
             url.host_str(),
-            Some("localhost" | "127.0.0.1" | "[::1]" | "::1")
+            Some(
+                "localhost" | "127.0.0.1" | "[::1]" | "::1"
+            )
         );
         ensure!(
-            url.scheme() == "https" || (url.scheme() == "http" && local),
+            url.scheme() == "https"
+                || (url.scheme() == "http" && local),
             "Удалённому API нужен HTTPS; HTTP разрешён для localhost"
         );
         ensure!(
-            url.host_str().is_some() && !self.model.trim().is_empty(),
+            url.host_str().is_some()
+                && !self.model.trim().is_empty(),
             "Введите адрес и идентификатор модели"
         );
         Ok(Self {
-            url: self.url.trim().trim_end_matches('/').into(),
+            url: self
+                .url
+                .trim()
+                .trim_end_matches('/')
+                .into(),
             model: self.model.trim().into(),
             key: self.key.trim().into(),
         })
@@ -59,11 +73,16 @@ pub fn configuration(store: &Store) -> Result<ApiConfig> {
 
 /// Проверяет явный выбор API, не переключая локальный чат по наличию ключа.
 pub fn is_api_selected(store: &Store) -> Result<bool> {
-    store.with(|db| Ok(db.get_setting("chat_provider")?.as_deref() == Some("api")))
+    store.with(|db| {
+        Ok(db.get_setting("chat_provider")?.as_deref()
+            == Some("api"))
+    })
 }
 
 /// Сам факт сохранённого ключа не разрешает переключать прежний локальный чат на сеть.
-pub fn selected_configuration(store: &Store) -> Result<ApiConfig> {
+pub fn selected_configuration(
+    store: &Store,
+) -> Result<ApiConfig> {
     ensure!(
         is_api_selected(store)?,
         "API не выбран. Выберите локальную модель или сохраните подключение API"
@@ -72,7 +91,10 @@ pub fn selected_configuration(store: &Store) -> Result<ApiConfig> {
 }
 
 /// Проверяет адрес и сохраняет провайдера, модель и ключ API.
-pub fn save_configuration(store: &Store, config: &ApiConfig) -> Result<()> {
+pub fn save_configuration(
+    store: &Store,
+    config: &ApiConfig,
+) -> Result<()> {
     store.write(KEY, &config.validate()?)?;
     store.with(|db| {
         db.set_setting("chat_provider", "api")?;
@@ -82,21 +104,33 @@ pub fn save_configuration(store: &Store, config: &ApiConfig) -> Result<()> {
 
 /// Определяет адрес сервиса для текущего запроса.
 pub fn endpoint(config: &ApiConfig) -> String {
-    format!("{}/chat/completions", config.url.trim_end_matches('/'))
+    format!(
+        "{}/chat/completions",
+        config.url.trim_end_matches('/')
+    )
 }
 
 /// Полная история остаётся в БД. Лимит API не выдумываем: превышение возвращает провайдер.
 /// Изображения и файлы исторических сообщений тоже передаются выбранной модели.
-pub fn build_messages(history: &[StoredMessage], instructions: &str) -> Vec<Value> {
-    let mut messages = vec![json!({"role": "system", "content": format!(
-        "Ты Xopilot, полезный ИИ-помощник. Отвечай на языке пользователя. Не утверждай, что выполнил действие, если у тебя нет результата инструмента.\n{instructions}")})];
+pub fn build_messages(
+    history: &[StoredMessage],
+    instructions: &str,
+) -> Vec<Value> {
+    let mut messages = vec![
+        json!({"role": "system", "content": format!(
+        "Ты Xopilot, полезный ИИ-помощник. Отвечай на языке пользователя. Не утверждай, что выполнил действие, если у тебя нет результата инструмента.\n{instructions}")}),
+    ];
     for message in history {
-        let role = if message.role == "ai" || message.role == "assistant" {
+        let role = if message.role == "ai"
+            || message.role == "assistant"
+        {
             "assistant"
         } else {
             "user"
         };
-        let parts = build_attachment_message_parts(&message.attachments);
+        let parts = build_attachment_message_parts(
+            &message.attachments,
+        );
         let mut text = message.content.clone();
         if let Some(quote) = &message.quote {
             text.push_str(&format!("\nЦитата:\n{quote}"));
@@ -108,7 +142,8 @@ pub fn build_messages(history: &[StoredMessage], instructions: &str) -> Vec<Valu
             text.push('\n');
             text.push_str(&note);
         }
-        let mut content = vec![json!({"type":"text", "text":text})];
+        let mut content =
+            vec![json!({"type":"text", "text":text})];
         for image in parts.images {
             content.push(json!({"type":"image_url", "image_url":{"url":format!("data:image/jpeg;base64,{}", BASE64_STANDARD.encode(image))}}));
         }
@@ -124,19 +159,31 @@ pub struct EventDecoder {
 
 impl EventDecoder {
     /// SSE может разбить UTF-8, JSON и CRLF между любыми сетевыми чанками.
-    pub fn push(&mut self, chunk: &[u8]) -> Result<Vec<String>> {
+    pub fn push(
+        &mut self,
+        chunk: &[u8],
+    ) -> Result<Vec<String>> {
         self.buffer.extend_from_slice(chunk);
         ensure!(
             self.buffer.len() <= 4 * 1024 * 1024,
             "Слишком большое событие API"
         );
         let mut lines = Vec::new();
-        while let Some(end) = self.buffer.iter().position(|b| *b == b'\n') {
-            let mut line: Vec<u8> = self.buffer.drain(..=end).collect();
-            while line.last().is_some_and(|b| *b == b'\n' || *b == b'\r') {
+        while let Some(end) =
+            self.buffer.iter().position(|b| *b == b'\n')
+        {
+            let mut line: Vec<u8> =
+                self.buffer.drain(..=end).collect();
+            while line
+                .last()
+                .is_some_and(|b| *b == b'\n' || *b == b'\r')
+            {
                 line.pop();
             }
-            lines.push(String::from_utf8(line).context("API вернул неверный UTF-8")?);
+            lines
+                .push(String::from_utf8(line).context(
+                    "API вернул неверный UTF-8",
+                )?);
         }
         Ok(lines)
     }
@@ -151,7 +198,9 @@ impl EventDecoder {
 }
 
 /// Разбирает SSE-событие, отличая текст, завершение и ошибку провайдера.
-fn decode_line(line: &str) -> Result<(Option<String>, bool)> {
+fn decode_line(
+    line: &str,
+) -> Result<(Option<String>, bool)> {
     let Some(data) = line.strip_prefix("data:") else {
         return Ok((None, false));
     };
@@ -162,7 +211,8 @@ fn decode_line(line: &str) -> Result<(Option<String>, bool)> {
     if data.is_empty() {
         return Ok((None, false));
     }
-    let value: Value = serde_json::from_str(data).context("API вернул неверное событие")?;
+    let value: Value = serde_json::from_str(data)
+        .context("API вернул неверное событие")?;
     if let Some(error) = value.get("error") {
         bail!(
             "Ошибка API: {}",
@@ -223,10 +273,12 @@ pub async fn generate_reply(
         let Some(chunk) = chunk else {
             break;
         };
-        let chunk = chunk.context("Соединение с API прервано")?;
+        let chunk =
+            chunk.context("Соединение с API прервано")?;
         if is_json {
             ensure!(
-                json_body.len() + chunk.len() <= 8 * 1024 * 1024,
+                json_body.len() + chunk.len()
+                    <= 8 * 1024 * 1024,
                 "Ответ API превышает 8 МиБ"
             );
             json_body.extend_from_slice(&chunk);
@@ -238,15 +290,22 @@ pub async fn generate_reply(
                 answer.push_str(&text);
                 let _ = updates.send(text);
             }
-            ensure!(answer.len() <= 8 * 1024 * 1024, "Ответ API превышает 8 МиБ");
+            ensure!(
+                answer.len() <= 8 * 1024 * 1024,
+                "Ответ API превышает 8 МиБ"
+            );
             if done {
-                ensure!(!answer.trim().is_empty(), "Модель вернула пустой ответ");
+                ensure!(
+                    !answer.trim().is_empty(),
+                    "Модель вернула пустой ответ"
+                );
                 return Ok(answer);
             }
         }
     }
     if is_json {
-        let value: Value = serde_json::from_slice(&json_body)?;
+        let value: Value =
+            serde_json::from_slice(&json_body)?;
         answer = value["choices"][0]["message"]["content"]
             .as_str()
             .unwrap_or_default()
@@ -260,7 +319,10 @@ pub async fn generate_reply(
             }
         }
     }
-    ensure!(!answer.trim().is_empty(), "Модель вернула пустой ответ");
+    ensure!(
+        !answer.trim().is_empty(),
+        "Модель вернула пустой ответ"
+    );
     Ok(answer)
 }
 
@@ -305,7 +367,10 @@ mod tests {
             lines.extend(decoder.push(&[*byte]).unwrap());
         }
         lines.extend(decoder.finish().unwrap());
-        assert_eq!(decode_line(&lines[0]).unwrap().0.as_deref(), Some("Привет"));
+        assert_eq!(
+            decode_line(&lines[0]).unwrap().0.as_deref(),
+            Some("Привет")
+        );
         assert!(decode_line(&lines[2]).unwrap().1);
     }
 }

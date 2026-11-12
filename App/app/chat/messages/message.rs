@@ -314,7 +314,8 @@ mod tests {
     use super::*;
     /// Проверяет очистку Markdown от исполнения кода и внешних картинок.
     #[test]
-    fn markdown_cannot_run_scripts_or_load_tracking_images() {
+    fn markdown_cannot_run_scripts_or_load_tracking_images()
+    {
         let html = markdown_html(
             "# Hello\n<script>alert(1)</script>\n<img src='https://tracker.test/pixel'>\n[x](javascript:alert(1))",
         );

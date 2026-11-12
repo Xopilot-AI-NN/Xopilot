@@ -7,11 +7,23 @@ use xopilot::services::{chat_store, db::Store};
 /// Собирает тестовую SQLCipher с сообщениями для рендера компонентов.
 fn build_fixture() -> Element {
     let _state = use_context_provider(|| {
-        let store = Store::new(Database::open(":memory:", &"a".repeat(64)).unwrap());
+        let store = Store::new(
+            Database::open(":memory:", &"a".repeat(64))
+                .unwrap(),
+        );
         let snapshot = store
             .with(|db| {
-                let id = db.create_chat("Проверка интерфейса")?;
-                db.add_message_full(id, "user", "Сообщение пользователя", None, None, &[], None)?;
+                let id =
+                    db.create_chat("Проверка интерфейса")?;
+                db.add_message_full(
+                    id,
+                    "user",
+                    "Сообщение пользователя",
+                    None,
+                    None,
+                    &[],
+                    None,
+                )?;
                 db.add_message_full(
                     id,
                     "ai",
@@ -87,8 +99,13 @@ fn all_migrated_screens_render_with_real_store_context() {
 /// Создаёт тестовое окно с открытыми настройками.
 fn window_fixture() -> Element {
     let _state = use_context_provider(|| {
-        let store = Store::new(Database::open(":memory:", &"a".repeat(64)).unwrap());
-        let snapshot = store.with(|db| chat_store::load(db, None)).unwrap();
+        let store = Store::new(
+            Database::open(":memory:", &"a".repeat(64))
+                .unwrap(),
+        );
+        let snapshot = store
+            .with(|db| chat_store::load(db, None))
+            .unwrap();
         let mut state = AppState {
             store: Some(store),
             ready: true,
@@ -107,7 +124,8 @@ fn window_fixture() -> Element {
 
 /// Проверяет сохранение чата под настройками и доступность разделов.
 #[test]
-fn settings_overlay_retains_chat_and_exposes_original_sections() {
+fn settings_overlay_retains_chat_and_exposes_original_sections()
+ {
     let mut dom = VirtualDom::new(window_fixture);
     dom.rebuild_in_place();
     let html = dioxus_ssr::render(&dom);
@@ -125,9 +143,14 @@ fn settings_overlay_retains_chat_and_exposes_original_sections() {
         "Обновления",
         "О программе",
     ] {
-        assert!(html.contains(label), "Missing original section: {label}");
+        assert!(
+            html.contains(label),
+            "Missing original section: {label}"
+        );
     }
-    assert!(!html.contains("История хранится локально в SQLCipher."));
+    assert!(!html.contains(
+        "История хранится локально в SQLCipher."
+    ));
     assert!(!html.contains("Твой ИИ. Твои проекты."));
 }
 
@@ -148,7 +171,8 @@ fn open_drawer_fixture() -> Element {
 
 /// Проверяет удаление блокирующего HTML-атрибута у открытого меню.
 #[test]
-fn open_drawer_removes_inert_instead_of_setting_it_to_false() {
+fn open_drawer_removes_inert_instead_of_setting_it_to_false()
+ {
     let mut dom = VirtualDom::new(open_drawer_fixture);
     dom.rebuild_in_place();
     let html = dioxus_ssr::render(&dom);

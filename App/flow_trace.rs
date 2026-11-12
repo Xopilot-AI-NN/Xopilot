@@ -26,7 +26,8 @@ struct TraceState {
     _lease: File,
 }
 
-static STATE: OnceLock<Option<TraceState>> = OnceLock::new();
+static STATE: OnceLock<Option<TraceState>> =
+    OnceLock::new();
 thread_local! {
     // Для async-задач, перемещающихся между потоками, передавай ID через span_with_parent.
     static SPAN_STACK: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
@@ -113,13 +114,23 @@ fn state() -> Option<&'static TraceState> {
 /// Возвращает верхушку синхронного стека текущего потока.
 fn current_parent() -> Option<String> {
     SPAN_STACK
-        .try_with(|stack| stack.try_borrow().ok().and_then(|s| s.last().cloned()))
+        .try_with(|stack| {
+            stack
+                .try_borrow()
+                .ok()
+                .and_then(|s| s.last().cloned())
+        })
         .ok()
         .flatten()
 }
 
 #[track_caller]
-fn record(kind: &str, name: &str, detail: &str, parent_override: Option<&str>) -> Option<String> {
+fn record(
+    kind: &str,
+    name: &str,
+    detail: &str,
+    parent_override: Option<&str>,
+) -> Option<String> {
     record_timed(kind, name, detail, parent_override, None)
 }
 
@@ -135,7 +146,8 @@ fn record_timed(
 ) -> Option<String> {
     let trace = state()?;
     if trace.failed.load(Ordering::Relaxed)
-        || trace.sequence.load(Ordering::Relaxed) >= trace.max_events
+        || trace.sequence.load(Ordering::Relaxed)
+            >= trace.max_events
     {
         return None;
     }
@@ -143,8 +155,12 @@ fn record_timed(
     if trace.failed.load(Ordering::Relaxed) {
         return None;
     }
-    let seq = trace.sequence.fetch_add(1, Ordering::Relaxed) + 1;
-    if seq > trace.max_events || trace.bytes.load(Ordering::Relaxed) >= 64 * 1024 * 1024 {
+    let seq =
+        trace.sequence.fetch_add(1, Ordering::Relaxed) + 1;
+    if seq > trace.max_events
+        || trace.bytes.load(Ordering::Relaxed)
+            >= 64 * 1024 * 1024
+    {
         return None;
     }
     let id = format!("{}:{seq}", trace.session);
@@ -163,7 +179,9 @@ fn record_timed(
     });
     let line = serde_json::to_vec(&event).ok()?;
     let length = line.len() as u64 + 1;
-    if trace.bytes.load(Ordering::Relaxed) + length > 64 * 1024 * 1024 {
+    if trace.bytes.load(Ordering::Relaxed) + length
+        > 64 * 1024 * 1024
+    {
         return None;
     }
     if file
@@ -211,9 +229,15 @@ impl Drop for FlowSpan {
         );
         let _ = SPAN_STACK.try_with(|stack| {
             if let Ok(mut stack) = stack.try_borrow_mut() {
-                if stack.last().is_some_and(|current| current == id) {
+                if stack
+                    .last()
+                    .is_some_and(|current| current == id)
+                {
                     stack.pop();
-                } else if let Some(position) = stack.iter().rposition(|current| current == id) {
+                } else if let Some(position) = stack
+                    .iter()
+                    .rposition(|current| current == id)
+                {
                     stack.remove(position);
                 }
             }
@@ -229,7 +253,10 @@ pub fn span(name: &str) -> FlowSpan {
 
 /// Явно указывает родителя при переносе работы в другой поток / async-задачу.
 #[track_caller]
-pub fn span_with_parent(name: &str, parent_id: &str) -> FlowSpan {
+pub fn span_with_parent(
+    name: &str,
+    parent_id: &str,
+) -> FlowSpan {
     let id = record("call", name, "", Some(parent_id));
     if let Some(id) = &id {
         let _ = SPAN_STACK.try_with(|stack| {
@@ -289,10 +316,14 @@ pub fn variable(name: &str, value: &impl Debug) {
     if state().is_none() {
         return;
     }
-    let detail = if std::env::var("XOPILOT_FLOW_VALUES").as_deref() == Ok("1") {
+    let detail = if std::env::var("XOPILOT_FLOW_VALUES")
+        .as_deref()
+        == Ok("1")
+    {
         truncate_utf8(&format!("{value:?}"), 200)
     } else {
-        "[значение скрыто; XOPILOT_FLOW_VALUES=1]".to_string()
+        "[значение скрыто; XOPILOT_FLOW_VALUES=1]"
+            .to_string()
     };
     let _ = record("variable", name, &detail, None);
 }
@@ -300,7 +331,8 @@ pub fn variable(name: &str, value: &impl Debug) {
 /// Ограничивает текст по Unicode-символам, сохраняя корректный UTF-8.
 fn truncate_utf8(value: &str, max_chars: usize) -> String {
     let mut chars = value.chars();
-    let result: String = chars.by_ref().take(max_chars).collect();
+    let result: String =
+        chars.by_ref().take(max_chars).collect();
     if chars.next().is_some() {
         format!("{result}…")
     } else {
@@ -311,13 +343,21 @@ fn truncate_utf8(value: &str, max_chars: usize) -> String {
 #[track_caller]
 pub fn read_to_string(path: &Path) -> io::Result<String> {
     let started = Instant::now();
-    let _operation = operation("file_read", "Чтение файла", &path.display().to_string());
+    let _operation = operation(
+        "file_read",
+        "Чтение файла",
+        &path.display().to_string(),
+    );
     match fs::read_to_string(path) {
         Ok(data) => {
             let _ = record(
                 "step",
                 "Файл прочитан",
-                &format!("{} байт, {} мс", data.len(), elapsed_ms(started.elapsed())),
+                &format!(
+                    "{} байт, {} мс",
+                    data.len(),
+                    elapsed_ms(started.elapsed())
+                ),
                 None,
             );
             Ok(data)
@@ -333,7 +373,11 @@ pub fn read_to_string(path: &Path) -> io::Result<String> {
 #[track_caller]
 pub fn write(path: &Path, content: &str) -> io::Result<()> {
     let started = Instant::now();
-    let _operation = operation("file_write", "Запись файла", &path.display().to_string());
+    let _operation = operation(
+        "file_write",
+        "Запись файла",
+        &path.display().to_string(),
+    );
     match fs::write(path, content) {
         Ok(()) => {
             let _ = record(
@@ -362,10 +406,16 @@ fn elapsed_ms(duration: Duration) -> u128 {
 
 /// Область файловой операции связывает результат и ошибку с её началом.
 #[track_caller]
-fn operation(kind: &str, name: &str, detail: &str) -> FlowSpan {
+fn operation(
+    kind: &str,
+    name: &str,
+    detail: &str,
+) -> FlowSpan {
     let id = record(kind, name, detail, None);
     if let Some(id) = &id {
-        SPAN_STACK.with(|stack| stack.borrow_mut().push(id.clone()));
+        SPAN_STACK.with(|stack| {
+            stack.borrow_mut().push(id.clone())
+        });
     }
     FlowSpan {
         id,
@@ -377,7 +427,10 @@ fn operation(kind: &str, name: &str, detail: &str) -> FlowSpan {
 
 /// Контекст устанавливается только на время poll и снимается до Pending.
 /// Поэтому Future можно переносить между потоками исполнителя Tokio.
-pub async fn scope<F: std::future::Future>(name: &str, future: F) -> F::Output {
+pub async fn scope<F: std::future::Future>(
+    name: &str,
+    future: F,
+) -> F::Output {
     let parent = current_parent().unwrap_or_default();
     scope_with_parent(name, &parent, future).await
 }
@@ -399,7 +452,8 @@ pub async fn scope_with_parent<F: std::future::Future>(
     };
     let mut future = std::pin::pin!(future);
     let result = std::future::poll_fn(|context| {
-        let _parent = PollParent::enter(lifetime.id.as_deref());
+        let _parent =
+            PollParent::enter(lifetime.id.as_deref());
         future.as_mut().poll(context)
     })
     .await;
@@ -413,7 +467,9 @@ impl PollParent {
     fn enter(id: Option<&str>) -> Self {
         let id = id.map(str::to_owned);
         if let Some(id) = &id {
-            SPAN_STACK.with(|stack| stack.borrow_mut().push(id.clone()));
+            SPAN_STACK.with(|stack| {
+                stack.borrow_mut().push(id.clone())
+            });
         }
         Self(id)
     }
@@ -424,7 +480,10 @@ impl Drop for PollParent {
         if let Some(id) = &self.0 {
             SPAN_STACK.with(|stack| {
                 let mut stack = stack.borrow_mut();
-                if let Some(position) = stack.iter().rposition(|current| current == id) {
+                if let Some(position) = stack
+                    .iter()
+                    .rposition(|current| current == id)
+                {
                     stack.remove(position);
                 }
             });

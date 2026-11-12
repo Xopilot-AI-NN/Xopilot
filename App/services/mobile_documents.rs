@@ -6,7 +6,8 @@ use anyhow::{Result, ensure};
 use base64::{Engine, prelude::BASE64_STANDARD};
 use serde::Deserialize;
 
-pub const PICKER_SCRIPT: &str = include_str!("mobile_documents.js");
+pub const PICKER_SCRIPT: &str =
+    include_str!("mobile_documents.js");
 
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -27,10 +28,18 @@ pub struct Upload {
 
 impl Upload {
     /// Проверяет объявленный размер выбранного Android-документа.
-    pub fn start(&mut self, name: String, size: usize) -> Result<()> {
-        ensure!(self.expected.is_none(), "Предыдущий файл ещё передаётся");
+    pub fn start(
+        &mut self,
+        name: String,
+        size: usize,
+    ) -> Result<()> {
         ensure!(
-            size as u64 <= super::attachments::MAX_FILE_BYTES,
+            self.expected.is_none(),
+            "Предыдущий файл ещё передаётся"
+        );
+        ensure!(
+            size as u64
+                <= super::attachments::MAX_FILE_BYTES,
             "Размер файла превышает 32 МиБ"
         );
         self.name = name;
@@ -41,10 +50,13 @@ impl Upload {
 
     /// Принимает ограниченный блок выбранного Android-документа.
     pub fn chunk(&mut self, data: &str) -> Result<()> {
-        let expected = self
-            .expected
-            .ok_or_else(|| anyhow::anyhow!("Передача файла не начата"))?;
-        ensure!(data.len() <= 90_000, "Слишком большой чанк файла");
+        let expected = self.expected.ok_or_else(|| {
+            anyhow::anyhow!("Передача файла не начата")
+        })?;
+        ensure!(
+            data.len() <= 90_000,
+            "Слишком большой чанк файла"
+        );
         let bytes = BASE64_STANDARD.decode(data)?;
         ensure!(
             self.bytes.len() + bytes.len() <= expected,
@@ -73,12 +85,15 @@ mod tests {
     use super::*;
     /// Проверяет размер и блоки файла с многобайтовым текстом.
     #[test]
-    fn upload_requires_declared_size_and_accepts_chunked_unicode_file() {
+    fn upload_requires_declared_size_and_accepts_chunked_unicode_file()
+     {
         let mut upload = Upload::default();
         assert!(upload.chunk("YWJj").is_err());
         upload.start("текст.md".into(), 6).unwrap();
         upload
-            .chunk(&BASE64_STANDARD.encode("При".as_bytes()))
+            .chunk(
+                &BASE64_STANDARD.encode("При".as_bytes()),
+            )
             .unwrap();
         let (name, data) = upload.finish().unwrap();
         assert_eq!(name, "текст.md");
@@ -97,8 +112,14 @@ mod tests {
     fn truncated_and_oversized_payloads_are_rejected() {
         let mut upload = Upload::default();
         upload.start("file".into(), 2).unwrap();
-        upload.chunk(&BASE64_STANDARD.encode(b"a")).unwrap();
+        upload
+            .chunk(&BASE64_STANDARD.encode(b"a"))
+            .unwrap();
         assert!(upload.finish().is_err());
-        assert!(upload.chunk(&BASE64_STANDARD.encode(b"bc")).is_err());
+        assert!(
+            upload
+                .chunk(&BASE64_STANDARD.encode(b"bc"))
+                .is_err()
+        );
     }
 }

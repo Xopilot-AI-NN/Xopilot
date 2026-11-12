@@ -31,10 +31,13 @@ async fn persist(state: Signal<AppState>) {
         )
     };
     if let Some(store) = store {
-        let result = services::runtime::blocking(move || {
-            services::ui_session::save(&store, &session, active, &draft)
-        })
-        .await;
+        let result =
+            services::runtime::blocking(move || {
+                services::ui_session::save(
+                    &store, &session, active, &draft,
+                )
+            })
+            .await;
         state::report(state, result);
     }
 }
@@ -63,7 +66,12 @@ pub fn build_session_lifecycle() -> Element {
         async move {
             if ready {
                 services::runtime::background(async {
-                    tokio::time::sleep(std::time::Duration::from_millis(150)).await
+                    tokio::time::sleep(
+                        std::time::Duration::from_millis(
+                            150,
+                        ),
+                    )
+                    .await
                 })
                 .await;
                 persist(state).await;
@@ -71,8 +79,12 @@ pub fn build_session_lifecycle() -> Element {
         }
     });
     use_future(move || async move {
-        let mut bridge = document::eval(include_str!("session_lifecycle.js"));
-        while let Ok(event) = bridge.recv::<LifecycleEvent>().await {
+        let mut bridge = document::eval(include_str!(
+            "session_lifecycle.js"
+        ));
+        while let Ok(event) =
+            bridge.recv::<LifecycleEvent>().await
+        {
             {
                 let mut value = state.write();
                 value.session_scrolls = event.scrolls;
@@ -81,8 +93,11 @@ pub fn build_session_lifecycle() -> Element {
             if event.kind == "back" {
                 let value = state.peek();
                 let approval = value.approval.is_some();
-                let pending = value.pending_screen.is_some() || value.pending_section.is_some();
-                let root = value.screen == Screen::Chat && !value.sidebar;
+                let pending =
+                    value.pending_screen.is_some()
+                        || value.pending_section.is_some();
+                let root = value.screen == Screen::Chat
+                    && !value.sidebar;
                 let drawer = value.sidebar;
                 drop(value);
                 if approval {

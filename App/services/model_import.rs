@@ -8,15 +8,19 @@ use std::{
     sync::{Mutex, OnceLock},
 };
 
-#[derive(Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Clone, Default, PartialEq, Serialize, Deserialize,
+)]
 pub struct Progress {
     pub phase: String,
     pub received: u64,
     pub total: u64,
     pub message: String,
 }
-static RUNNING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-static PROGRESS: OnceLock<Mutex<Progress>> = OnceLock::new();
+static RUNNING: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+static PROGRESS: OnceLock<Mutex<Progress>> =
+    OnceLock::new();
 /// Возвращает снимок импорта, в том числе после закрытия окна моделей.
 pub fn progress() -> Progress {
     PROGRESS
@@ -27,7 +31,9 @@ pub fn progress() -> Progress {
 }
 /// Публикует состояние операции без обращения к сигналам интерфейса из worker.
 fn publish(value: Progress) {
-    if let Ok(mut current) = PROGRESS.get_or_init(Default::default).lock() {
+    if let Ok(mut current) =
+        PROGRESS.get_or_init(Default::default).lock()
+    {
         *current = value;
     }
 }
@@ -43,7 +49,10 @@ pub fn fail(message: String) {
 }
 /// Закрывает завершённое уведомление импорта, не затрагивая установленный файл.
 pub fn dismiss() {
-    if !matches!(progress().phase.as_str(), "copying" | "verifying") {
+    if !matches!(
+        progress().phase.as_str(),
+        "copying" | "verifying"
+    ) {
         publish(Progress::default());
     }
 }
@@ -61,35 +70,51 @@ impl Upload {
         Self::start_in(super::paths::models_dir()?, size)
     }
     /// Позволяет проверять передачу в отдельном каталоге без личных файлов.
-    fn start_in(root: std::path::PathBuf, size: u64) -> Result<Self> {
+    fn start_in(
+        root: std::path::PathBuf,
+        size: u64,
+    ) -> Result<Self> {
         ensure!(
             size > 0 && size <= 8 * 1024 * 1024 * 1024,
             "Модель должна занимать от 1 байта до 8 ГиБ"
         );
         std::fs::create_dir_all(&root)?;
         ensure!(
-            fs2::available_space(&root)? > size + 64 * 1024 * 1024,
+            fs2::available_space(&root)?
+                > size + 64 * 1024 * 1024,
             "Недостаточно места для выбранной модели"
         );
         let mut current = PROGRESS
             .get_or_init(Default::default)
             .lock()
-            .map_err(|_| anyhow::anyhow!("Импорт недоступен"))?;
+            .map_err(|_| {
+                anyhow::anyhow!("Импорт недоступен")
+            })?;
         ensure!(
-            !matches!(current.phase.as_str(), "copying" | "verifying"),
+            !matches!(
+                current.phase.as_str(),
+                "copying" | "verifying"
+            ),
             "Дождитесь текущего импорта"
         );
         ensure!(
-            !RUNNING.swap(true, std::sync::atomic::Ordering::AcqRel),
+            !RUNNING.swap(
+                true,
+                std::sync::atomic::Ordering::AcqRel
+            ),
             "Дождитесь текущего импорта"
         );
-        let file = match tempfile::NamedTempFile::new_in(root) {
-            Ok(file) => file,
-            Err(error) => {
-                RUNNING.store(false, std::sync::atomic::Ordering::Release);
-                return Err(error.into());
-            }
-        };
+        let file =
+            match tempfile::NamedTempFile::new_in(root) {
+                Ok(file) => file,
+                Err(error) => {
+                    RUNNING.store(
+                    false,
+                    std::sync::atomic::Ordering::Release,
+                );
+                    return Err(error.into());
+                }
+            };
         *current = Progress {
             phase: "copying".into(),
             total: size,
@@ -107,7 +132,9 @@ impl Upload {
     /// Принимает ограниченный блок; контроль размера запрещает переполнение заявленного файла.
     pub fn push(&mut self, bytes: &[u8]) -> Result<()> {
         ensure!(
-            bytes.len() <= 1024 * 1024 && self.received + bytes.len() as u64 <= self.expected,
+            bytes.len() <= 1024 * 1024
+                && self.received + bytes.len() as u64
+                    <= self.expected,
             "Неверный размер блока модели"
         );
         self.file
@@ -126,8 +153,12 @@ impl Upload {
     }
     /// Сравнивает содержимое с каталогом и публикует готовый файл одним переименованием.
     pub fn finish(mut self) -> Result<String> {
-        ensure!(self.received == self.expected, "Передача модели оборвалась");
-        let digest = hex::encode(self.hash.clone().finalize());
+        ensure!(
+            self.received == self.expected,
+            "Передача модели оборвалась"
+        );
+        let digest =
+            hex::encode(self.hash.clone().finalize());
         let model = super::model_installer::MODELS
             .iter()
             .copied()
@@ -135,16 +166,24 @@ impl Upload {
             .context(
                 "Файл не совпадает с поддерживаемыми Gemma: проверьте оригинальный .litertlm",
             )?;
-        let mut file = self.file.take().context("Файл импорта утрачен")?;
+        let mut file = self
+            .file
+            .take()
+            .context("Файл импорта утрачен")?;
         file.flush()?;
         file.as_file().sync_all()?;
-        super::model_installer::install_staged(model, file)?;
+        super::model_installer::install_staged(
+            model, file,
+        )?;
         self.finished = true;
         publish(Progress {
             phase: "installed".into(),
             received: self.received,
             total: self.expected,
-            message: format!("{} готова к работе", model.name),
+            message: format!(
+                "{} готова к работе",
+                model.name
+            ),
         });
         Ok(model.name.into())
     }
@@ -160,14 +199,18 @@ impl Drop for Upload {
                 publish(value);
             }
         }
-        RUNNING.store(false, std::sync::atomic::Ordering::Release);
+        RUNNING.store(
+            false,
+            std::sync::atomic::Ordering::Release,
+        );
     }
 }
 /// Читает выбранный Desktop-файл блоками; имя файла не влияет на определение модели.
 pub fn import_file(path: &Path) -> Result<String> {
     let result = (|| {
         let mut source = std::fs::File::open(path)?;
-        let mut upload = Upload::start(source.metadata()?.len())?;
+        let mut upload =
+            Upload::start(source.metadata()?.len())?;
         let mut bytes = vec![0; 1024 * 1024];
         loop {
             let count = source.read(&mut bytes)?;
@@ -188,20 +231,36 @@ pub fn import_file(path: &Path) -> Result<String> {
 mod tests {
     /// Оборванный и чужой файл не заменяют установленные веса и не оставляют временных копий.
     #[test]
-    fn truncated_or_unknown_model_preserves_installed_file() {
+    fn truncated_or_unknown_model_preserves_installed_file()
+    {
         let dir = tempfile::tempdir().unwrap();
-        let original = dir
-            .path()
-            .join(super::super::model_installer::MODELS[0].filename);
+        let original = dir.path().join(
+            super::super::model_installer::MODELS[0]
+                .filename,
+        );
         std::fs::write(&original, b"original").unwrap();
-        let mut upload = super::Upload::start_in(dir.path().to_path_buf(), 10).unwrap();
+        let mut upload = super::Upload::start_in(
+            dir.path().to_path_buf(),
+            10,
+        )
+        .unwrap();
         upload.push(b"abc").unwrap();
         assert!(upload.finish().is_err());
-        let mut upload = super::Upload::start_in(dir.path().to_path_buf(), 3).unwrap();
+        let mut upload = super::Upload::start_in(
+            dir.path().to_path_buf(),
+            3,
+        )
+        .unwrap();
         assert!(upload.push(b"overflow").is_err());
         upload.push(b"abc").unwrap();
         assert!(upload.finish().is_err());
-        assert_eq!(std::fs::read(&original).unwrap(), b"original");
-        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+        assert_eq!(
+            std::fs::read(&original).unwrap(),
+            b"original"
+        );
+        assert_eq!(
+            std::fs::read_dir(dir.path()).unwrap().count(),
+            1
+        );
     }
 }

@@ -21,7 +21,8 @@ pub async fn latest() -> Result<Option<Release>> {
     }
     let response = response.error_for_status()?;
     ensure!(
-        response.content_length().unwrap_or(0) <= 1024 * 1024,
+        response.content_length().unwrap_or(0)
+            <= 1024 * 1024,
         "Ответ обновлений слишком большой"
     );
     use futures_util::StreamExt;
@@ -35,7 +36,8 @@ pub async fn latest() -> Result<Option<Release>> {
         );
         bytes.extend_from_slice(&chunk);
     }
-    let value: serde_json::Value = serde_json::from_slice(&bytes)?;
+    let value: serde_json::Value =
+        serde_json::from_slice(&bytes)?;
     let version = value["tag_name"]
         .as_str()
         .context("Релиз без версии")?
@@ -50,7 +52,10 @@ pub async fn latest() -> Result<Option<Release>> {
     );
     Ok(Some(Release {
         version,
-        notes: value["body"].as_str().unwrap_or_default().to_owned(),
+        notes: value["body"]
+            .as_str()
+            .unwrap_or_default()
+            .to_owned(),
         url,
     }))
 }

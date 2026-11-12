@@ -3,11 +3,13 @@ use serde_json::json;
 use xopilot::services::litert;
 /// Запускает отдельный проверочный стенд без обращения к личной истории.
 fn main() -> anyhow::Result<()> {
-    let path = std::env::args()
-        .nth(1)
-        .ok_or_else(|| anyhow::anyhow!("Укажите .litertlm"))?;
+    let path =
+        std::env::args().nth(1).ok_or_else(|| {
+            anyhow::anyhow!("Укажите .litertlm")
+        })?;
     let ask = |history| {
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, _rx) =
+            tokio::sync::mpsc::unbounded_channel();
         litert::generate(
             path.clone().into(),
             "cpu".into(),
@@ -22,7 +24,8 @@ fn main() -> anyhow::Result<()> {
         json!({"role":"user","content":"My secret word is apricot. Reply only OK."}),
     ];
     let first = ask(history.clone())?;
-    history.push(json!({"role":"assistant","content":first}));
+    history
+        .push(json!({"role":"assistant","content":first}));
     history.push(
         json!({"role":"user","content":"What is my secret word? Reply with just that word."}),
     );
@@ -33,14 +36,17 @@ fn main() -> anyhow::Result<()> {
         "Потеряна история: {second}"
     );
     anyhow::ensure!(
-        stats.reused == 1 && stats.rebuilt == 1 && stats.tokens > 0,
+        stats.reused == 1
+            && stats.rebuilt == 1
+            && stats.tokens > 0,
         "Контекст не дополнен: {stats:?}"
     );
     history[1] = json!({"role":"user","content":"My secret word is plum. Reply only OK."});
     let edited = ask(history)?;
     let stats = litert::context_stats()?;
     anyhow::ensure!(
-        edited.to_lowercase().contains("plum") && stats.rebuilt == 2,
+        edited.to_lowercase().contains("plum")
+            && stats.rebuilt == 2,
         "Редактирование не пересобрало контекст: {stats:?}, {edited}"
     );
     litert::reset_context()?;
@@ -51,7 +57,9 @@ fn main() -> anyhow::Result<()> {
         litert::context_stats()?.rebuilt == 3,
         "Смена чата не сбросила контекст"
     );
-    println!("CONTEXT_OK: дополнение, память разговора, правка истории и сброс чата");
+    println!(
+        "CONTEXT_OK: дополнение, память разговора, правка истории и сброс чата"
+    );
     litert::unload()?;
     Ok(())
 }

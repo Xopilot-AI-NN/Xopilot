@@ -43,8 +43,14 @@ pub fn build_workspaces_dialog() -> Element {
             let result = async {
                 let store = state::store(state)?;
                 data.set(
-                    services::runtime::blocking(move || workspaces::list_workspaces(&store))
-                        .await?,
+                    services::runtime::blocking(
+                        move || {
+                            workspaces::list_workspaces(
+                                &store,
+                            )
+                        },
+                    )
+                    .await?,
                 );
                 Ok(())
             }
@@ -62,7 +68,9 @@ pub fn build_workspaces_dialog() -> Element {
         .cloned()
         .collect();
     let active = state.read().active;
-    let assigned = active.and_then(|id| data.read().chats.get(&id.to_string()).cloned());
+    let assigned = active.and_then(|id| {
+        data.read().chats.get(&id.to_string()).cloned()
+    });
     rsx! {
         div {
             class: "page",

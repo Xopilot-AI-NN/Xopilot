@@ -5,7 +5,9 @@ use serde::{Deserialize, Serialize};
 
 pub const KEY: &str = "prompt_templates_v1";
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Clone, Debug, PartialEq, Serialize, Deserialize,
+)]
 pub struct Template {
     pub id: String,
     pub title: String,
@@ -14,18 +16,26 @@ pub struct Template {
 }
 
 /// Восстанавливает список пользовательских шаблонов.
-pub fn list_templates(store: &Store) -> Result<Vec<Template>> {
+pub fn list_templates(
+    store: &Store,
+) -> Result<Vec<Template>> {
     store.read(KEY)
 }
 
 /// Проверяет и сохраняет новую запись в хранилище.
-pub fn save(store: &Store, title: &str, body: &str) -> Result<()> {
+pub fn save(
+    store: &Store,
+    title: &str,
+    body: &str,
+) -> Result<()> {
     ensure!(
-        !title.trim().is_empty() && title.chars().count() <= 80,
+        !title.trim().is_empty()
+            && title.chars().count() <= 80,
         "Введите название до 80 символов"
     );
     ensure!(
-        !body.trim().is_empty() && body.chars().count() <= 20_000,
+        !body.trim().is_empty()
+            && body.chars().count() <= 20_000,
         "Введите текст до 20 000 символов"
     );
     store.with(|db| {
@@ -50,13 +60,20 @@ pub fn delete(store: &Store, id: &str) -> Result<()> {
 }
 
 /// Обновляет существующую запись с сохранением её идентичности.
-pub fn update(store: &Store, id: &str, title: &str, body: &str) -> Result<()> {
+pub fn update(
+    store: &Store,
+    id: &str,
+    title: &str,
+    body: &str,
+) -> Result<()> {
     ensure!(
-        !title.trim().is_empty() && title.chars().count() <= 80,
+        !title.trim().is_empty()
+            && title.chars().count() <= 80,
         "Введите название до 80 символов"
     );
     ensure!(
-        !body.trim().is_empty() && body.chars().count() <= 20_000,
+        !body.trim().is_empty()
+            && body.chars().count() <= 20_000,
         "Введите текст до 20 000 символов"
     );
     store.with(|db| {
@@ -64,7 +81,9 @@ pub fn update(store: &Store, id: &str, title: &str, body: &str) -> Result<()> {
         let item = items
             .iter_mut()
             .find(|item| item.id == id)
-            .ok_or_else(|| anyhow::anyhow!("Шаблон уже удалён"))?;
+            .ok_or_else(|| {
+                anyhow::anyhow!("Шаблон уже удалён")
+            })?;
         item.title = title.trim().into();
         item.body = body.into();
         item.updated = super::canvases::now();

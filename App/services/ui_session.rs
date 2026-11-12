@@ -7,7 +7,15 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Clone, Copy, PartialEq, Default, Debug, Serialize, Deserialize)]
+#[derive(
+    Clone,
+    Copy,
+    PartialEq,
+    Default,
+    Debug,
+    Serialize,
+    Deserialize,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum Screen {
     #[default]
@@ -25,7 +33,9 @@ pub enum Screen {
     Memory,
 }
 
-#[derive(Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(
+    Clone, Default, PartialEq, Serialize, Deserialize,
+)]
 #[serde(default)]
 pub struct Session {
     pub screen: Screen,
@@ -39,12 +49,16 @@ pub struct Session {
 /// Восстанавливает только ограниченный снимок; ошибки старого UI не блокируют саму историю.
 pub fn load(store: &Store) -> Result<Session> {
     store.with(|db| {
-        let mut value: Session = read_json(db, "ui_session_v1").unwrap_or_default();
-        value.settings_section = value.settings_section.filter(|section| *section < 6);
+        let mut value: Session =
+            read_json(db, "ui_session_v1")
+                .unwrap_or_default();
+        value.settings_section = value
+            .settings_section
+            .filter(|section| *section < 6);
         value.history.truncate(16);
-        value
-            .scrolls
-            .retain(|key, value| key.len() < 100 && value.is_finite());
+        value.scrolls.retain(|key, value| {
+            key.len() < 100 && value.is_finite()
+        });
         if !value.chat_scroll.is_finite() {
             value.chat_scroll = 0.0;
         }
@@ -62,9 +76,15 @@ pub fn save(
     draft: &super::drafts::Draft,
 ) -> Result<()> {
     store.with(|db| {
-        let mut updates = vec![("ui_session_v1".into(), serde_json::to_string(session)?)];
+        let mut updates = vec![(
+            "ui_session_v1".into(),
+            serde_json::to_string(session)?,
+        )];
         if let Some(id) = active {
-            updates.push((format!("draft:{id}"), serde_json::to_string(draft)?));
+            updates.push((
+                format!("draft:{id}"),
+                serde_json::to_string(draft)?,
+            ));
         }
         db.apply_sync_settings(&[], &updates)?;
         Ok(())

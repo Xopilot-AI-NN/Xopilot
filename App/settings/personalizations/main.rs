@@ -11,7 +11,9 @@ use dioxus::prelude::*;
 
 /// Показывает оформление, память и выбор автоматического ускорения.
 #[component]
-pub fn build_personalizations(#[props(default)] memory_only: bool) -> Element {
+pub fn build_personalizations(
+    #[props(default)] memory_only: bool,
+) -> Element {
     let mut state = use_context::<Signal<AppState>>();
     let mut name = use_signal(String::new);
     let mut memory = use_signal(String::new);
@@ -30,19 +32,33 @@ pub fn build_personalizations(#[props(default)] memory_only: bool) -> Element {
                     .unwrap_or_else(|| "auto".into()))
             })?;
             backend.set(selected_backend);
-            let (profile, personal, saved_language) = services::runtime::blocking(move || {
-                let profile = profile::read(&store)?;
-                let (personal, language) = store.with(|db| {
-                    Ok((
-                        db.get_setting("personal_instructions")?.unwrap_or_default(),
-                        db.get_setting("response_language")?
-                            .unwrap_or_else(|| "ru".into()),
-                    ))
-                })?;
-                Ok((profile, personal, language))
-            })
-            .await?;
-            name.set(profile["name"].as_str().unwrap_or("Пользователь").into());
+            let (profile, personal, saved_language) =
+                services::runtime::blocking(move || {
+                    let profile = profile::read(&store)?;
+                    let (personal, language) =
+                        store.with(|db| {
+                            Ok((
+                                db.get_setting(
+                                    "personal_instructions",
+                                )?
+                                .unwrap_or_default(),
+                                db.get_setting(
+                                    "response_language",
+                                )?
+                                .unwrap_or_else(|| {
+                                    "ru".into()
+                                }),
+                            ))
+                        })?;
+                    Ok((profile, personal, language))
+                })
+                .await?;
+            name.set(
+                profile["name"]
+                    .as_str()
+                    .unwrap_or("Пользователь")
+                    .into(),
+            );
             memory.set(personal);
             language.set(saved_language);
             loaded.set(true);

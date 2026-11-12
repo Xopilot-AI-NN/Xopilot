@@ -13,17 +13,25 @@ use xopilot::services::{
 
 /// Создаёт или получает хранилище данных текущего контекста.
 fn store() -> Store {
-    Store::new(Database::open(":memory:", &"a".repeat(64)).unwrap())
+    Store::new(
+        Database::open(":memory:", &"a".repeat(64))
+            .unwrap(),
+    )
 }
 
 /// Проверяет восстановление нужного чата и его черновика.
 #[test]
 fn chat_and_draft_keep_their_identity_after_reloading() {
     let store = store();
-    let first = store.with(|db| chat_store::load(db, None)).unwrap();
+    let first = store
+        .with(|db| chat_store::load(db, None))
+        .unwrap();
     let draft = Draft {
         text: "Несохранённая идея".into(),
-        files: vec![("note.md".into(), "/tmp/note.md".into())],
+        files: vec![(
+            "note.md".into(),
+            "/tmp/note.md".into(),
+        )],
     };
     let second = store
         .with(|db| {
@@ -46,7 +54,8 @@ fn chat_and_draft_keep_their_identity_after_reloading() {
 
 /// Проверяет сохранность неизвестных полей профиля, Canvas и проекта.
 #[test]
-fn migration_preserves_unported_profile_canvas_and_workspace_fields() {
+fn migration_preserves_unported_profile_canvas_and_workspace_fields()
+ {
     let store = store();
     store
         .write(
@@ -54,31 +63,43 @@ fn migration_preserves_unported_profile_canvas_and_workspace_fields() {
             &json!({"name":"Денис", "avatar":"", "memory":{"rules":["бережно"]}, "future":true}),
         )
         .unwrap();
-    profile::update(&store, "Денис", "Новые инструкции").unwrap();
+    profile::update(&store, "Денис", "Новые инструкции")
+        .unwrap();
     let profile = profile::read(&store).unwrap();
     assert_eq!(profile["memory"]["rules"][0], "бережно");
     assert_eq!(profile["future"], true);
     let original = json!([{"id":"old", "title":"Рисунок", "kind":"drawing", "strokes":[{"points":[[0.1,0.2]],"color":"#fff"}], "created_at":12}]);
     store.write(canvases::KEY, &original).unwrap();
-    let mut document = canvases::list_documents(&store).unwrap().remove(0);
+    let mut document =
+        canvases::list_documents(&store).unwrap().remove(0);
     document.title = "Название".into();
     canvases::save_document(&store, document).unwrap();
-    let after: serde_json::Value = store.read(canvases::KEY).unwrap();
+    let after: serde_json::Value =
+        store.read(canvases::KEY).unwrap();
     assert_eq!(after[0]["strokes"], original[0]["strokes"]);
     assert_eq!(after[0]["created_at"], 12);
     store.write(workspaces::KEY, &json!({"items":[{"id":"w","name":"Проект", "sync_pending_chat_uuids":["uuid"]}],"chats":{},"selected":"all"})).unwrap();
-    let mut workspace = workspaces::list_workspaces(&store).unwrap().items.remove(0);
+    let mut workspace = workspaces::list_workspaces(&store)
+        .unwrap()
+        .items
+        .remove(0);
     workspace.name = "Новое имя".into();
     workspaces::save_workspace(&store, workspace).unwrap();
-    let after: serde_json::Value = store.read(workspaces::KEY).unwrap();
-    assert_eq!(after["items"][0]["sync_pending_chat_uuids"][0], "uuid");
+    let after: serde_json::Value =
+        store.read(workspaces::KEY).unwrap();
+    assert_eq!(
+        after["items"][0]["sync_pending_chat_uuids"][0],
+        "uuid"
+    );
 }
 
 /// Проверяет, что удаление проекта не удаляет переписку.
 #[test]
 fn deleting_a_workspace_keeps_its_chats() {
     let store = store();
-    let chat = store.with(|db| Ok(db.create_chat("Чат")?)).unwrap();
+    let chat = store
+        .with(|db| Ok(db.create_chat("Чат")?))
+        .unwrap();
     workspaces::save_workspace(
         &store,
         Workspace {
@@ -90,7 +111,13 @@ fn deleting_a_workspace_keeps_its_chats() {
     .unwrap();
     workspaces::assign_chat(&store, chat, "w").unwrap();
     workspaces::delete_workspace(&store, "w").unwrap();
-    assert_eq!(store.with(chat_store::list_chat_items).unwrap().len(), 1);
+    assert_eq!(
+        store
+            .with(chat_store::list_chat_items)
+            .unwrap()
+            .len(),
+        1
+    );
     assert!(
         workspaces::list_workspaces(&store)
             .unwrap()
@@ -103,11 +130,18 @@ fn deleting_a_workspace_keeps_its_chats() {
 #[test]
 fn templates_and_canvas_survive_the_real_store() {
     let store = store();
-    prompt_templates::save(&store, "Ревью", "Проверь код").unwrap();
-    let template = prompt_templates::list_templates(&store).unwrap().remove(0);
+    prompt_templates::save(&store, "Ревью", "Проверь код")
+        .unwrap();
+    let template = prompt_templates::list_templates(&store)
+        .unwrap()
+        .remove(0);
     assert_eq!(template.body, "Проверь код");
     prompt_templates::delete(&store, &template.id).unwrap();
-    assert!(prompt_templates::list_templates(&store).unwrap().is_empty());
+    assert!(
+        prompt_templates::list_templates(&store)
+            .unwrap()
+            .is_empty()
+    );
     let saved = canvases::save_document(
         &store,
         Document {
@@ -120,13 +154,16 @@ fn templates_and_canvas_survive_the_real_store() {
     .unwrap();
     assert!(!saved.id.is_empty());
     assert_eq!(
-        canvases::list_documents(&store).unwrap()[0].content,
+        canvases::list_documents(&store).unwrap()[0]
+            .content,
         "# Привет"
     );
 }
 
 /// Читает полный HTTP-запрос локального тестового сервера.
-async fn read_request(stream: &mut tokio::net::TcpStream) -> serde_json::Value {
+async fn read_request(
+    stream: &mut tokio::net::TcpStream,
+) -> serde_json::Value {
     use tokio::io::AsyncReadExt;
     let mut bytes = Vec::new();
     let header_end;
@@ -147,23 +184,33 @@ async fn read_request(stream: &mut tokio::net::TcpStream) -> serde_json::Value {
         })
         .unwrap();
     bytes.resize(header_end + length, 0);
-    stream.read_exact(&mut bytes[header_end..]).await.unwrap();
+    stream
+        .read_exact(&mut bytes[header_end..])
+        .await
+        .unwrap();
     serde_json::from_slice(&bytes[header_end..]).unwrap()
 }
 
 /// Проверяет потоковые фрагменты и фактически отправленную модель API.
 #[tokio::test]
-async fn real_http_stream_emits_deltas_and_sends_configured_model() {
+async fn real_http_stream_emits_deltas_and_sends_configured_model()
+ {
     use tokio::io::AsyncWriteExt;
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let listener =
+        tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .unwrap();
     let address = listener.local_addr().unwrap();
     let server = tokio::spawn(async move {
-        let (mut stream, _) = listener.accept().await.unwrap();
+        let (mut stream, _) =
+            listener.accept().await.unwrap();
         let body = read_request(&mut stream).await;
         assert_eq!(body["model"], "test-model");
-        assert_eq!(body["messages"][0]["content"], "Привет");
-        let response =
-            "data: {\"choices\":[{\"delta\":{\"content\":\"Работает\"}}]}\n\ndata: [DONE]\n\n";
+        assert_eq!(
+            body["messages"][0]["content"],
+            "Привет"
+        );
+        let response = "data: {\"choices\":[{\"delta\":{\"content\":\"Работает\"}}]}\n\ndata: [DONE]\n\n";
         let header = format!(
             "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\n\r\n",
             response.len()
@@ -174,7 +221,8 @@ async fn real_http_stream_emits_deltas_and_sends_configured_model() {
             tokio::task::yield_now().await;
         }
     });
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let (tx, mut rx) =
+        tokio::sync::mpsc::unbounded_channel();
     let config = api_chat::ApiConfig {
         url: format!("http://{address}/v1"),
         model: "test-model".into(),
@@ -195,15 +243,23 @@ async fn real_http_stream_emits_deltas_and_sends_configured_model() {
 
 /// Проверяет отмену ожидания сетевых заголовков.
 #[tokio::test]
-async fn cancellation_interrupts_waiting_response_headers() {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+async fn cancellation_interrupts_waiting_response_headers()
+{
+    let listener =
+        tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .unwrap();
     let address = listener.local_addr().unwrap();
     let (accepted, ready) = tokio::sync::oneshot::channel();
     let server = tokio::spawn(async move {
-        let (mut stream, _) = listener.accept().await.unwrap();
+        let (mut stream, _) =
+            listener.accept().await.unwrap();
         read_request(&mut stream).await;
         accepted.send(()).unwrap();
-        tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+        tokio::time::sleep(std::time::Duration::from_secs(
+            30,
+        ))
+        .await;
     });
     let token = tokio_util::sync::CancellationToken::new();
     let request_token = token.clone();
@@ -224,18 +280,22 @@ async fn cancellation_interrupts_waiting_response_headers() {
     ready.await.unwrap();
     token.cancel();
     assert!(
-        tokio::time::timeout(std::time::Duration::from_secs(1), request)
-            .await
-            .unwrap()
-            .unwrap()
-            .is_err()
+        tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            request
+        )
+        .await
+        .unwrap()
+        .unwrap()
+        .is_err()
     );
     server.abort();
 }
 
 /// Запрещает неявную отправку локального чата сохранённому внешнему API.
 #[test]
-fn migration_never_sends_a_local_chat_to_a_saved_remote_api_implicitly() {
+fn migration_never_sends_a_local_chat_to_a_saved_remote_api_implicitly()
+ {
     let store = store();
     store
         .write(
@@ -253,11 +313,15 @@ fn migration_never_sends_a_local_chat_to_a_saved_remote_api_implicitly() {
             Ok(())
         })
         .unwrap();
-    assert!(api_chat::selected_configuration(&store).is_err());
+    assert!(
+        api_chat::selected_configuration(&store).is_err()
+    );
     let config = api_chat::configuration(&store).unwrap();
     api_chat::save_configuration(&store, &config).unwrap();
     assert_eq!(
-        api_chat::selected_configuration(&store).unwrap().model,
+        api_chat::selected_configuration(&store)
+            .unwrap()
+            .model,
         "remote"
     );
 }
@@ -271,8 +335,12 @@ thread_local! {
 fn action_fixture() -> dioxus::prelude::Element {
     use dioxus::prelude::*;
     let _state = use_context_provider(|| {
-        let store = UI_STORE.with(|cell| cell.borrow().as_ref().unwrap().clone());
-        let snapshot = store.with(|db| chat_store::load(db, None)).unwrap();
+        let store = UI_STORE.with(|cell| {
+            cell.borrow().as_ref().unwrap().clone()
+        });
+        let snapshot = store
+            .with(|db| chat_store::load(db, None))
+            .unwrap();
         let mut value = xopilot::app::state::AppState {
             store: Some(store),
             ready: true,
@@ -281,7 +349,8 @@ fn action_fixture() -> dioxus::prelude::Element {
         value.apply(snapshot);
         value.draft.text = "Тестовый вопрос".into();
         let state = Signal::new(value);
-        UI_STATE.with(|cell| *cell.borrow_mut() = Some(state));
+        UI_STATE
+            .with(|cell| *cell.borrow_mut() = Some(state));
         state
     });
     rsx! {
@@ -293,15 +362,23 @@ fn action_fixture() -> dioxus::prelude::Element {
 
 /// Проверяет сохранение вопроса и ответа, времени и очистку черновика.
 #[tokio::test(flavor = "current_thread")]
-async fn send_action_saves_real_user_and_assistant_messages_and_clears_draft() {
+async fn send_action_saves_real_user_and_assistant_messages_and_clears_draft()
+ {
     use dioxus::prelude::*;
     use tokio::io::AsyncWriteExt;
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let listener =
+        tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .unwrap();
     let address = listener.local_addr().unwrap();
     let server = tokio::spawn(async move {
-        let (mut stream, _) = listener.accept().await.unwrap();
+        let (mut stream, _) =
+            listener.accept().await.unwrap();
         let body = read_request(&mut stream).await;
-        assert_eq!(body["messages"][1]["content"], "Тестовый вопрос");
+        assert_eq!(
+            body["messages"][1]["content"],
+            "Тестовый вопрос"
+        );
         let response = "data: {\"choices\":[{\"delta\":{\"content\":\"Тестовый ответ\"}}]}\n\ndata: [DONE]\n\n";
         stream.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\n\r\n{response}", response.len()).as_bytes()).await.unwrap();
     });
@@ -315,12 +392,17 @@ async fn send_action_saves_real_user_and_assistant_messages_and_clears_draft() {
         },
     )
     .unwrap();
-    UI_STORE.with(|cell| *cell.borrow_mut() = Some(store.clone()));
+    UI_STORE.with(|cell| {
+        *cell.borrow_mut() = Some(store.clone())
+    });
     let mut dom = VirtualDom::new(action_fixture);
     dom.rebuild_in_place();
-    let state = UI_STATE.with(|cell| cell.borrow().unwrap());
+    let state =
+        UI_STATE.with(|cell| cell.borrow().unwrap());
     let active = state.read().active;
-    xopilot::app::state::refresh(state, active).await.unwrap();
+    xopilot::app::state::refresh(state, active)
+        .await
+        .unwrap();
     assert_eq!(
         state.read().draft.text,
         "Тестовый вопрос",
@@ -337,7 +419,8 @@ async fn send_action_saves_real_user_and_assistant_messages_and_clears_draft() {
     assert!(state.read().draft.text.is_empty());
     assert!(state.read().streaming.is_empty());
     let id = state.read().active.unwrap();
-    let messages = store.with(|db| Ok(db.get_messages(id)?)).unwrap();
+    let messages =
+        store.with(|db| Ok(db.get_messages(id)?)).unwrap();
     assert_eq!(messages.len(), 2);
     assert_eq!(messages[0].role, "user");
     assert_eq!(messages[1].role, "ai");
@@ -357,13 +440,16 @@ async fn send_action_saves_real_user_and_assistant_messages_and_clears_draft() {
 
 /// Проверяет возврат из вложенного окна без потери черновика.
 #[test]
-fn nested_dialogs_return_to_the_same_settings_section_and_keep_draft() {
+fn nested_dialogs_return_to_the_same_settings_section_and_keep_draft()
+ {
     use dioxus::prelude::*;
     use xopilot::app::state::{self, Screen};
-    UI_STORE.with(|cell| *cell.borrow_mut() = Some(store()));
+    UI_STORE
+        .with(|cell| *cell.borrow_mut() = Some(store()));
     let mut dom = VirtualDom::new(action_fixture);
     dom.rebuild_in_place();
-    let mut state = UI_STATE.with(|cell| cell.borrow().unwrap());
+    let mut state =
+        UI_STATE.with(|cell| cell.borrow().unwrap());
     state::navigate(state, Screen::Settings);
     state.write().settings_section = Some(1);
     state::navigate(state, Screen::Model);
@@ -385,13 +471,16 @@ fn nested_dialogs_return_to_the_same_settings_section_and_keep_draft() {
 
 /// Проверяет защиту изменённой формы при переходе назад.
 #[test]
-fn unsaved_settings_require_a_decision_before_returning_to_the_list() {
+fn unsaved_settings_require_a_decision_before_returning_to_the_list()
+ {
     use dioxus::prelude::*;
     use xopilot::app::state::{self, Screen};
-    UI_STORE.with(|cell| *cell.borrow_mut() = Some(store()));
+    UI_STORE
+        .with(|cell| *cell.borrow_mut() = Some(store()));
     let mut dom = VirtualDom::new(action_fixture);
     dom.rebuild_in_place();
-    let mut state = UI_STATE.with(|cell| cell.borrow().unwrap());
+    let mut state =
+        UI_STATE.with(|cell| cell.borrow().unwrap());
     state::navigate(state, Screen::Settings);
     state::select_settings_section(state, Some(0));
     state.write().unsaved = true;
@@ -407,20 +496,36 @@ fn unsaved_settings_require_a_decision_before_returning_to_the_list() {
 
 /// Проверяет совместимость ID закладок и их привязку к чату.
 #[test]
-fn bookmarks_keep_legacy_identifiers_and_are_scoped_to_their_chat() {
+fn bookmarks_keep_legacy_identifiers_and_are_scoped_to_their_chat()
+ {
     use xopilot::services::message_navigation;
     let store = store();
     let (first, second, message) = store
         .with(|db| {
             let first = db.create_chat("Первый")?;
             let second = db.create_chat("Второй")?;
-            let message = db.add_message_full(first, "user", "Закладка", None, None, &[], None)?;
+            let message = db.add_message_full(
+                first,
+                "user",
+                "Закладка",
+                None,
+                None,
+                &[],
+                None,
+            )?;
             Ok((first, second, message))
         })
         .unwrap();
-    assert!(message_navigation::toggle(&store, first, message).unwrap());
-    let saved: serde_json::Value = store.read(message_navigation::KEY).unwrap();
-    assert_eq!(saved[message.to_string()]["chat_id"], first);
+    assert!(
+        message_navigation::toggle(&store, first, message)
+            .unwrap()
+    );
+    let saved: serde_json::Value =
+        store.read(message_navigation::KEY).unwrap();
+    assert_eq!(
+        saved[message.to_string()]["chat_id"],
+        first
+    );
     assert!(
         message_navigation::marked(&store, first)
             .unwrap()
@@ -431,13 +536,20 @@ fn bookmarks_keep_legacy_identifiers_and_are_scoped_to_their_chat() {
             .unwrap()
             .is_empty()
     );
-    assert!(message_navigation::toggle(&store, second, message).is_err());
-    assert!(!message_navigation::toggle(&store, first, message).unwrap());
+    assert!(
+        message_navigation::toggle(&store, second, message)
+            .is_err()
+    );
+    assert!(
+        !message_navigation::toggle(&store, first, message)
+            .unwrap()
+    );
 }
 
 /// Проверяет изменение имени и аватара без потери инструкций и памяти.
 #[test]
-fn profile_avatar_and_name_preserve_memory_and_unknown_fields() {
+fn profile_avatar_and_name_preserve_memory_and_unknown_fields()
+ {
     use base64::Engine as _;
     let store = store();
     store
@@ -448,15 +560,24 @@ fn profile_avatar_and_name_preserve_memory_and_unknown_fields() {
         .unwrap();
     store
         .with(|db| {
-            db.set_setting("personal_instructions", "Keep instructions")?;
+            db.set_setting(
+                "personal_instructions",
+                "Keep instructions",
+            )?;
             Ok(())
         })
         .unwrap();
     let image = image::DynamicImage::new_rgb8(640, 320);
     let mut file = std::io::Cursor::new(Vec::new());
-    image.write_to(&mut file, image::ImageFormat::Png).unwrap();
-    let avatar = profile::avatar(&store, &file.into_inner()).unwrap();
-    let decoded = base64::prelude::BASE64_STANDARD.decode(avatar).unwrap();
+    image
+        .write_to(&mut file, image::ImageFormat::Png)
+        .unwrap();
+    let avatar =
+        profile::avatar(&store, &file.into_inner())
+            .unwrap();
+    let decoded = base64::prelude::BASE64_STANDARD
+        .decode(avatar)
+        .unwrap();
     let image = image::load_from_memory(&decoded).unwrap();
     assert_eq!((image.width(), image.height()), (256, 256));
     profile::rename(&store, "New name").unwrap();
@@ -469,6 +590,8 @@ fn profile_avatar_and_name_preserve_memory_and_unknown_fields() {
             .unwrap()
             .contains("Keep instructions")
     );
-    assert!(profile::avatar(&store, b"not a picture").is_err());
+    assert!(
+        profile::avatar(&store, b"not a picture").is_err()
+    );
     assert!(profile::rename(&store, " ").is_err());
 }
