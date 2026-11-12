@@ -17,3 +17,5 @@ Linux release упакован в dist/linux.zip и отдельный dist/Xopi
 Android production использует постоянную release-подпись, versionCode 2000013 и отдельный сценарий упаковки. Проверка ./scripts/test.sh apk-check dist/android.apk проверяет 16 КиБ ELF/ZIP-выравнивание. Проверки телефона, фоновой загрузки и восстановления состояния — в [ANDROID_DEVICE.md](ANDROID_DEVICE.md). Старое приложение с другим сертификатом не заменялось.
 
 Workflow проверен actionlint. Установщик закреплённого DX 0.7.10 скачал официальный архив и проверил SHA-256. Результат Linux/Android-сборки локально не заменяет проверку Windows на GitHub Actions.
+
+12 ноября после добавления ADB-стенда, диагностики и OOXML прошли 55 Rust-тестов, форматирование и Clippy. Linux WebKitGTK прошёл 82 UI-проверки, включая общий с APK модуль. Отдельный APK прошёл 25 проверок на POCO X5 5G. JSON-отчёты находятся в ui-review-results.json и android-ui-results.json.
