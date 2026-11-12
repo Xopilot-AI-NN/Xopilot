@@ -6,7 +6,7 @@ cd "$(dirname "$0")/.."
 : "${ANDROID_NDK_HOME:?Укажите каталог Android NDK}"
 : "${JAVA_HOME:?Укажите каталог JDK 21}"
 ./scripts/prepare_runtime.sh
-# Как в прежнем пререлизе, сохраняем ARM64 и x86_64, но упаковываем их в один android.apk.
+# Собираем обе ABI в промежуточный APK, затем выпускаем отдельные файлы с прежними именами.
 # Копия jniLibs не даёт второй сборке DX затереть библиотеку первой архитектуры.
 native_bundle=target/android-native-bundle
 rm -rf "$native_bundle"
@@ -31,3 +31,4 @@ done
 rm -rf target/dx/xopilot/release/android/app/app/src/main/jniLibs
 cp -R "$native_bundle" target/dx/xopilot/release/android/app/app/src/main/jniLibs
 node scripts/package_android.cjs --profile release
+./scripts/split_android_release.sh

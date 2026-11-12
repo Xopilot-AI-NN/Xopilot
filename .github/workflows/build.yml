@@ -121,7 +121,9 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: Android
-          path: dist/android.apk*
+          path: |
+            dist/Xopilot-*.apk
+            dist/SHA256SUMS-Android.txt
           if-no-files-found: error
 
   release:
@@ -152,9 +154,8 @@ jobs:
           generate_release_notes: true
           body_path: RELEASE_NOTES.md
           files: |
-            artifacts/linux.zip
+            artifacts/Xopilot-*.zip
             artifacts/Xopilot
-            artifacts/windows.zip
             artifacts/Xopilot.exe
-            artifacts/android.apk
-            artifacts/android.apk.sha256
+            artifacts/Xopilot-*.apk
+            artifacts/SHA256SUMS-Android.txt

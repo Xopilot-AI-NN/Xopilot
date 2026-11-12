@@ -7,6 +7,10 @@ const {execFileSync} = require('node:child_process');
 function main() {
     const platform = process.argv[2] || (process.platform === 'win32' ? 'windows' : 'linux');
     if (!['linux', 'windows'].includes(platform)) throw Error('Ожидалась платформа linux или windows');
+    const version = fs.readFileSync('Cargo.toml', 'utf8').match(/^version\s*=\s*"([^"]+)"/m)[1];
+    const buildType = process.env.GITHUB_REF_NAME?.startsWith('v') ? 'Release' : 'Dev';
+    const system = platform === 'windows' ? 'Windows' : 'Linux';
+    const archiveName = `Xopilot-${buildType}-${version.replaceAll('.', '_')}-${system}.zip`;
     const folder = path.resolve(`target/dx/xopilot/release/${platform}/app`);
     const source = path.join(folder, platform === 'windows' ? 'xopilot.exe' : 'xopilot');
     const binary = platform === 'windows' ? 'Xopilot.exe' : 'Xopilot';
@@ -26,15 +30,15 @@ function main() {
         for (const name of fs.readdirSync(folder).filter(name => name.toLowerCase().endsWith('.dll'))) {
             fs.copyFileSync(path.join(folder, name), path.join(temporary, name));
         }
-        const destination = path.resolve('dist/windows.zip');
+        const destination = path.resolve('dist', archiveName);
         const quote = value => value.replaceAll("'", "''");
         execFileSync('pwsh', ['-NoProfile', '-Command', `Compress-Archive -Path '${quote(temporary)}/*' -DestinationPath '${quote(destination)}' -Force`], {stdio: 'inherit'});
     } else {
         fs.chmodSync(path.join(temporary, binary), 0o755);
         fs.chmodSync(path.join('dist', binary), 0o755);
-        fs.rmSync('dist/linux.zip', {force: true});
-        execFileSync('zip', ['-qr', path.resolve('dist/linux.zip'), '.'], {cwd: temporary});
+        fs.rmSync(path.join('dist', archiveName), {force: true});
+        execFileSync('zip', ['-qr', path.resolve('dist', archiveName), '.'], {cwd: temporary});
     }
-    console.log(`Готово: dist/${platform}.zip и dist/${binary}`);
+    console.log(`Готово: dist/${archiveName} и dist/${binary}`);
 }
 try { main(); } catch (error) { console.error(error.message); process.exitCode = 1; }
