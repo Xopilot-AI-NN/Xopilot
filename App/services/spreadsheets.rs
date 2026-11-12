@@ -38,10 +38,13 @@ pub fn read(raw: &[u8]) -> Result<String> {
     use quick_xml::events::Event;
     let mut archive = zip::ZipArchive::new(Cursor::new(raw))?;
     ensure!(archive.len() <= 4096, "Слишком много частей XLSX");
-    let shared = if archive
+    // zip 9 декодирует имена с возможной ошибкой. Получаем принадлежащие нам строки
+    // до чтения частей архива и сохраняем ошибку декодирования для пользователя.
+    let files = archive
         .file_names()
-        .any(|name| name == "xl/sharedStrings.xml")
-    {
+        .map(|name| name.map(|name| name.into_owned()))
+        .collect::<zip::result::ZipResult<Vec<_>>>()?;
+    let shared = if files.iter().any(|name| name == "xl/sharedStrings.xml") {
         let source = xml(&mut archive, "xl/sharedStrings.xml")?;
         let mut strings = Vec::new();
         let mut reader = quick_xml::Reader::from_str(&source);
@@ -59,10 +62,9 @@ pub fn read(raw: &[u8]) -> Result<String> {
     } else {
         Vec::new()
     };
-    let mut names: Vec<_> = archive
-        .file_names()
+    let mut names: Vec<_> = files
+        .into_iter()
         .filter(|name| name.starts_with("xl/worksheets/") && name.ends_with(".xml"))
-        .map(str::to_owned)
         .collect();
     names.sort();
     let mut output = String::new();
