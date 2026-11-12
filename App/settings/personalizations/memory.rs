@@ -32,29 +32,70 @@ pub fn build_memory() -> Element {
             class: "section-title",
             "Сохранённые сведения"
         }
-        label {
-            input {
-                r#type: "checkbox",
-                checked: enabled,
-                onchange: move |event| {
-                    let result = state::store(state).and_then(|store| user_memory::configure(&store, event.checked(), automatic));
+        div {
+            class: "memory-toggle-grid",
+
+            button {
+                r#type: "button",
+                class: if enabled {
+                    "memory-toggle active"
+                } else {
+                    "memory-toggle inactive"
+                },
+                "aria-pressed": enabled.to_string(),
+
+                onclick: move |_| {
+                    let result = state::store(state).and_then(|store| {
+                        user_memory::configure(
+                            &store,
+                            !enabled,
+                            automatic,
+                        )
+                    });
                     state::report(state, result);
                     revision += 1;
                 },
+
+                span {
+                    class: "material-icons",
+                    "psychology"
+                }
+                span {
+                    class: "memory-toggle-title",
+                    "Использовать память"
+                }
             }
-            "Использовать память"
-        }
-        label {
-            input {
-                r#type: "checkbox",
-                checked: automatic,
-                onchange: move |event| {
-                    let result = state::store(state).and_then(|store| user_memory::configure(&store, enabled, event.checked()));
+
+            button {
+                r#type: "button",
+                class: if automatic {
+                    "memory-toggle active"
+                } else {
+                    "memory-toggle inactive"
+                },
+                "aria-pressed": automatic.to_string(),
+
+                onclick: move |_| {
+                    let result = state::store(state).and_then(|store| {
+                        user_memory::configure(
+                            &store,
+                            enabled,
+                            !automatic,
+                        )
+                    });
                     state::report(state, result);
                     revision += 1;
                 },
+
+                span {
+                    class: "material-icons",
+                    "auto_awesome"
+                }
+                span {
+                    class: "memory-toggle-title",
+                    "Автозапоминание"
+                }
             }
-            "Запоминать явные сведения из моих сообщений"
         }
         for item in items {
             section {
