@@ -76,3 +76,49 @@ test("all large trace events are retained for pagination", () => {
   assert.equal(rows.length, 1600);
   assert.equal(rows.at(-1).seq, 1600);
 });
+
+test("tree branches progress horizontally with distinct leaf rows", () => {
+  const rows = parse(
+    JSON.stringify([
+      event(1, { id: "root" }),
+      event(2, { id: "a", parent_id: "root" }),
+      event(3, { id: "b", parent_id: "root" }),
+      event(4, { id: "leaf", parent_id: "a" }),
+    ]),
+  );
+  const positions = require("./model.js").treeLayout(rows);
+  const [root, a, b, leaf] = rows.map((row) => positions.get(row.id));
+  assert.ok(root.x < a.x && a.x < leaf.x);
+  assert.equal(a.x, b.x);
+  assert.ok(Math.abs(a.y - b.y) >= 148);
+  assert.equal(root.y, (a.y + b.y) / 2);
+});
+test("tree tolerates cycles, missing parents and a parent recorded later", () => {
+  const rows = parse(
+    JSON.stringify([
+      event(1, { id: "child", parent_id: "parent" }),
+      event(2, { id: "parent", parent_id: "child" }),
+      event(3, { id: "missing", parent_id: "absent" }),
+      event(4, { id: "self", parent_id: "self" }),
+    ]),
+  );
+  const positions = require("./model.js").treeLayout(rows);
+  assert.equal(positions.size, rows.length);
+  assert.ok(positions.get(rows[0].id).x > positions.get(rows[1].id).x);
+  assert.equal(
+    new Set([...positions.values()].map((p) => `${p.x}/${p.y}`)).size,
+    rows.length,
+  );
+});
+test("deep legacy sequences use iterative traversal and separate sessions", () => {
+  const rows = parse(
+    JSON.stringify(Array.from({ length: 10000 }, (_, i) => event(i + 1))),
+  );
+  const positions = require("./model.js").treeLayout(rows);
+  assert.equal(positions.size, rows.length);
+  assert.ok(positions.get(rows.at(-1).id).x > positions.get(rows[0].id).x);
+  assert.deepEqual(require("./model.js").treeLayout([]), new Map());
+  assert.deepEqual(parse("", { partialTail: true }), []);
+  assert.deepEqual(parse('{"seq":', { partialTail: true }), []);
+  assert.throws(() => parse(""), /Нет завершённых/);
+});

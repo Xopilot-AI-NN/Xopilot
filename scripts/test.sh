@@ -28,6 +28,7 @@ case "${1:-quick}" in
     node --test tools/flowmap/model.test.cjs
     cargo build --locked -p xopilot --example flowmap_nodes_demo --no-default-features
     node tools/flowmap/check-trace.cjs
+    node --test tools/flowmap/launcher.test.cjs
     ;;
   model)
     if [[ $# -ne 2 ]]; then

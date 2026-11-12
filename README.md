@@ -137,6 +137,8 @@ node scripts/package_desktop.cjs linux
 # Для публикации: dist/Xopilot-Dev-2_0_13-Linux.zip и dist/Xopilot-Dev-2_0_13-Linux
 ```
 
+Для запуска приложения вместе с живой картой выполнения используйте `./scripts/fmap`. Команда открывает браузер, включает трассировку и автоматически подключает журнал. `./scripts/fmap --demo` показывает демонстрацию. Описание находится в [tools/flowmap/README.md](tools/flowmap/README.md).
+
 При `dx serve` процесс может называться `xopilot-<случайный ID>`: Dioxus создаёт копию для очередного запуска. Обычный собранный файл называется `xopilot`, название приложения — Xopilot.
 
 `prepare_runtime.sh` загружает закреплённый официальный [LiteRT-LM C API 1.0.0](https://github.com/google-ai-edge/LiteRT-LM/releases/tag/v0.19.1), проверяет SHA-256 и подготавливает лицензии. Без SDK работает API, но не встроенная модель. В установленное приложение runtime включается при сборке; Rust, Cargo и Dioxus CLI нужны только разработчику. Для Linux-пакета также нужны системные WebKitGTK/GTK3/libxdo.

@@ -1,0 +1,187 @@
+#!/usr/bin/env node
+// Единая точка запуска приложения и его локальной карты выполнения.
+// Журнал каждого запуска изолирован, значения переменных скрыты по умолчанию.
+const { spawn } = require("node:child_process");
+const fs = require("node:fs/promises");
+const path = require("node:path");
+const root = path.resolve(__dirname, "..");
+const options = new Set(process.argv.slice(2));
+const allowed = new Set(["--demo", "--no-browser", "--values", "--help"]);
+if ([...options].some((option) => !allowed.has(option))) {
+  console.error("Неизвестный параметр. Справка — ./scripts/fmap --help");
+  process.exit(2);
+}
+if (options.has("--help")) {
+  console.log(`./scripts/fmap [--demo] [--no-browser] [--values]
+Запускает Xopilot, локальный просмотрщик и браузер с живой трассой.
+--demo        Запускает демонстрацию событий без интерфейса Xopilot.
+--no-browser  Печатает адрес, браузер можно открыть самостоятельно.
+--values      Включает запись значений переменных в локальный журнал.
+Ctrl+C        Завершает приложение и локальный сервер.
+FLOWMAP_PORT  Задаёт порт. По умолчанию выбирается свободный.`);
+  process.exit(0);
+}
+let server;
+let app;
+let stopping = false;
+
+// Cargo может запускать дочерний процесс приложения. Завершаем всю созданную
+// группу, чтобы после Ctrl+C приложение и сервер не оставались в фоне.
+function stopChild(child) {
+  if (!child?.pid || child.exitCode !== null || child.signalCode !== null)
+    return Promise.resolve();
+  return new Promise((resolve) => {
+    const kill = (signal) => {
+      try {
+        if (process.platform === "win32") {
+          spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
+            stdio: "ignore",
+          }).on("error", () => child.kill());
+        } else process.kill(-child.pid, signal);
+      } catch (error) {
+        if (error.code !== "ESRCH") console.error(error.message);
+      }
+    };
+    const timeout = setTimeout(() => kill("SIGKILL"), 2000);
+    child.once("exit", () => {
+      clearTimeout(timeout);
+      resolve();
+    });
+    kill("SIGTERM");
+  });
+}
+
+// Все пути завершения сходятся здесь, включая ошибки сборки и сигналы терминала.
+async function shutdown(code) {
+  if (stopping) return;
+  stopping = true;
+  await Promise.all([stopChild(app), stopChild(server)]);
+  process.exit(code);
+}
+process.on("SIGINT", () => shutdown(130));
+process.on("SIGTERM", () => shutdown(143));
+
+// Сервер сообщает фактически занятый порт. Это позволяет запускать несколько
+// независимых карт и не требовать от пользователя освобождения порта 8787.
+function startServer(trace) {
+  return new Promise((resolve, reject) => {
+    server = spawn(process.execPath, ["tools/flowmap/serve.cjs", trace], {
+      cwd: root,
+      env: { ...process.env, FLOWMAP_PORT: process.env.FLOWMAP_PORT || "0" },
+      detached: process.platform !== "win32",
+      stdio: ["ignore", "pipe", "inherit"],
+    });
+    const timeout = setTimeout(
+      () => reject(Error("Сервер не ответил за 10 секунд")),
+      10000,
+    );
+    let output = "";
+    server.stdout.on("data", (chunk) => {
+      output += chunk;
+      const match = output.match(/Flow Map: (http:\/\/127\.0\.0\.1:\d+)/);
+      if (match) {
+        clearTimeout(timeout);
+        resolve(match[1] + "/?live=1");
+      }
+    });
+    server.once("error", (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+    server.once("exit", () => {
+      clearTimeout(timeout);
+      reject(Error("Локальный сервер завершился"));
+      if (!stopping) shutdown(1);
+    });
+  });
+}
+
+// Открываем системный браузер без shell-интерполяции адреса. При отсутствии
+// графической сессии напечатанный адрес остаётся доступным для ручного открытия.
+function openBrowser(url) {
+  const command =
+    process.platform === "darwin"
+      ? "open"
+      : process.platform === "win32"
+        ? "rundll32.exe"
+        : "xdg-open";
+  const args =
+    process.platform === "win32" ? ["url.dll,FileProtocolHandler", url] : [url];
+  const browser = spawn(command, args, { stdio: "ignore" });
+  browser.on("error", () =>
+    console.error("Открой напечатанный адрес в браузере."),
+  );
+  browser.on("exit", (code) => {
+    if (code) console.error("Открой напечатанный адрес в браузере.");
+  });
+  browser.unref();
+}
+
+// Создаём пустой файл заранее. Просмотрщик дождётся первых событий, пока Dioxus
+// собирает приложение, и затем будет читать новые записи раз в секунду.
+async function main() {
+  const directory = path.join(root, "target/flow-traces");
+  await fs.mkdir(directory, { recursive: true });
+  const trace = path.join(
+    directory,
+    `xopilot-${Date.now()}-${process.pid}.jsonl`,
+  );
+  await fs.writeFile(trace, "", { flag: "wx", mode: 0o600 });
+  const url = await startServer(trace);
+  if (stopping) return;
+  console.log(
+    `Flow Map — ${url}\nЖурнал — ${trace}\nCtrl+C завершает приложение и просмотрщик.`,
+  );
+  if (!options.has("--no-browser")) openBrowser(url);
+  // Dioxus подготавливает стили, шрифты и остальные assets перед запуском.
+  // Для консольной демонстрации достаточно Cargo без desktop-зависимостей.
+  const demo = options.has("--demo");
+  const command = demo ? "cargo" : "dx";
+  const args = demo
+    ? [
+        "run",
+        "--locked",
+        "-p",
+        "xopilot",
+        "--example",
+        "flowmap_nodes_demo",
+        "--no-default-features",
+      ]
+    : [
+        "serve",
+        "--desktop",
+        "--locked",
+        "-p",
+        "xopilot",
+        "--port",
+        "0",
+        "--interactive",
+        "false",
+        "--open",
+        "false",
+      ];
+  app = spawn(command, args, {
+    cwd: root,
+    env: {
+      ...process.env,
+      XOPILOT_FLOW_TRACE: "1",
+      XOPILOT_FLOW_PATH: trace,
+      XOPILOT_FLOW_VALUES: options.has("--values") ? "1" : "0",
+    },
+    detached: process.platform !== "win32",
+    stdio: "inherit",
+  });
+  app.once("error", (error) => {
+    console.error(error.message);
+    shutdown(1);
+  });
+  app.once("exit", (code, signal) => {
+    if (stopping) return;
+    if (code !== 0 || signal) shutdown(code || 1);
+    else console.log("Приложение завершено. Карта доступна до Ctrl+C.");
+  });
+}
+main().catch((error) => {
+  console.error(error.message);
+  shutdown(1);
+});

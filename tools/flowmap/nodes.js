@@ -1,4 +1,4 @@
-// Создано ChatGPT: Flow Map v2, граф отмеченных событий, без серверов и внешних библиотек.
+// Интерактивная карта отмеченных событий с локальным импортом и живой трассой.
 "use strict";
 (() => {
   const svgNS = "http://www.w3.org/2000/svg";
@@ -257,15 +257,9 @@
   function arrange(list) {
     nodes = new Map();
     if (mode === "flow") {
-      const cols = 5,
-        gapX = 318,
-        gapY = 166;
-      list.forEach((e, i) => {
-        const row = Math.floor(i / cols),
-          pos = i % cols,
-          col = row % 2 === 0 ? pos : cols - 1 - pos;
-        nodes.set(e.id, { event: e, x: 80 + col * gapX, y: 78 + row * gapY });
-      });
+      const layout = FlowmapModel.treeLayout(list);
+      for (const event of list)
+        nodes.set(event.id, { event, ...layout.get(event.id) });
     } else {
       const lanes = [...new Set(list.map((e) => e.thread))];
       const counters = new Map();
@@ -279,7 +273,7 @@
   }
   function rememberPositions() {
     for (const [id, node] of nodes)
-      positions.set(`${mode}/${id}`, { x: node.x, y: node.y });
+      if (node.manual) positions.set(`${mode}/${id}`, { x: node.x, y: node.y });
   }
   function computeEdges() {
     const byId = new Map(events.map((e) => [e.id, e]));
@@ -469,6 +463,15 @@
       y2,
       offset = 65,
       axis = "x";
+    if (mode === "flow" && edge.kind === "causal") {
+      x1 = from.x + NODE_W;
+      x2 = to.x;
+      y1 = from.y + 49;
+      y2 = to.y + 49;
+      offset = Math.max(40, Math.abs(x2 - x1) / 2);
+      const d = `M ${x1} ${y1} C ${x1 + offset} ${y1}, ${x2 - offset} ${y2}, ${x2} ${y2}`;
+      return { d, x1, y1, x2, y2, mx: (x1 + x2) / 2, my: (y1 + y2) / 2 };
+    }
     const sameRow = Math.abs(dy) < 100;
     if (sameRow && Math.abs(dx) > 120) {
       const right = dx >= 0;
@@ -860,6 +863,7 @@
     } else {
       const p = nodes.get(isDragging.id);
       if (!p) return;
+      p.manual = true;
       p.x = isDragging.origX + dx / scale;
       p.y = isDragging.origY + dy / scale;
       nodeEls
@@ -1062,7 +1066,7 @@
     nodes.clear();
     mode = mode === "flow" ? "threads" : "flow";
     $("#layout-btn").textContent =
-      mode === "flow" ? "⇄ По потокам" : "⇄ Общая схема";
+      mode === "flow" ? "⇄ По потокам" : "⇄ Дерево";
     refresh(true);
   });
   for (const id of ["#search", "#kind", "#thread"])
@@ -1179,6 +1183,7 @@
       if (file.size > MAX_BYTES) throw Error("Файл больше 64 МиБ");
       setEvents(parseFile(await file.text(), true), file.name);
       watchedHandle = handle;
+      if (!events.length) message("Ожидаем первые события приложения…");
       $("#watch-btn").textContent = "■ Остановить обновление";
       let lastModified = file.lastModified,
         lastSize = file.size;
@@ -1190,6 +1195,7 @@
           if (next.lastModified !== lastModified || next.size !== lastSize) {
             const parsed = parseFile(await next.text(), true);
             if (watchedHandle !== handle) return;
+            const firstEvents = !events.length && parsed.length > 0;
             events = parsed;
             lastModified = next.lastModified;
             lastSize = next.size;
@@ -1200,7 +1206,7 @@
             $("#kind").value = kind;
             if (!$("#thread").value) $("#thread").value = "*";
             if (!$("#kind").value) $("#kind").value = "*";
-            refresh();
+            refresh(firstEvents);
           }
           if (watchedHandle === handle) watchTimer = setTimeout(poll, 1000);
         } catch (error) {
@@ -1223,8 +1229,11 @@
   );
   $("#save-layout").addEventListener("click", () => {
     rememberPositions();
+    const snapshot = new Map(positions);
+    for (const [id, node] of nodes)
+      snapshot.set(`${mode}/${id}`, { x: node.x, y: node.y });
     download(
-      JSON.stringify({ version: 1, mode, positions: [...positions] }, null, 2),
+      JSON.stringify({ version: 1, mode, positions: [...snapshot] }, null, 2),
       "flowmap-layout.json",
     );
   });
@@ -1305,4 +1314,5 @@
     stopWatch();
   });
   refresh(true);
+  if (new URLSearchParams(location.search).get("live") === "1") watchFile();
 })();

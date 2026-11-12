@@ -25,7 +25,7 @@
         if (rows.length > MAX_EVENTS) throw Error("Больше 100 000 событий");
       }
     }
-    if (!rows.length) throw Error("Нет завершённых событий");
+    if (!rows.length && !partialTail) throw Error("Нет завершённых событий");
     if (rows.length > MAX_EVENTS) throw Error("Больше 100 000 событий");
     const seen = new Set();
     let epoch = 0;
@@ -79,7 +79,77 @@
       };
     });
   }
-  const api = { parse, MAX_EVENTS, MAX_BYTES };
+  // Выстраиваем причинное дерево слева направо. У записей без родителя
+  // сохраняем последовательность внутри потока, чтобы старые журналы читались.
+  function treeLayout(events) {
+    const byId = new Map(events.map((event) => [event.id, event]));
+    const parents = new Map();
+    const previous = new Map();
+    for (const event of events) {
+      const lane = `${event.session}/${event.thread}`;
+      const parent = event.parent ? byId.get(event.parent) : previous.get(lane);
+      parents.set(
+        event.id,
+        parent && parent.id !== event.id ? parent.id : null,
+      );
+      previous.set(lane, event);
+    }
+    // Повреждённая трасса может содержать цикл. Разрываем его только в раскладке,
+    // сохраняя исходные записи и связи для инспектора и экспорта.
+    const visited = new Set();
+    for (const event of events) {
+      let id = event.id;
+      const chain = new Set();
+      while (id && !visited.has(id)) {
+        chain.add(id);
+        const parent = parents.get(id);
+        if (chain.has(parent)) {
+          parents.set(id, null);
+          break;
+        }
+        id = parent;
+      }
+      for (const member of chain) visited.add(member);
+    }
+    const children = new Map(events.map((event) => [event.id, []]));
+    const roots = [];
+    for (const event of events) {
+      const parent = parents.get(event.id);
+      if (parent) children.get(parent).push(event.id);
+      else roots.push(event.id);
+    }
+    const positions = new Map();
+    let nextY = 78;
+    // Итеративный обход выдерживает длинную последовательность без переполнения
+    // стека. Родитель располагается посередине между крайними дочерними ветками.
+    for (const root of roots) {
+      const stack = [{ id: root, depth: 0, expanded: false }];
+      while (stack.length) {
+        const node = stack.pop();
+        const branches = children.get(node.id);
+        if (!node.expanded && branches.length) {
+          stack.push({ ...node, expanded: true });
+          for (let index = branches.length - 1; index >= 0; index--)
+            stack.push({
+              id: branches[index],
+              depth: node.depth + 1,
+              expanded: false,
+            });
+          continue;
+        }
+        let y = nextY;
+        if (branches.length)
+          y =
+            (positions.get(branches[0]).y + positions.get(branches.at(-1)).y) /
+            2;
+        else nextY += 148;
+        positions.set(node.id, { x: 80 + node.depth * 362, y });
+      }
+      nextY += 50;
+    }
+    return positions;
+  }
+  const api = { parse, treeLayout, MAX_EVENTS, MAX_BYTES };
   if (typeof module !== "undefined") module.exports = api;
   else root.FlowmapModel = api;
 })(globalThis);
