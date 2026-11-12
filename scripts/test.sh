@@ -15,6 +15,10 @@ case "${1:-quick}" in
     node scripts/check-ui.cjs
     ;;
   apk)
+    ./scripts/build_android_test.sh
+    node scripts/check-android-ui.cjs "${2:-target/android-ui-test.apk}"
+    ;;
+  apk-check)
     node scripts/check-android-apk.cjs "${2:-target/dx/xopilot/debug/android/app/app/build/outputs/apk/debug/app-debug.apk}"
     ;;
   bridges)
@@ -32,6 +36,6 @@ case "${1:-quick}" in
     cargo run -p xopilot --no-default-features --locked --example local_agent_smoke -- "$2"
     cargo run -p xopilot --no-default-features --locked --example local_canvas_smoke -- "$2"
     ;;
-  *) echo 'Режимы: quick | full | ui | bridges | apk [путь/к/APK] | model /путь/к/модели' >&2; exit 2 ;;
+  *) echo 'Режимы: quick | full | ui | bridges | apk | apk-check [путь/к/APK] | model /путь/к/модели' >&2; exit 2 ;;
 esac
 echo 'Проверки завершились успешно.'

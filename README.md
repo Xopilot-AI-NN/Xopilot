@@ -121,7 +121,7 @@ export ANDROID_HOME=/path/to/Android/Sdk
 export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
 ./scripts/init_android_signing.sh # один раз, только если ещё нет постоянного ключа
 ./scripts/build_android.sh
-./scripts/test.sh apk dist/android.apk
+./scripts/test.sh apk-check dist/android.apk
 ```
 
 Android-пользователь устанавливает APK, приложение использует системный WebView. Для обновления APK с прежней подписью нужен прежний ключ. Новые Rust-сборки подписываются одним новым постоянным ключом. Тестовый пакет `by.xopilot.preview` устанавливается отдельно и не меняет данные `by.xopilot.app`.

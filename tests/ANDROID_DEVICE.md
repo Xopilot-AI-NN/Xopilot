@@ -23,7 +23,7 @@ Rust 2.0.13 проверен на POCO X5 5G, Android 17, arm64-v8a, 6 ГБ RAM.
 ```bash
 ./scripts/test.sh apk
 # Можно проверить и отдельный APK:
-./scripts/test.sh apk /путь/к/app-debug.apk
+./scripts/test.sh apk-check /путь/к/app-debug.apk
 ```
 
 Рекомендации Android: [страницы памяти 16 КиБ](https://developer.android.com/guide/practices/page-sizes), [системные отступы](https://developer.android.com/develop/ui/views/layout/edge-to-edge), [экранная клавиатура](https://developer.android.com/develop/ui/views/layout/sw-keyboard).
@@ -53,3 +53,9 @@ Production APK использует Xopilot, by.xopilot.app, versionName 2.0.13 
 ## Границы проверки
 
 Эта проверка не подтверждает обновление старой установки с исходной подписью, работу облачного аккаунта, Google, Live, GPU или настоящего инференса на телефоне. Preview отличается applicationId и сертификатом, но собирается из того же Rust-кода. Возврат из фона и холодный запуск измерены отдельно; результаты приведены выше.
+
+## Автоматический UI-прогон 12 ноября 2026
+
+Отдельный пакет `by.xopilot.uitest` прошёл 25 проверок через ADB и WebView DevTools на POCO X5 5G. Проверены настройки, размеры окон, изменение имени, диагностика, Canvas, экспорт DOCX/XLSX, сохранение черновика, Home, Back, уничтожение процесса и настоящая экранная клавиатура. Снимок подтвердил положение ввода над клавиатурой. Размер страницы ядра устройства составляет 4096 байт. Для настоящего испытания ядра 16 КиБ требуется другое устройство.
+
+Повторяемая команда `./scripts/test.sh apk` описана в TESTING.md. Общие сценарии выполняются также в Linux UI. Проверка бинарного выравнивания теперь запускается командой `./scripts/test.sh apk-check`.

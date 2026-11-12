@@ -12,7 +12,8 @@ function option(name, fallback) {
 
 // Сохраняем подпись между версиями; генерация нового ключа не является частью обычной сборки.
 function main() {
-    const preview = process.argv.includes('--preview');
+    const uiTest = process.argv.includes('--ui-test');
+    const preview = uiTest || process.argv.includes('--preview');
     const profile = option('--profile', 'release');
     const project = path.resolve(option('--project', `target/dx/xopilot/${profile}/android/app`));
     const output = path.resolve(option('--output', preview ? 'target/android-preview.apk' : 'dist/android.apk'));
@@ -25,7 +26,7 @@ function main() {
     if (!Number.isSafeInteger(code) || code <= 10160 || code > 2100000000) throw Error('versionCode должен быть целым и выше прежней сборки 10160');
     const gradle = path.join(project, 'app/build.gradle.kts');
     let text = fs.readFileSync(gradle, 'utf8');
-    text = text.replace(/applicationId\s*=\s*"[^"]+"/, `applicationId = "${preview ? 'by.xopilot.preview' : 'by.xopilot.app'}"`)
+    text = text.replace(/applicationId\s*=\s*"[^"]+"/, `applicationId = "${uiTest ? 'by.xopilot.uitest' : preview ? 'by.xopilot.preview' : 'by.xopilot.app'}"`)
         .replace(/versionCode\s*=\s*\d+/, `versionCode = ${code}`)
         .replace(/versionName\s*=\s*"[^"]+"/, `versionName = "${version}"`);
     fs.writeFileSync(gradle, text);
@@ -34,7 +35,7 @@ function main() {
         fs.rmSync(path.join(res, dir, 'ic_launcher.webp'), {force: true});
     }
     fs.cpSync('App/assets/android', res, {recursive: true});
-    fs.writeFileSync(path.join(res, 'values/strings.xml'), `<resources><string name="app_name">${preview ? 'Xopilot Test' : 'Xopilot'}</string></resources>\n`);
+    fs.writeFileSync(path.join(res, 'values/strings.xml'), `<resources><string name="app_name">${uiTest ? 'Xopilot UI Test' : preview ? 'Xopilot Test' : 'Xopilot'}</string></resources>\n`);
     // R8 должен сохранять классы, вызываемые нативным кодом и JavascriptInterface WebView.
     fs.appendFileSync(path.join(project, 'app/proguard-rules.pro'), '\n-keep class dev.dioxus.main.** { *; }\n-keepclassmembers class * { @android.webkit.JavascriptInterface <methods>; }\n');
     const variant = option('--variant', preview || profile === 'debug' ? 'debug' : 'release');

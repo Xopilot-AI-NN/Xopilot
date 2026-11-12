@@ -117,7 +117,7 @@ jobs:
           echo "XOPILOT_KEY_PASSWORD_FILE=$GITHUB_WORKSPACE/.signing/key-password" >> "$GITHUB_ENV"
       - run: node scripts/install_dx.cjs
       - run: ./scripts/build_android.sh
-      - run: ./scripts/test.sh apk dist/android.apk
+      - run: ./scripts/test.sh apk-check dist/android.apk
       - uses: actions/upload-artifact@v7
         with:
           name: Android

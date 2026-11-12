@@ -14,6 +14,6 @@
 
 Linux release упакован в dist/linux.zip и отдельный dist/Xopilot. Исполняемый файл запущен из пустого каталога без папки assets: встроенные шрифты, Material Icons и логотип отобразились правильно. Снимок — [rust-standalone.png](../previews/rust-standalone.png).
 
-Android production использует постоянную release-подпись, versionCode 2000013 и отдельный сценарий упаковки. Проверка ./scripts/test.sh apk dist/android.apk проверяет 16 КиБ ELF/ZIP-выравнивание. Проверки телефона, фоновой загрузки и восстановления состояния — в [ANDROID_DEVICE.md](ANDROID_DEVICE.md). Старое приложение с другим сертификатом не заменялось.
+Android production использует постоянную release-подпись, versionCode 2000013 и отдельный сценарий упаковки. Проверка ./scripts/test.sh apk-check dist/android.apk проверяет 16 КиБ ELF/ZIP-выравнивание. Проверки телефона, фоновой загрузки и восстановления состояния — в [ANDROID_DEVICE.md](ANDROID_DEVICE.md). Старое приложение с другим сертификатом не заменялось.
 
 Workflow проверен actionlint. Установщик закреплённого DX 0.7.10 скачал официальный архив и проверил SHA-256. Результат Linux/Android-сборки локально не заменяет проверку Windows на GitHub Actions.

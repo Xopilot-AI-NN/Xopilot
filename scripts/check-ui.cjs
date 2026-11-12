@@ -305,6 +305,9 @@ process.once('SIGINT',()=>{void stop().finally(()=>{server.close();process.exit(
         execFileSync('niri', ['msg', 'action', 'screenshot-window', '--id', String(windowId), '--path', path.join(root, 'desktop-empty-bookmarks.png')]);
     }
     await require('./check-ui-features.cjs')({root,evaluate,wait,click,input,close,check,until,resize,requests,modelDirectory,screenshot});
+    // Общие с APK сценарии выполняются тем же модулем, без второй реализации проверок.
+    await close().catch(()=>{});
+    await require('./ui/offline.cjs')(require('./ui/client.cjs')(evaluate,results));
     fs.writeFileSync(path.join(root, 'result.json'), JSON.stringify({checks:results, httpRequests:requests.length, viewportWidths:windowId?[1000,390]:[1060], platform:'Linux WebKitGTK; Android device not tested'}, null, 2));
     console.log(`${results.length} проверок пройдено. Артефакты: ${root}`);
 })().catch(async error => {
