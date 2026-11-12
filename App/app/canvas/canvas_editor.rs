@@ -212,6 +212,24 @@ pub fn build_canvas_dialog() -> Element {
                                 "Есть несохранённые изменения"
                             }
                         }
+                        for format in ["docx", "xlsx"] {
+                            button {
+                                class: "button",
+                                onclick: move |_| {
+                                    let document = current.read().clone();
+                                    spawn(async move {
+                                        let result = services::runtime::blocking(move || {
+                                            services::office::save(&document.title, &document.content, format)
+                                        }).await;
+                                        match result {
+                                            Ok(path) => status.set(format!("Документ сохранён: {}", path.display())),
+                                            Err(error) => state::report(state, Err(error)),
+                                        }
+                                    });
+                                },
+                                "Экспорт {format}"
+                            }
+                        }
                         if !document.id.is_empty() {
                             button {
                                 class: "button danger",

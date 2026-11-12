@@ -117,6 +117,7 @@ fn read_attachment(path: &Path) -> Result<AttachmentParts> {
             MAX_TEXT_CHARS,
         ),
         "docx" => read_docx(&raw)?,
+        "xlsx" => super::spreadsheets::read(&raw)?,
         "mp4" | "mov" | "avi" | "mkv" | "webm" => {
             bail!("Прикрепите кадры видео как изображения: извлечение видео ещё не перенесено")
         }

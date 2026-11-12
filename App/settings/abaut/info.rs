@@ -11,7 +11,7 @@ use dioxus::prelude::*;
 #[component]
 /// Показывает назначение приложения, локальные возможности, версию и разработчика.
 pub fn build_info() -> Element {
-    let state = use_context::<Signal<AppState>>();
+    let mut state = use_context::<Signal<AppState>>();
     let version = env!("CARGO_PKG_VERSION");
     rsx! {
         div {
@@ -105,6 +105,19 @@ pub fn build_info() -> Element {
                     ),
                     "Исходный код"
                 }
+            }
+            button {
+                class: "button",
+                onclick: move |_| {
+                    spawn(async move {
+                        let result = services::runtime::blocking(services::diagnostics::create).await;
+                        match result {
+                            Ok(path) => state.write().notice = Some(format!("Диагностика сохранена: {}", path.display())),
+                            Err(error) => state::report(state, Err(error)),
+                        }
+                    });
+                },
+                "Сохранить диагностику"
             }
         }
     }
