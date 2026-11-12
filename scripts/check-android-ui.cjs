@@ -1,9 +1,9 @@
 // Описание: Реальные события DOM в тестовом APK через ADB и штатный WebView DevTools.
-// Допускается только by.xopilot.uitest: личный APK и его SQLCipher не очищаются.
+// Допускается только by.xopilot.test: личный APK и его SQLCipher не очищаются.
 const fs = require("node:fs");
 const path = require("node:path");
 const { execFileSync } = require("node:child_process");
-const app = "by.xopilot.uitest";
+const app = "by.xopilot.test";
 const adbPath =
   process.env.ADB ||
   (process.env.ANDROID_HOME
@@ -137,7 +137,7 @@ function screenshot(name) {
     encoding: "utf8",
   });
   if (!badging.includes("package: name='" + app + "'"))
-    throw Error("Отказ: допускается только изолированный by.xopilot.uitest");
+    throw Error("Отказ: допускается только изолированный by.xopilot.test");
   adb("install", "--no-incremental", "-r", apk);
   adb("shell", "am", "force-stop", app);
   adb("shell", "pm", "clear", app);

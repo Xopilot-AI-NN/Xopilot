@@ -26,7 +26,7 @@ function main() {
     if (!Number.isSafeInteger(code) || code <= 10160 || code > 2100000000) throw Error('versionCode должен быть целым и выше прежней сборки 10160');
     const gradle = path.join(project, 'app/build.gradle.kts');
     let text = fs.readFileSync(gradle, 'utf8');
-    text = text.replace(/applicationId\s*=\s*"[^"]+"/, `applicationId = "${uiTest ? 'by.xopilot.uitest' : preview ? 'by.xopilot.preview' : 'by.xopilot.app'}"`)
+    text = text.replace(/applicationId\s*=\s*"[^"]+"/, `applicationId = "${uiTest ? 'by.xopilot.test' : preview ? 'by.xopilot.test' : 'by.xopilot.app'}"`)
         .replace(/versionCode\s*=\s*\d+/, `versionCode = ${code}`)
         .replace(/versionName\s*=\s*"[^"]+"/, `versionName = "${version}"`);
     fs.writeFileSync(gradle, text);
