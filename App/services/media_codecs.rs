@@ -125,7 +125,7 @@ fn samples(
 }
 
 /// Пересчитывает частоту до 16 кГц и создаёт фиксированный WAV PCM16.
-fn wav(samples: &[f32], rate: u32) -> Vec<u8> {
+pub(super) fn wav(samples: &[f32], rate: u32) -> Vec<u8> {
     let count = (samples.len() as u64 * 16000 / rate as u64)
         as usize;
     let size = count * 2;

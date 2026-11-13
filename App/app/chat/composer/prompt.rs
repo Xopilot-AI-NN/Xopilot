@@ -119,17 +119,7 @@ pub fn build_prompt() -> Element {
                     span {
                         class: "spacer",
                     }
-                    brand::build_brand_button {
-                        icon: "mic",
-                        label: "Диктовка",
-                        role: "ai",
-                        onclick: move |_| {
-                            state.write().notice = Some(
-                                "Диктовка ещё переносится в новую версию."
-                                    .into(),
-                            );
-                        },
-                    }
+                    super::voice::build_voice_button {}
                     if has_prompt || busy {
                         send::build_send_button {
                         }

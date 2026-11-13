@@ -14,7 +14,7 @@ path = "lib.rs"
 
 [features]
 default = ["desktop"]
-desktop = ["dioxus/desktop"]
+desktop = ["dioxus/desktop", "dep:cpal"]
 mobile = ["dioxus/mobile"]
 
 [dependencies]
@@ -51,6 +51,9 @@ symphonia = { version = "0.5.5", features = ["all"] }
 openh264 = "0.9.10"
 mp4 = "0.14"
 encoding_rs = "0.8"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+cpal = { version = "0.18.2", optional = true }
 
 [target.'cfg(target_os = "android")'.dependencies]
 jni = "0.22"

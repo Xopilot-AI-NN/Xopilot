@@ -23,6 +23,7 @@ case "${1:-quick}" in
     ;;
   bridges)
     node scripts/check-mobile-bridges.cjs
+    node --test scripts/check-voice.cjs
     ;;
   flowmap)
     node --test tools/flowmap/model.test.cjs

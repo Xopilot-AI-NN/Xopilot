@@ -44,5 +44,8 @@ pub mod task_history;
 pub mod ui_session;
 pub mod updates;
 pub mod user_memory;
+pub mod voice;
+#[cfg(all(target_os = "linux", feature = "desktop"))]
+mod voice_native;
 pub mod web;
 pub mod workspaces;
