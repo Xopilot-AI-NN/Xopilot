@@ -26,6 +26,9 @@ fn modify(
         if !profile["memory"].is_object() {
             profile["memory"] = json!({"enabled":true,"automatic":true,"items":[]});
         }
+        if profile["memory"].get("items").is_none() {
+            profile["memory"]["items"] = json!([]);
+        }
         operation(&mut profile["memory"])?;
         write_json(db, "profile_v1", &profile)
     })
@@ -126,8 +129,99 @@ pub fn remove(
     })
 }
 
-/// Извлекает только явные сведения пользователя. Вопросы, пароли и команды пропускаются.
-/// Точная цитата сохраняется без отправки дополнительного запроса модели.
+/// Преобразует явное утверждение в самостоятельный факт без домысливания.
+/// Сохраняем исходное значение имени или предпочтения, меняя только точку зрения.
+pub(crate) fn statement(
+    text: &str,
+) -> Option<(&'static str, String)> {
+    let mut text =
+        text.trim().trim_matches(['"', '«', '»']);
+    for prefix in [
+        "запомни, что ",
+        "запомни: ",
+        "запомни, ",
+        "запомни ",
+        "кстати, ",
+        "привет, ",
+    ] {
+        if text.to_lowercase().starts_with(prefix) {
+            text = text.get(prefix.len()..)?.trim();
+        }
+    }
+    let lower = text.to_lowercase();
+    for (prefix, category, description) in [
+        ("меня зовут ", "name", "Пользователя зовут"),
+        ("my name is ", "name", "The user's name is"),
+        (
+            "я предпочитаю ",
+            "preferences",
+            "Пользователь предпочитает",
+        ),
+        ("i prefer ", "preferences", "The user prefers"),
+        ("я работаю ", "work", "Пользователь работает"),
+        ("моя цель ", "goals", "Цель пользователя —"),
+    ] {
+        if lower.starts_with(prefix) {
+            let value = text
+                .get(prefix.len()..)?
+                .trim()
+                .trim_end_matches(['.', '!']);
+            let value = if category == "name" {
+                value
+                    .split(',')
+                    .next()?
+                    .split(" и ")
+                    .next()?
+                    .trim()
+                    .trim_matches(['"', '«', '»'])
+            } else {
+                value
+            };
+            if value.is_empty()
+                || (category == "name"
+                    && (value.split_whitespace().count()
+                        > 5
+                        || value
+                            .to_lowercase()
+                            .starts_with("не ")
+                        || value
+                            .to_lowercase()
+                            .starts_with("not ")))
+            {
+                return None;
+            }
+            return Some((
+                category,
+                format!("{description} {value}"),
+            ));
+        }
+    }
+    None
+}
+
+/// Исправляет прежние автоматические цитаты при открытии профиля.
+/// Ручные записи и неизвестные поля остаются доступны в прежнем формате.
+pub(crate) fn normalize_legacy(profile: &mut Value) {
+    if let Some(items) = profile
+        .get_mut("memory")
+        .and_then(|memory| memory.get_mut("items"))
+        .and_then(Value::as_array_mut)
+    {
+        for item in items {
+            if item["automatic"] == true
+                && let Some((category, text)) = item["text"]
+                    .as_str()
+                    .and_then(statement)
+            {
+                item["text"] = text.into();
+                item["category"] = category.into();
+            }
+        }
+    }
+}
+
+/// Извлекает короткие явные утверждения, сохраняя каждый факт отдельной записью.
+/// Вопросы и сообщения с секретами пропускаем до любых изменений базы.
 pub fn capture(store: &Store, text: &str) -> Result<()> {
     let memory = read(store)?;
     if memory["enabled"] == false
@@ -136,9 +230,8 @@ pub fn capture(store: &Store, text: &str) -> Result<()> {
         return Ok(());
     }
     let lower = text.trim().to_lowercase();
-    if text.chars().count() > 500
+    if text.chars().count() > 1000
         || text.contains('?')
-        || text.contains('\n')
         || [
             "парол",
             "password",
@@ -155,21 +248,56 @@ pub fn capture(store: &Store, text: &str) -> Result<()> {
     {
         return Ok(());
     }
-    let category = [
-        ("меня зовут ", "name"),
-        ("my name is ", "name"),
-        ("я предпочитаю ", "preferences"),
-        ("i prefer ", "preferences"),
-        ("я работаю ", "work"),
-        ("моя цель ", "goals"),
-    ]
-    .iter()
-    .find(|(prefix, _)| lower.starts_with(prefix))
-    .map(|(_, category)| *category);
-    if let Some(category) = category {
-        save(store, "", "", text, category, true)?;
+    let statements = text
+        .replace(" и я ", ". Я ")
+        .replace(", я ", ". Я ");
+    let facts: Vec<_> = statements
+        .split(['.', '!', '\n', ';'])
+        .filter_map(statement)
+        .collect();
+    if facts.is_empty() {
+        return Ok(());
     }
-    Ok(())
+    modify(store, |memory| {
+        // Повторно проверяем переключатели под той же блокировкой, что и запись.
+        if memory["enabled"] == false
+            || memory["automatic"] == false
+        {
+            return Ok(());
+        }
+        let items = memory["items"]
+            .as_array_mut()
+            .ok_or_else(|| {
+                anyhow::anyhow!("Повреждён список памяти")
+            })?;
+        for (category, text) in facts {
+            if items.iter().any(|item| {
+                item["text"].as_str() == Some(&text)
+            }) {
+                continue;
+            }
+            // Новое явно названное имя заменяет прежнее автоматически извлечённое
+            // имя. Пользовательские правки не перезаписываются автоизвлечением.
+            if category == "name"
+                && let Some(item) =
+                    items.iter_mut().find(|item| {
+                        item["category"] == "name"
+                            && item["automatic"] == true
+                    })
+            {
+                item["text"] = text.into();
+                item["updated"] =
+                    json!(super::canvases::now());
+                continue;
+            }
+            ensure!(
+                items.len() < 500,
+                "Память заполнена, удалите лишние записи"
+            );
+            items.push(json!({"id":uuid::Uuid::new_v4().to_string(),"text":text,"category":category,"automatic":true,"updated":super::canvases::now()}));
+        }
+        Ok(())
+    })
 }
 
 /// Выключенная память не попадает в инструкции. Ограничиваем размер контекста.

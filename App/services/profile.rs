@@ -14,6 +14,7 @@ pub fn ensure_local(store: &Store) -> Result<()> {
         if value["id"].as_str().is_none() { value["id"] = uuid::Uuid::new_v4().to_string().into(); }
         if value.get("created_at").is_none() { value["created_at"] = json!(super::canvases::now()); }
         // Уже созданный профиль не вызывает fsync при каждом возвращении в приложение.
+        super::user_memory::normalize_legacy(&mut value);
         if value != original { write_json(db, "profile_v1", &value)?; }
         // Один раз заменяем прежний ручной выбор новой автоматической политикой.
         if db.get_setting("compute_policy_v1")?.is_none() {
