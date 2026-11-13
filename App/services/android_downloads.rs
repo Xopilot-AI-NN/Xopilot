@@ -131,7 +131,9 @@ fn enqueue(spec: Model) -> Result<i64> {
         std::fs::remove_file(&destination)?;
     }
     with_context(|env, activity| {
-        let url = env.new_string(spec.url)?;
+        let url = env.new_string(
+            super::model_updates::source(spec)?.0,
+        )?;
         let uri = env
             .call_static_method(
                 jni_str!("android/net/Uri"),

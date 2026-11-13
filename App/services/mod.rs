@@ -29,6 +29,7 @@ pub mod message_navigation;
 pub mod mobile_documents;
 pub mod model_import;
 pub mod model_installer;
+pub mod model_updates;
 pub mod office;
 pub mod paths;
 pub mod platform_links;

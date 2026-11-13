@@ -24,6 +24,19 @@ pub fn build_model_row(
     let running = ["downloading", "verifying", "waiting"]
         .contains(&progress.phase.as_str());
     let mut deleting = use_signal(|| false);
+    // Проверяю новую версию после установки и завершения загрузки.
+    let update = use_resource(use_reactive(
+        (&installed, &running),
+        move |(installed, running)| async move {
+            if !installed || running {
+                return Ok(None);
+            }
+            services::runtime::background(
+                services::model_updates::check(spec),
+            )
+            .await
+        },
+    ));
     let selected = state.read().model_local
         && state.read().model == spec.name;
     let status = match progress.phase.as_str() {
@@ -110,6 +123,26 @@ pub fn build_model_row(
                                 "Выбрана"
                             } else {
                                 "Выбрать"
+                            }
+                        }
+                        if let Some(Ok(Some(revision))) = update.read().as_ref() {
+                            button {
+                                class: "button",
+                                disabled: state.read().busy,
+                                onclick: {
+                                    let revision = revision.clone();
+                                    move |_| {
+                                        let revision = revision.clone();
+                                        spawn(async move {
+                                            let result = services::runtime::blocking(move || {
+                                                services::litert::unload()?;
+                                                services::model_updates::start(spec, revision)
+                                            }).await;
+                                            state::report(state, result);
+                                        });
+                                    }
+                                },
+                                "Обновить"
                             }
                         }
                         button {

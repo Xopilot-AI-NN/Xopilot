@@ -272,11 +272,13 @@ async fn download_to(
     let part = root.join(format!("{}.part", spec.filename));
     let mut offset =
         part.metadata().map(|m| m.len()).unwrap_or(0);
+    let (url, expected_digest) =
+        super::model_updates::source(spec)?;
     let client = super::http_client::builder()?
         .connect_timeout(std::time::Duration::from_secs(15))
         .build()?;
     let mut request = client
-        .get(spec.url)
+        .get(url)
         .header("Accept-Encoding", "identity");
     if offset > 0 {
         request = request
@@ -386,7 +388,7 @@ async fn download_to(
         digest_file(&verified_part, &verify_token)
     })
     .await?;
-    if digest != spec.sha256 {
+    if digest != expected_digest {
         let _ = std::fs::remove_file(&part);
         anyhow::bail!(
             "SHA-256 не совпадает. Повреждённая модель удалена"
@@ -421,7 +423,7 @@ pub fn import(spec: Model, source: &Path) -> Result<()> {
             digest_file(
                 &temporary,
                 &CancellationToken::new()
-            )? == spec.sha256,
+            )? == super::model_updates::source(spec)?.1,
             "SHA-256 модели не совпадает"
         );
         std::fs::rename(
@@ -592,19 +594,22 @@ mod tests {
     #[tokio::test]
     async fn incomplete_or_corrupt_download_cannot_be_selected()
      {
-        let directory = tempfile::tempdir().unwrap();
-        let payload = b"bad model";
-        let listener =
-            tokio::net::TcpListener::bind("127.0.0.1:0")
-                .await
-                .unwrap();
-        let address = listener.local_addr().unwrap();
-        let server = tokio::spawn(async move {
-            let (mut stream, _) =
-                listener.accept().await.unwrap();
-            let mut bytes = [0; 2048];
-            let _ = stream.read(&mut bytes).await;
-            stream
+        // При повреждённом обновлении прежние рабочие веса должны сохраниться.
+        for preserve_existing in [false, true] {
+            let directory = tempfile::tempdir().unwrap();
+            let payload = b"bad model";
+            let listener = tokio::net::TcpListener::bind(
+                "127.0.0.1:0",
+            )
+            .await
+            .unwrap();
+            let address = listener.local_addr().unwrap();
+            let server = tokio::spawn(async move {
+                let (mut stream, _) =
+                    listener.accept().await.unwrap();
+                let mut bytes = [0; 2048];
+                let _ = stream.read(&mut bytes).await;
+                stream
                 .write_all(
                     format!(
                         "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
@@ -614,42 +619,62 @@ mod tests {
                 )
                 .await
                 .unwrap();
-            stream.write_all(payload).await.unwrap();
-        });
-        let spec = Model {
-            id: "test-corrupt",
-            name: "test",
-            filename: "test.litertlm",
-            size: "test",
-            url: Box::leak(
-                format!("http://{address}/model")
-                    .into_boxed_str(),
-            ),
-            sha256: "0000000000000000000000000000000000000000000000000000000000000000",
-        };
-        assert!(
-            download_to(
-                spec,
-                CancellationToken::new(),
-                directory.path().into()
-            )
-            .await
-            .unwrap_err()
-            .to_string()
-            .contains("SHA-256")
-        );
-        server.await.unwrap();
-        assert!(
-            !directory
-                .path()
-                .join("test.litertlm")
-                .exists()
-        );
-        assert!(
-            !directory
-                .path()
-                .join("test.litertlm.part")
-                .exists()
-        );
+                stream.write_all(payload).await.unwrap();
+            });
+            let spec = Model {
+                id: "test-corrupt",
+                name: "test",
+                filename: "test.litertlm",
+                size: "test",
+                url: Box::leak(
+                    format!("http://{address}/model")
+                        .into_boxed_str(),
+                ),
+                sha256: "0000000000000000000000000000000000000000000000000000000000000000",
+            };
+            if preserve_existing {
+                std::fs::write(
+                    directory.path().join(spec.filename),
+                    b"previous verified model",
+                )
+                .unwrap();
+            }
+            assert!(
+                download_to(
+                    spec,
+                    CancellationToken::new(),
+                    directory.path().into()
+                )
+                .await
+                .unwrap_err()
+                .to_string()
+                .contains("SHA-256")
+            );
+            server.await.unwrap();
+            if preserve_existing {
+                assert_eq!(
+                    std::fs::read(
+                        directory
+                            .path()
+                            .join(spec.filename)
+                    )
+                    .unwrap(),
+                    b"previous verified model"
+                );
+            } else {
+                assert!(
+                    !directory
+                        .path()
+                        .join(spec.filename)
+                        .exists()
+                );
+            }
+            assert!(
+                !directory
+                    .path()
+                    .join("test.litertlm.part")
+                    .exists()
+            );
+        }
     }
 }
