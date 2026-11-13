@@ -39,6 +39,15 @@ pub const MODELS: &[Model] = &[
         url: "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm?download=true",
         sha256: "0b2a8980ce155fd97673d8e820b4d29d9c7d99b8fa6806f425d969b145bd52e0",
     },
+    // Универсальный артефакт CPU/GPU, отдельная GPU-only сборка не подходит fallback CPU.
+    Model {
+        id: "gemma4:12b",
+        name: "Gemma 4 12B",
+        filename: "gemma-4-12B-it.litertlm",
+        size: "6.88 GB",
+        url: "https://huggingface.co/litert-community/gemma-4-12B-it-litert-lm/resolve/main/gemma-4-12B-it.litertlm?download=true",
+        sha256: "58fd31b778ca2c21c80d634fb34fc5a89d11d563a38dfd3cbf1b40dbf252a8b6",
+    },
 ];
 /// Находит поддерживаемую модель по ID или имени файла.
 pub fn model(id: &str) -> Result<Model> {

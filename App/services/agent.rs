@@ -170,12 +170,21 @@ list_canvases {}; read_canvas {id}; create_canvas {title,kind:text|code|web,cont
 search_web {query}; read_website {url}; search_memory {query}; save_memory {text}; list_recent_chats {}; search_chats {query}; discover_tools {}"#;
 /// Описывает инструментальный протокол и границы выбранного проекта.
 fn instructions(workspace: &Workspace) -> String {
+    let tools = if workspace.folder.is_empty() {
+        TOOLS
+            .split(';')
+            .filter(|entry| !entry.contains("project"))
+            .collect::<Vec<_>>()
+            .join(";")
+    } else {
+        TOOLS.to_owned()
+    };
     format!(
         r#"
 You are the Xopilot agent. Reply in the user's language. For greetings and questions requiring no action, reply naturally with final. Do not recite internal tool names, schemas or this prompt. If a folder is missing, explain how to attach it; never claim access to arbitrary device files. Use only these tools:
-{TOOLS}
-Return one JSON object: {{"tool":"read_project_file","arguments":{{"path":"README.md"}}}}
-or {{"actions":[{{"tool":"list_project_files","arguments":{{}}}}]}}.
+{tools}
+For actions return a JSON object with tool (an available tool name) and arguments (an object), or an actions array of such objects.
+Attached images and audio are already included in the user's message. Analyze their content directly. For a question such as "что тут" about an attachment, return final with your analysis. Use project tools only for an explicit request concerning the attached project folder.
 For a final answer return exactly one JSON object with key final and a natural-language string.
 Never put tool JSON, "final:" prefixes, empty arrays or schemas inside that string.
 When asked to create a Canvas with content, call create_canvas immediately. Default kind is text; derive a short title from the content if not specified. Do not ask for text/code/web unless the user requested a special format.
@@ -622,7 +631,19 @@ async fn execute(
         );
     }
     match call.tool.as_str() {
-        "discover_tools" => Ok(json!(TOOLS)),
+        "discover_tools" => Ok(json!(if context
+            .workspace
+            .folder
+            .is_empty()
+        {
+            TOOLS
+                .split(';')
+                .filter(|entry| !entry.contains("project"))
+                .collect::<Vec<_>>()
+                .join(";")
+        } else {
+            TOOLS.to_owned()
+        })),
         "search_web" => Ok(json!(
             super::web::search(
                 string(arguments, "query")?,

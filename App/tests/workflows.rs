@@ -595,3 +595,39 @@ fn profile_avatar_and_name_preserve_memory_and_unknown_fields()
     );
     assert!(profile::rename(&store, " ").is_err());
 }
+
+/// Создание нового чата переносит весь черновик и сохраняет его после повторного открытия.
+#[tokio::test(flavor = "current_thread")]
+async fn new_chat_keeps_text_and_attachments_in_composer() {
+    use dioxus::prelude::*;
+    let store = store();
+    UI_STORE.with(|cell| {
+        *cell.borrow_mut() = Some(store.clone())
+    });
+    let mut dom = VirtualDom::new(action_fixture);
+    dom.rebuild_in_place();
+    let mut state =
+        UI_STATE.with(|cell| cell.borrow().unwrap());
+    state.write().draft.files.push((
+        "photo.png".into(),
+        "/test/photo.png".into(),
+    ));
+    let previous = state.read().active.unwrap();
+    let draft = state.read().draft.clone();
+    xopilot::app::state::new_chat(state).await.unwrap();
+    let current = state.read().active.unwrap();
+    assert_ne!(previous, current);
+    assert_eq!(state.read().draft, draft);
+    assert_eq!(
+        store
+            .with(|db| drafts::read_draft(db, current))
+            .unwrap(),
+        draft
+    );
+    assert_eq!(
+        store
+            .with(|db| drafts::read_draft(db, previous))
+            .unwrap(),
+        draft
+    );
+}

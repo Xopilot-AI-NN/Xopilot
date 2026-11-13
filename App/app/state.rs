@@ -349,6 +349,7 @@ pub async fn new_chat(
             "Остановите текущий ответ перед созданием чата"
         );
     }
+    let draft = state.read().draft.clone();
     persist_draft(state).await?;
     services::runtime::blocking(
         services::litert::reset_context,
@@ -357,7 +358,13 @@ pub async fn new_chat(
     let store = store(state)?;
     let id = services::runtime::background(async move {
         store
-            .run(|db| Ok(db.create_chat("Новый чат")?))
+            .run(move |db| {
+                let id = db.create_chat("Новый чат")?;
+                services::drafts::write_draft(
+                    db, id, &draft,
+                )?;
+                Ok(id)
+            })
             .await
     })
     .await?;
