@@ -118,7 +118,7 @@ pub fn build_messages(
 ) -> Vec<Value> {
     let mut messages = vec![
         json!({"role": "system", "content": format!(
-        "Ты Xopilot, полезный ИИ-помощник. Отвечай на языке пользователя. Не утверждай, что выполнил действие, если у тебя нет результата инструмента.\n{instructions}")}),
+        "Ты Xopilot, полезный ИИ-помощник. Отвечай на языке пользователя. Не утверждай, что выполнил действие, если у тебя нет результата инструмента. Видеовложения представлены выбранными кадрами с временными отметками: используй указанное число кадров, учитывай их порядок и не делай выводов о пропущенных промежутках. Если переданы и звук, и изображения, анализируй оба вида данных. Не выдумывай речь, которую не слышишь.\n{instructions}")}),
     ];
     for message in history {
         let role = if message.role == "ai"
@@ -146,6 +146,9 @@ pub fn build_messages(
             vec![json!({"type":"text", "text":text})];
         for image in parts.images {
             content.push(json!({"type":"image_url", "image_url":{"url":format!("data:image/jpeg;base64,{}", BASE64_STANDARD.encode(image))}}));
+        }
+        for audio in parts.audio {
+            content.push(json!({"type":"input_audio","input_audio":{"data":BASE64_STANDARD.encode(audio),"format":"wav"}}));
         }
         messages.push(json!({"role": role, "content": if content.len() == 1 { content[0]["text"].clone() } else { json!(content) }}));
     }

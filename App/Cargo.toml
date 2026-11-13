@@ -46,6 +46,11 @@ zeroize = "1"
 tempfile = "3"
 libc = "0.2"
 webpki-root-certs = "1"
+scraper = { version = "0.29", default-features = false }
+symphonia = { version = "0.5.5", features = ["all"] }
+openh264 = "0.9.10"
+mp4 = "0.14"
+encoding_rs = "0.8"
 
 [target.'cfg(target_os = "android")'.dependencies]
 jni = "0.22"
@@ -64,4 +69,9 @@ required-features = ["desktop"]
 [[example]]
 name = "interface_interaction"
 path = "examples/interface_interaction.rs"
+required-features = ["desktop"]
+
+[[example]]
+name = "media_smoke"
+path = "examples/media_smoke.rs"
 required-features = ["desktop"]

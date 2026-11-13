@@ -69,6 +69,8 @@ pub fn title(tool: &str) -> &str {
         "update_canvas" => "Изменение Canvas",
         "search_memory" => "Поиск в памяти",
         "save_memory" => "Сохранение в память",
+        "search_web" => "Поиск DuckDuckGo",
+        "read_website" => "Чтение сайта",
         "search_chats" => "Поиск в истории",
         "list_recent_chats" => "Последние чаты",
         "discover_tools" => "Доступные действия",

@@ -1,7 +1,7 @@
 // Файл: App/services/attachments.rs
 // Разработчик: DenBroLiik
 // Описание: Чтение изображений, текста, PDF и DOCX в Rust.
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Context, Result, ensure};
 use image::{ImageReader, codecs::jpeg::JpegEncoder};
 use std::{
     io::{Cursor, Read},
@@ -16,6 +16,7 @@ pub const MAX_IMAGE_SIDE: u32 = 1024;
 pub struct AttachmentParts {
     pub text_notes: Vec<String>,
     pub images: Vec<Vec<u8>>,
+    pub audio: Vec<Vec<u8>>,
 }
 
 /// Ограничивает текст по символам, не разрезая UTF-8.
@@ -40,10 +41,15 @@ pub fn downscale_image_bytes(
     limits.max_image_height = Some(16_384);
     limits.max_alloc = Some(128 * 1024 * 1024);
     reader.limits(limits);
-    let image = reader
-        .decode()?
-        .thumbnail(MAX_IMAGE_SIDE, MAX_IMAGE_SIDE)
-        .to_rgb8();
+    let image = reader.decode()?;
+    let image = if image.width() > MAX_IMAGE_SIDE
+        || image.height() > MAX_IMAGE_SIDE
+    {
+        image.thumbnail(MAX_IMAGE_SIDE, MAX_IMAGE_SIDE)
+    } else {
+        image
+    };
+    let image = image.to_rgb8();
     let mut bytes = Vec::new();
     JpegEncoder::new_with_quality(&mut bytes, 87)
         .encode_image(&image)?;
@@ -146,10 +152,10 @@ fn read_attachment(path: &Path) -> Result<AttachmentParts> {
         ),
         "docx" => read_docx(&raw)?,
         "xlsx" => super::spreadsheets::read(&raw)?,
-        "mp4" | "mov" | "avi" | "mkv" | "webm" => {
-            bail!(
-                "Прикрепите кадры видео как изображения: извлечение видео ещё не перенесено"
-            )
+        "mp4" | "m4v" | "mov" | "avi" | "mkv" | "webm"
+        | "wav" | "mp3" | "ogg" | "oga" | "opus"
+        | "flac" | "m4a" | "aac" => {
+            return super::media::read(path, &raw);
         }
         _ => {
             ensure!(
@@ -186,6 +192,7 @@ pub fn build_attachment_message_parts(
                     }),
                 );
                 parts.images.extend(item.images);
+                parts.audio.extend(item.audio);
             }
             Err(error) => parts.text_notes.push(format!(
                 "[Ошибка чтения «{name}»: {error}]"

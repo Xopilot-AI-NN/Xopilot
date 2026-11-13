@@ -447,11 +447,6 @@ pub async fn send(
                 tracing::warn!("Не удалось автоматически сохранить память: {error}");
             }
             let workspace = services::workspaces::chat_workspace(&worker_store, id)?;
-            let instructions = format!(
-                "{}\n{}",
-                services::profile::instructions(&worker_store)?,
-                workspace.instructions
-            );
             let history = worker_store.with(|db| {
                 let request_id =
                     db.add_message_full(id, "user", &draft.text, None, None, &draft.files, None)?;
@@ -471,18 +466,25 @@ pub async fn send(
                 services::drafts::write_draft(db, id, &Draft::default())?;
                 Ok((history, request_id))
             })?;
-            // PDF и изображения читаются без удержания блокировки хранилища.
-            let messages = services::api_chat::build_messages(&history.0, &instructions);
-            Ok((config, messages, workspace, history.1))
+            Ok((config, history.0, workspace, history.1))
         })
         .await?
     })
     .await;
     let result = async {
-        let (config, messages, workspace, request_id) = prepared?;
+        let (config, history, workspace, request_id) = prepared?;
         // После сохранения запроса очищаем редактор; при ошибке настроек черновик остаётся.
         state.write().draft = Draft::default();
         refresh(state, Some(id)).await?;
+        // Кодеки WebView работают в UI-контексте. Подготовленные данные
+        // кешируются по содержимому и повторно используются из истории.
+        services::media::prepare_history(&history, &token).await?;
+        let worker_store = store.clone();
+        let worker_workspace = workspace.clone();
+        let messages = services::runtime::blocking(move || {
+            let instructions = format!("{}\n{}", services::profile::instructions(&worker_store)?, worker_workspace.instructions);
+            Ok(services::api_chat::build_messages(&history, &instructions))
+        }).await?;
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let request_token = token.clone();
         let (events, mut event_rx) = tokio::sync::mpsc::unbounded_channel();

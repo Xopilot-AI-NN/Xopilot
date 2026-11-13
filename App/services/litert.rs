@@ -255,7 +255,7 @@ impl Engine {
                     filename.as_ptr(),
                     device.as_ptr(),
                     c"cpu".as_ptr(),
-                    ptr::null(),
+                    c"cpu".as_ptr(),
                     out,
                 )
             },
@@ -336,7 +336,7 @@ impl Engine {
             let mut initial = messages.clone();
             let _last = initial.pop();
             let images = tempfile::tempdir()?;
-            convert_images(&mut initial, images.path())?;
+            convert_media(&mut initial, images.path())?;
             let api = &self.api;
             let session = owned(
                 api,
@@ -418,7 +418,7 @@ impl Engine {
         } else {
             vec![messages.last().unwrap().clone()]
         };
-        convert_images(
+        convert_media(
             &mut new_messages,
             cache.images.path(),
         )?;
@@ -634,8 +634,8 @@ pub fn decode_chunk(raw: &str) -> Result<String> {
         .unwrap_or_default())
 }
 
-/// Заменяет подготовленные JPEG-данные временными файлами для LiteRT.
-fn convert_images(
+/// Создаёт принадлежащие conversation временные файлы JPEG и WAV для LiteRT.
+fn convert_media(
     messages: &mut [Value],
     root: &Path,
 ) -> Result<()> {
@@ -663,6 +663,25 @@ fn convert_images(
                     ));
                     std::fs::write(&path, bytes)?;
                     *part = serde_json::json!({"type":"image","path":path});
+                } else if part["type"] == "input_audio" {
+                    ensure!(
+                        part["input_audio"]["format"]
+                            == "wav",
+                        "Локальная модель принимает подготовленный WAV"
+                    );
+                    let data = part["input_audio"]["data"]
+                        .as_str()
+                        .context("Нет данных аудио")?;
+                    let bytes =
+                        base64::prelude::BASE64_STANDARD
+                            .decode(data)?;
+                    super::media::validate_wav(&bytes)?;
+                    let path = root.join(format!(
+                        "{}.wav",
+                        uuid::Uuid::new_v4()
+                    ));
+                    std::fs::write(&path, bytes)?;
+                    *part = serde_json::json!({"type":"audio","path":path});
                 }
             }
         }
