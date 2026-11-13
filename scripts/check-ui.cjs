@@ -152,13 +152,13 @@ process.once('SIGINT',()=>{void stop().finally(()=>{server.close();process.exit(
     await click('Открыть меню');
     await check('Выдвижное меню принимает клики и получает фокус', "return !document.querySelector('.drawer-layer').inert && document.activeElement.classList.contains('drawer');");
     await click('Настройки');
-    for (const section of ['Профиль и аккаунт', 'Персонализация', 'Модели', 'История', 'Обновления', 'О программе']) {
+    for (const section of ['Профиль и аккаунт', 'Персонализация', 'Модели', 'История', 'Обновления', 'О приложении']) {
         await click(section);
         await check('Все окна настроек сохраняют общий размер: '+section, "const r=document.querySelector('.dialog').getBoundingClientRect();window.__settingsSize??={width:r.width,height:r.height};return Math.abs(r.width-window.__settingsSize.width)<1&&Math.abs(r.height-window.__settingsSize.height)<1;");
         await check('Открывается раздел: ' + section, `return document.querySelector('#dialog-title').textContent === ${JSON.stringify(section)};`);
         if (section === 'Профиль и аккаунт') {
             await click('Изменить имя');
-            await input('.profile-name-editor input', 'Имя UI-проверки');
+            await input('input.profile-name-input', 'Имя UI-проверки');
             await click('Назад к настройкам');
             await check('Несохранённый профиль защищён при возврате', "return document.querySelector('[role=alertdialog]')?.contains(document.activeElement);");
             await click('Остаться');
@@ -181,15 +181,15 @@ process.once('SIGINT',()=>{void stop().finally(()=>{server.close();process.exit(
             await click('Сохранить профиль'); await close();
             await check('Память возвращает в персонализацию', "return document.querySelector('#dialog-title').textContent === 'Персонализация';");
         }
-        if(windowId)execFileSync('niri',['msg','action','screenshot-window','--id',String(windowId),'--path',path.join(root,'desktop-section-'+['Профиль и аккаунт','Персонализация','Модели','История','Обновления','О программе'].indexOf(section)+'.png')]);
+        if(windowId)execFileSync('niri',['msg','action','screenshot-window','--id',String(windowId),'--path',path.join(root,'desktop-section-'+['Профиль и аккаунт','Персонализация','Модели','История','Обновления','О приложении'].indexOf(section)+'.png')]);
         await click('Назад к настройкам');
     }
     // Проверяем независимость реальных scrollTop, а не только наличие нового заголовка.
     await evaluate("const b=document.querySelector('.dialog-body');b.scrollTop=b.scrollHeight;return true;");
     await wait(100);
     const settingsScroll = await evaluate("return document.querySelector('.dialog-body').scrollTop;");
-    await click('О программе');
-    await check('О программе не наследует прокрутку настроек', "return document.querySelector('.dialog-body').scrollTop===0;");
+    await click('О приложении');
+    await check('О приложении не наследует прокрутку настроек', "return document.querySelector('.dialog-body').scrollTop===0;");
     await evaluate("const b=document.querySelector('.dialog-body');b.scrollTop=b.scrollHeight;return true;");
     await wait(100);
     await click('Назад к настройкам');
@@ -254,7 +254,15 @@ process.once('SIGINT',()=>{void stop().finally(()=>{server.close();process.exit(
     await input('#chat-prompt', 'Вопрос UI-проверки'); await click('Отправить сообщение');
     await until("return document.querySelector('.message.assistant')?.innerText.includes('Потоковый ответ');", 'Первый SSE-фрагмент не появился');
     await check('Ответ отображается по мере получения SSE', "return !!document.querySelector('button[title="+JSON.stringify('Остановить ответ')+"]') && document.querySelector('.message.assistant').innerText.includes('Потоковый ответ');");
+    await check('Можно писать пока ИИ отвечает', "return !document.querySelector('#chat-prompt').disabled;");
+    await input('#chat-prompt', 'Следующий запрос из очереди');
+    await click('Отправить после завершения задачи');
+    await input('#chat-prompt', 'Новый черновик во время ответа');
     await until("return !document.querySelector('button[title="+JSON.stringify('Остановить ответ')+"]');", 'Ответ не завершился');
+    await check('Ответы не стирают новый черновик', "return document.querySelector('#chat-prompt').value === 'Новый черновик во время ответа';");
+    assert(requests.some(request => request.messages.some(message => message.role === 'user' && message.content === 'Следующий запрос из очереди')), 'Очередь не отправлена на сервер');
+    await check('Очередь запускается после первого ответа', "return document.querySelectorAll('.message.assistant').length === 2;");
+    await input('#chat-prompt', '');
     await click('Действия сообщения'); await click('Изменить');
     await input('textarea[aria-label="Текст сообщения"]', 'Правка, которую отменили'); await click('Отмена');
     await click('Действия сообщения'); await click('Изменить');
@@ -282,7 +290,7 @@ process.once('SIGINT',()=>{void stop().finally(()=>{server.close();process.exit(
     if (windowId) {
         resize(390); await wait(350);
         await click('Открыть меню'); await click('Настройки');
-        for (const section of ['Профиль и аккаунт','Персонализация','Модели','История','Обновления','О программе']) {
+        for (const section of ['Профиль и аккаунт','Персонализация','Модели','История','Обновления','О приложении']) {
             await click(section);
             await check('Узкий экран: ' + section, "return document.documentElement.scrollWidth <= innerWidth && document.querySelector('.dialog').getBoundingClientRect().right <= innerWidth;");
             await click('Назад к настройкам');
@@ -297,7 +305,7 @@ process.once('SIGINT',()=>{void stop().finally(()=>{server.close();process.exit(
         await wait(300);
         execFileSync('niri', ['msg', 'action', 'screenshot-window', '--id', String(windowId), '--path', path.join(root, 'mobile-drawer.png')]);
         await click('Настройки'); await click('Профиль и аккаунт');
-        await click('Изменить имя'); await input('.profile-name-editor input', 'Несохранённое имя'); await close();
+        await click('Изменить имя'); await input('input.profile-name-input', 'Несохранённое имя'); await close();
         execFileSync('niri', ['msg', 'action', 'screenshot-window', '--id', String(windowId), '--path', path.join(root, 'mobile-unsaved.png')]);
         await click('Остаться'); await click('Сохранить имя'); await close();
         resize(1000); await wait(350);

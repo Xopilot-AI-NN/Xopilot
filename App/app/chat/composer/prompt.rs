@@ -24,6 +24,29 @@ pub fn build_prompt() -> Element {
             if state.read().screen == Screen::Chat {
                 crate::app::shared::activity_dock::build_activity_dock {}
             }
+            if !state.read().message_queue.is_empty() {
+                div {
+                    class: "notice",
+                    "После ответа · сообщений в очереди: {state.read().message_queue.len()}"
+                    if !busy {
+                        button {
+                            class: "button",
+                            onclick: move |_| {
+                                spawn(async move {
+                                    let result = state::send(state).await;
+                                    state::report(state, result);
+                                });
+                            },
+                            "Продолжить очередь"
+                        }
+                    }
+                    button {
+                        class: "button",
+                        onclick: move |_| state.write().message_queue.clear(),
+                        "Очистить очередь"
+                    }
+                }
+            }
             div {
                 class: "composer",
                 if !draft.files.is_empty() {
@@ -54,7 +77,6 @@ pub fn build_prompt() -> Element {
                     placeholder: "Напишите сообщение…",
                     "aria-label": "Сообщение",
                     value: "{draft.text}",
-                    disabled: busy,
                     oninput: move |event| {
                         state.write().draft.text = event.value();
                         document::eval(
@@ -90,7 +112,7 @@ pub fn build_prompt() -> Element {
                         span {
                             class: "model-robot",
                             icons::build_icon {
-                                name: "smart_toy_outlined",
+                                name: "auto_awesome",
                             }
                         }
                         span {

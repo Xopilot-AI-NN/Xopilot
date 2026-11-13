@@ -22,7 +22,7 @@ module.exports = async function offline({
     "Модели",
     "История",
     "Обновления",
-    "О программе",
+    "О приложении",
   ]) {
     await click(section);
     await check(
@@ -35,7 +35,7 @@ module.exports = async function offline({
     );
     if (section === "Профиль и аккаунт") {
       await click("Изменить имя");
-      await input(".profile-name-editor input", "UI Test");
+      await input("input.profile-name-input", "UI Test");
       await click("Сохранить имя");
       await check(
         "Имя сохранено через Rust",
@@ -58,7 +58,7 @@ module.exports = async function offline({
         "Кнопки моделей внутри карточек",
         "return [...document.querySelectorAll('.model-card')].every(c=>{const b=c.querySelector('button').getBoundingClientRect(),r=c.getBoundingClientRect();return b.right<=r.right+1&&b.bottom<=r.bottom+1;});",
       );
-    if (section === "О программе") {
+    if (section === "О приложении") {
       await click("Сохранить диагностику");
       await until(
         "return document.querySelector('.snackbar')?.innerText.includes('Диагностика сохранена');",

@@ -27,7 +27,6 @@ pub fn build_agent_controls() -> Element {
             title: "Режим агента",
             "aria-label": "Режим агента",
             "aria-expanded": *open.read(),
-            disabled: state.read().busy,
             onclick: move |_| {
                 let next = !*open.peek();
                 open.set(next);

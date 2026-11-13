@@ -22,6 +22,7 @@ pub struct AppState {
     pub messages: Vec<StoredMessage>,
     pub bookmarks: std::collections::HashSet<i64>,
     pub draft: Draft,
+    pub message_queue: std::collections::VecDeque<Draft>,
     pub screen: Screen,
     pub sidebar: bool,
     pub theme: String,
@@ -57,6 +58,24 @@ pub struct AppState {
 }
 
 impl AppState {
+    /// Добавил отправку следующего сообщения без блокировки редактора.
+    /// Проверки выполняются до перемещения черновика, чтобы не потерять текст.
+    pub fn enqueue_draft(&mut self) -> Result<()> {
+        if self.draft.text.trim().is_empty()
+            && self.draft.files.is_empty()
+        {
+            return Ok(());
+        }
+        self.active.context("Чат не выбран")?;
+        anyhow::ensure!(
+            self.message_queue.len() < 20,
+            "В очереди уже 20 сообщений"
+        );
+        self.message_queue
+            .push_back(std::mem::take(&mut self.draft));
+        Ok(())
+    }
+
     /// Применяет снимок текущего чата к сигналам окна.
     pub fn apply(&mut self, snapshot: Snapshot) {
         self.chats = snapshot.chats;
@@ -314,7 +333,9 @@ pub async fn switch_chat(
         !state.read().unsaved,
         "Сохраните или закройте редактор перед сменой чата"
     );
-    if state.read().busy {
+    if state.read().busy
+        || !state.read().message_queue.is_empty()
+    {
         anyhow::bail!(
             "Остановите текущий ответ перед сменой чата"
         );
@@ -344,7 +365,9 @@ pub async fn new_chat(
         !state.read().unsaved,
         "Сохраните или закройте редактор перед созданием чата"
     );
-    if state.read().busy {
+    if state.read().busy
+        || !state.read().message_queue.is_empty()
+    {
         anyhow::bail!(
             "Остановите текущий ответ перед созданием чата"
         );
@@ -384,7 +407,9 @@ pub async fn delete_chat(
         !state.read().uploading,
         "Дождитесь чтения вложений"
     );
-    if state.read().busy {
+    if state.read().busy
+        || !state.read().message_queue.is_empty()
+    {
         anyhow::bail!(
             "Остановите текущий ответ перед удалением чата"
         );
@@ -407,6 +432,8 @@ pub async fn delete_chat(
 }
 
 /// Сохраняет запрос, принимает поток ответа и результаты инструментов, затем обновляет историю.
+/// Добавил очередь сообщений после полного завершения ответа и действий агента.
+/// Новый текст остаётся в редакторе пока предыдущая задача работает.
 pub async fn send(
     mut state: Signal<AppState>,
 ) -> Result<()> {
@@ -414,21 +441,28 @@ pub async fn send(
         !state.read().uploading,
         "Дождитесь чтения вложений"
     );
+    let _ = store(state)?;
+    state.write().enqueue_draft()?;
     if state.read().busy {
         return Ok(());
     }
-    let (id, draft) = {
-        let value = state.read();
-        (
-            value.active.context("Чат не выбран")?,
-            value.draft.clone(),
-        )
-    };
-    if draft.text.trim().is_empty()
-        && draft.files.is_empty()
-    {
-        return Ok(());
+    loop {
+        let next = state.write().message_queue.pop_front();
+        let Some(draft) = next else { break };
+        // При ошибке запрос мог уже попасть в историю. Автоматически его не повторяю.
+        // Следующие сообщения остаются в очереди до явного продолжения.
+        send_one(state, draft).await?;
     }
+    Ok(())
+}
+
+/// Выполняет один запрос. Редактор следующего сообщения больше не очищается ответом ИИ.
+async fn send_one(
+    mut state: Signal<AppState>,
+    draft: Draft,
+) -> Result<()> {
+    let id =
+        state.read().active.context("Чат не выбран")?;
     let store = store(state)?;
     // Блокируем повторный Enter до первого await.
     let token = CancellationToken::new();
@@ -445,6 +479,7 @@ pub async fn send(
     let agent_settings = state.read().agent.clone();
     let control = services::agent::Control::default();
     state.write().agent_control = Some(control.clone());
+    let recovery_draft = draft.clone();
     let prepared = services::runtime::background(async move {
         tokio::task::spawn_blocking(move || -> Result<_> {
             let config = services::generation::selected(&worker_store)?;
@@ -470,7 +505,6 @@ pub async fn send(
                     };
                     db.rename_chat(id, &title.chars().take(50).collect::<String>())?;
                 }
-                services::drafts::write_draft(db, id, &Draft::default())?;
                 Ok((history, request_id))
             })?;
             Ok((config, history.0, workspace, history.1))
@@ -478,10 +512,20 @@ pub async fn send(
         .await?
     })
     .await;
+    if prepared.is_err() {
+        // Если сохранение запроса не началось, возвращаю текст без замены нового черновика.
+        let mut value = state.write();
+        if value.draft.text.is_empty()
+            && value.draft.files.is_empty()
+        {
+            value.draft = recovery_draft;
+        } else {
+            value.message_queue.push_front(recovery_draft);
+        }
+    }
     let result = async {
         let (config, history, workspace, request_id) = prepared?;
-        // После сохранения запроса очищаем редактор; при ошибке настроек черновик остаётся.
-        state.write().draft = Draft::default();
+        // Обновляю историю, сохраняя текст следующего сообщения в редакторе.
         refresh(state, Some(id)).await?;
         // Кодеки WebView работают в UI-контексте. Подготовленные данные
         // кешируются по содержимому и повторно используются из истории.
@@ -652,7 +696,9 @@ pub fn answer_action(
 }
 
 /// Отменяет активную генерацию и выполняемые инструменты через общий токен.
-pub fn cancel(state: Signal<AppState>) {
+pub fn cancel(mut state: Signal<AppState>) {
+    // Остановка отменяет также очередь, чтобы задачи не запускались неожиданно.
+    state.write().message_queue.clear();
     if let Some(token) = &state.read().cancelled {
         token.cancel();
     }
