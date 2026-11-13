@@ -37,6 +37,8 @@ fn main() {
         .with_cfg(
             dioxus::desktop::Config::new()
                 .with_menu(None)
+                // Убрал системное меню WebView с пунктом исследования элементов.
+                .with_disable_context_menu(true)
                 .with_window(
                 dioxus::desktop::WindowBuilder::new()
                     .with_title("Xopilot")
