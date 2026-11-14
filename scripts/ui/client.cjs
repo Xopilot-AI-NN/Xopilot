@@ -1,12 +1,17 @@
 // Общие пользовательские действия для Linux-стенда и Android WebView.
 // Проверяем видимость и перекрытие кнопок: DOM click сам по себе этого не гарантирует.
-const assert = require("node:assert/strict");
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 module.exports = function client(evaluate, results = []) {
   async function until(script, message, timeout = 10000) {
     const end = Date.now() + timeout;
     while (Date.now() < end) {
-      if (await evaluate(script)) return;
+      try {
+        if (await evaluate(script)) return;
+      } catch (error) {
+        // При холодном старте WebView заменяет начальный документ страницей приложения.
+        // Повторяю только этот переход, ошибки самого проверяемого JS сохраняются.
+        if (!String(error).includes("Inspected target navigated or closed")) throw error;
+      }
       await wait(90);
     }
     throw Error(message);
@@ -29,7 +34,8 @@ module.exports = function client(evaluate, results = []) {
     await wait(100);
   }
   async function check(name, script) {
-    assert(await evaluate(script), name);
+    // На телефоне событие проходит через JNI; проверяем результат после обновления DOM.
+    await until(script, name, 3000);
     results.push(name);
     console.log("✓ " + name);
   }

@@ -13,6 +13,20 @@ module.exports = async function offline({
     "История не открылась",
     20000,
   );
+  await click("Режим агента");
+  // Android сначала измеряет и размещает меню: скрытый первый кадр не содержит innerText.
+  await until("const menu=document.querySelector('#agent-mode-menu');return !!menu && getComputedStyle(menu).visibility==='visible';", "Меню агентностей не появилось");
+  await check("В меню есть новые агентности", "const text=document.querySelector('#agent-mode-menu').innerText;return ['Точный агент','Мульти Агенты','Мульти Агенты с подкреплением'].every(s=>text.includes(s));");
+  await click("Точный агент");
+  await check("Точный агент выбран", "return document.querySelector('#agent-mode-trigger').textContent.includes('Точный агент');");
+  await click("Размышление");
+  await click("Высокий");
+  await check("Глубина размышления изменена", "return document.querySelector('#reasoning-trigger').textContent.includes('Высокий');");
+  await click("Режим агента");await click("Чат без инструментов");
+  await click("Размышление");await click("Выключить размышление");
+  // Закрываю список повторным нажатием, не затрагивая режим отправки сообщения.
+  await evaluate("setTimeout(()=>document.querySelector('#reasoning-menu').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})),0);return true;");
+  await until("return !document.querySelector('#reasoning-menu');", "Список размышления не закрылся");
   await input("#chat-prompt", "Черновик общего UI-теста");
   await click("Открыть меню");
   await click("Настройки");

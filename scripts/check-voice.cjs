@@ -68,7 +68,9 @@ async function scenario(mode) {
               getChannelData: () => new Float32Array(8000).fill(0.5),
             },
           });
-          if (mode === "background") {
+          if(mode==="automatic"){
+            processor.onaudioprocess({inputBuffer:{getChannelData:()=>new Float32Array(32000)}});
+          } else if (mode === "background") {
             document.hidden = true;
             visibilityHandler();
           } else end("stop");
@@ -76,7 +78,8 @@ async function scenario(mode) {
     },
   };
   if (mode === "cancel") end("stop");
-  await script(bridge, navigator, window, document, (binary) =>
+  const execute=mode==="automatic" ? new AsyncFunction("dioxus","navigator","window","document","btoa",fs.readFileSync("App/services/voice_record.js","utf8").replace("const automatic = false;","const automatic = true;")) : script;
+  await execute(bridge, navigator, window, document, (binary) =>
     Buffer.from(binary, "binary").toString("base64"),
   );
   return { events, stopped, closed };
@@ -110,4 +113,8 @@ test("moving to background stops capture and releases resources", async () => {
   assert.ok(result.events.some((event) => event.kind === "audio"));
   assert.equal(result.closed, 1);
   assert.ok(result.stopped > 0);
+});
+
+test("Live automatically ends a spoken turn after silence",async()=>{
+ const result=await scenario("automatic");assert.ok(result.events.some(e=>e.kind==="audio"));assert.equal(result.closed,1);assert.ok(result.stopped>0);
 });

@@ -23,7 +23,7 @@ case "${1:-quick}" in
     ;;
   bridges)
     node scripts/check-mobile-bridges.cjs
-    node --test scripts/check-voice.cjs
+    node --test scripts/check-voice.cjs scripts/check-speech.cjs
     ;;
   flowmap)
     node --test tools/flowmap/model.test.cjs
@@ -43,6 +43,14 @@ case "${1:-quick}" in
     cargo run -p xopilot --no-default-features --locked --example local_agent_smoke -- "$2"
     cargo run -p xopilot --no-default-features --locked --example local_canvas_smoke -- "$2"
     ;;
-  *) echo 'Режимы: quick | full | ui | bridges | flowmap | apk | apk-check [путь/к/APK] | model /путь/к/модели' >&2; exit 2 ;;
+  team)
+    # Отдельная временная база создаётся примером; личная история не используется.
+    if [[ $# -ne 2 ]]; then
+      echo 'Использование: ./scripts/test.sh team /путь/gemma-4-E2B-it.litertlm' >&2
+      exit 2
+    fi
+    cargo run -p xopilot --no-default-features --locked --example local_team_smoke -- "$2"
+    ;;
+  *) echo 'Режимы: quick | full | ui | bridges | flowmap | apk | apk-check [путь/к/APK] | model /путь/к/модели | team /путь/к/модели' >&2; exit 2 ;;
 esac
 echo 'Проверки завершились успешно.'

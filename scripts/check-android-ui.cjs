@@ -23,7 +23,13 @@ function adb(...args) {
   return execFileSync(adbPath, args, { encoding: "utf8", timeout: 30000 });
 }
 async function connect() {
-  const pid = adb("shell", "pidof", app).trim().split(" ")[0];
+  // am start возвращается раньше появления PID при холодном запуске после pm clear.
+  let pid;
+  for (let attempt = 0; attempt < 100; attempt++) {
+    try { pid = adb("shell", "pidof", app).trim().split(" ")[0]; } catch (_) {}
+    if (pid) break;
+    await wait(100);
+  }
   if (!pid) throw Error("Тестовый процесс не запущен");
   if (port) adb("forward", "--remove", `tcp:${port}`);
   port = Number(
@@ -145,6 +151,14 @@ function screenshot(name) {
   await connect();
   const ui = require("./ui/client.cjs")(evaluate, results);
   await require("./ui/offline.cjs")(ui);
+  if(process.env.XOPILOT_TEST_SPEECH === "1"){
+    await ui.click("Открыть меню");await ui.click("Настройки");await ui.click("Персонализация");
+    await ui.click("Проверить голос");
+    await ui.until("return !!document.querySelector('.speech-progress') || !!document.querySelector('.snackbar.error');","Системный TTS не запустился",10000);
+    await ui.until("return !document.querySelector('.speech-progress');","Системный TTS не завершился",20000);
+    await ui.check("Локальный Android TTS завершил тестовую фразу","return !document.querySelector('.snackbar.error');");
+    await ui.close();
+  }
   screenshot("offline");
   const pid = adb("shell", "pidof", app).trim();
   await ui.input("#chat-prompt", "Черновик перед уходом в фон");

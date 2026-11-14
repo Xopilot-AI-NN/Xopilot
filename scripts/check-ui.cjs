@@ -126,6 +126,14 @@ const server = http.createServer(async (request, response) => {
     for await (const chunk of request) body += chunk;
     requests.push(JSON.parse(body));
     const message=JSON.parse(body);
+    const system=message.messages[0]?.content || '';
+    const jsonReply=content=>{response.writeHead(200,{'Content-Type':'application/json'});response.end(JSON.stringify({choices:[{message:{content}}]}));};
+    if(system.includes('Give a short public work plan')){await wait(120);jsonReply('Проверю данные, составлю план и сверю результат.');return;}
+    if(system.includes('research specialist')){
+        const read=message.messages.some(m=>m.role==='assistant'&&String(m.content).includes('list_canvases'));
+        jsonReply(JSON.stringify(read?{final:'Проверенный список документов прочитан'}:{tool:'list_canvases',arguments:{}}));return;
+    }
+    if(String(message.messages.filter(m=>m.role==='user').at(-1)?.content).includes('Задача нового режима')){jsonReply(JSON.stringify({final:'Ответ расширенного режима'}));return;}
     if(message.messages[0]?.content?.includes('You are the Xopilot agent')){
         const turn=agentRequests++,step=turn%3,run=Math.floor(turn/3);
         const answer=step===0?{tool:'read_project_file',arguments:{path:'example.txt'}}:
@@ -136,7 +144,7 @@ const server = http.createServer(async (request, response) => {
         response.end(JSON.stringify({choices:[{message:{content:JSON.stringify(answer)}}]}));return;
     }
     response.writeHead(200, {'Content-Type':'text/event-stream'});
-    response.write('data: ' + JSON.stringify({choices:[{delta:{content:'Потоковый ответ.\n\n'}}]}) + '\n\n');
+    response.write('data: ' + JSON.stringify({choices:[{delta:{content:JSON.stringify(message.messages).includes('Уточнение пользователя')?'Уточнение учтено.\n\n':'Потоковый ответ.\n\n'}}]}) + '\n\n');
     await wait(1800);
     if (!response.destroyed) response.end('data: '+JSON.stringify({choices:[{delta:{content:'**Markdown** и окончание ответа.'}}]})+'\n\ndata: [DONE]\n\n');
 });
@@ -316,6 +324,7 @@ process.once('SIGINT',()=>{void stop().finally(()=>{server.close();process.exit(
     // Общие с APK сценарии выполняются тем же модулем, без второй реализации проверок.
     await close().catch(()=>{});
     await require('./ui/offline.cjs')(require('./ui/client.cjs')(evaluate,results));
+    if(!process.env.XOPILOT_TEST_MODEL) await require('./ui/agent_modes.cjs')({evaluate,wait,click,input,check,until,screenshot});
     fs.writeFileSync(path.join(root, 'result.json'), JSON.stringify({checks:results, httpRequests:requests.length, viewportWidths:windowId?[1000,390]:[1060], platform:'Linux WebKitGTK; Android device not tested'}, null, 2));
     console.log(`${results.length} проверок пройдено. Артефакты: ${root}`);
 })().catch(async error => {
