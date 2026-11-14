@@ -5,3 +5,5 @@ pub mod prompt;
 pub mod prompt_templates;
 
 pub mod voice;
+
+pub mod live;

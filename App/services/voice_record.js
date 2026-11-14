@@ -1,3 +1,4 @@
+const automatic = false;
 // Запись mono PCM локально. Поток микрофона закрывается при остановке,
 // ошибке, уходе со страницы и по ограничению длительности.
 let stream;
@@ -32,6 +33,7 @@ try {
   processor = context.createScriptProcessor(4096, 1, 1);
   const chunks = [];
   let count = 0;
+  let voiced=0, silence=0, elapsed=0, heard=false;
   let stopped = false;
   let resolveStop;
   const finished = new Promise((resolve) => {
@@ -56,6 +58,13 @@ try {
       chunks.push(chunk);
       count += chunk.length;
     }
+    if(automatic && chunk.length){
+      const seconds=chunk.length/context.sampleRate;
+      const rms=Math.sqrt(chunk.reduce((sum,x)=>sum+x*x,0)/chunk.length);
+      elapsed+=seconds;
+      if(rms>0.012){voiced+=seconds;silence=0;if(voiced>=0.25)heard=true;}else{silence+=seconds;}
+      if((heard&&silence>=1.2)||(!heard&&elapsed>=6))stop();
+    }
     if (!available || count >= context.sampleRate * 30) stop();
   };
   source.connect(processor);
@@ -64,6 +73,7 @@ try {
   timer = setTimeout(stop, 30000);
   // Команда остановки обрабатывается также во время запроса разрешения.
   await finished;
+  if (automatic && !heard) throw new Error("Речь не обнаружена. Нажмите Live и попробуйте ещё раз");
   if (count < context.sampleRate * 0.15)
     throw new Error("Запись слишком короткая");
   const samples = new Float32Array(count);

@@ -34,6 +34,7 @@ pub fn build_chat() -> Element {
         value.workspace_name.clone()
     };
     let streaming = value.streaming.clone();
+    let pending_notes = value.pending_notes.clone();
     let busy = value.busy;
     drop(value);
     use_effect(use_reactive((&active,), move |_| {
@@ -316,6 +317,14 @@ pub fn build_chat() -> Element {
                     class: "messages",
                     id: "chat-messages",
                     "aria-label": "Сообщения",
+                    for (index,note) in pending_notes.iter().enumerate() {
+                        article {
+                            key: "pending-note-{index}",
+                            class: "message user pending-note",
+                            div {class:"message-bubble", "{note}"}
+                            small {class:"notice", "Уточнение · ожидает безопасного шага"}
+                        }
+                    }
                     if busy {
                         crate::app::shared::components::reply_activity::build_reply_activity {
                             text: streaming,

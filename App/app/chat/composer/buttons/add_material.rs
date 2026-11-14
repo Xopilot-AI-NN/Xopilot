@@ -27,7 +27,7 @@ pub fn build_add_material_button() -> Element {
             input {
                 r#type: "file",
                 multiple: true,
-                disabled: *loading.read() || state.read().busy,
+                disabled: *loading.read() || state.read().uploading || state.read().live_active,
                 onchange: move |event| {
                     let files = event.files();
                     let active = state.read().active;
@@ -98,7 +98,6 @@ pub fn build_android_material_button() -> Element {
             let result = async {
                 match event {
                     UploadEvent::Start { name, size } => {
-                        anyhow::ensure!(!state.read().busy, "Дождитесь ответа модели");
                         anyhow::ensure!(
                             state.read().draft.files.len() < 10,
                             "К сообщению можно прикрепить до 10 файлов"
@@ -158,7 +157,7 @@ pub fn build_android_material_button() -> Element {
                 id: "xopilot-android-materials",
                 r#type: "file",
                 multiple: true,
-                disabled: state.read().busy || state.read().uploading,
+                disabled: state.read().uploading || state.read().live_active,
             }
         }
     }

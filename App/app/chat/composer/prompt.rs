@@ -2,7 +2,6 @@
 // Описание: Две строки: поле ввода и компактные инструменты.
 use super::buttons::{add_material, send};
 use crate::app::{
-    menu::buttons::brand,
     shared::icons,
     state::{self, AppState, Screen},
 };
@@ -56,7 +55,6 @@ pub fn build_prompt() -> Element {
                             button {
                                 class: "attachment",
                                 title: "Убрать вложение",
-                                disabled: busy,
                                 onclick: move |_| {
                                     state.write().draft.files.remove(index);
                                 },
@@ -142,20 +140,11 @@ pub fn build_prompt() -> Element {
                         class: "spacer",
                     }
                     super::voice::build_voice_button {}
+                    super::live::build_live_button {}
                     if has_prompt || busy {
                         send::build_send_button {
                         }
-                    } else {
-                        brand::build_brand_button {
-                            icon: "graphic_eq",
-                            label: "Live — голосовой разговор",
-                            role: "ai",
-                            onclick: move |_| {
-                                state.write().notice = Some(
-                                    "Live ещё переносится в новую версию.".into(),
-                                );
-                            },
-                        }
+
                     }
                 }
             }

@@ -2,6 +2,7 @@
 pub mod account_deletion;
 pub mod agent;
 pub mod agent_intent;
+pub mod agent_modes;
 pub mod agent_protocol;
 pub mod agent_session;
 #[cfg(any(target_os = "android", test))]
@@ -23,6 +24,7 @@ pub mod exports;
 pub mod generation;
 pub mod http_client;
 pub mod litert;
+pub mod live;
 pub mod media;
 mod media_codecs;
 pub mod message_navigation;
@@ -39,6 +41,12 @@ pub mod project_inspection;
 pub mod project_tools;
 pub mod prompt_templates;
 pub mod runtime;
+pub mod speech;
+#[cfg(any(target_os = "android", test))]
+#[cfg_attr(test, allow(dead_code))]
+mod speech_android;
+#[cfg(all(target_os = "linux", feature = "desktop"))]
+pub mod speech_piper;
 pub mod spreadsheets;
 pub mod startup;
 pub mod task_history;

@@ -3102,3 +3102,14 @@ select.preference-select,
         transition: none;
     }
 }
+
+/* Добавил спокойное отображение планов модели, без мигания и тяжёлых эффектов. */
+.reasoning-trace { color:var(--muted); opacity:.76; border-left:2px solid var(--outline); padding:8px 12px; margin:8px 0; }
+.reasoning-trace summary {display:flex;align-items:center;gap:8px;cursor:pointer;}
+.reasoning-trace p {white-space:pre-wrap;font-size:.9em;line-height:1.5;margin:10px 0 0;}
+.agent-mode-label {max-width:135px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+@media(max-width:600px){.agent-mode-label{max-width:62px}.reasoning-depth-label{display:none}.reasoning-control{padding:8px}.composer-tools{flex-wrap:wrap}}
+.reasoning-trace p {max-height:16rem;overflow:auto;overscroll-behavior:contain;}
+.live-phase {max-width:140px;font-size:12px;}
+.pending-note {opacity:.7;}
+.pending-note .message-bubble {border-style:dashed;}

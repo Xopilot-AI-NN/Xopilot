@@ -41,6 +41,8 @@ pub struct AppState {
     pub approval: Option<services::agent::Approval>,
     pub busy: bool,
     pub uploading: bool,
+    pub live_active: bool,
+    pub pending_notes: Vec<String>,
     pub streaming: String,
     pub cancelled: Option<CancellationToken>,
     pub error: Option<String>,
@@ -326,6 +328,10 @@ pub async fn switch_chat(
     id: i64,
 ) -> Result<()> {
     anyhow::ensure!(
+        !state.read().live_active,
+        "Остановите Live перед сменой или удалением чата"
+    );
+    anyhow::ensure!(
         !state.read().uploading,
         "Дождитесь чтения вложений"
     );
@@ -357,6 +363,10 @@ pub async fn switch_chat(
 pub async fn new_chat(
     mut state: Signal<AppState>,
 ) -> Result<()> {
+    anyhow::ensure!(
+        !state.read().live_active,
+        "Остановите Live перед сменой или удалением чата"
+    );
     anyhow::ensure!(
         !state.read().uploading,
         "Дождитесь чтения вложений"
@@ -404,6 +414,10 @@ pub async fn delete_chat(
     id: i64,
 ) -> Result<()> {
     anyhow::ensure!(
+        !state.read().live_active,
+        "Остановите Live перед сменой или удалением чата"
+    );
+    anyhow::ensure!(
         !state.read().uploading,
         "Дождитесь чтения вложений"
     );
@@ -446,6 +460,29 @@ pub async fn send(
     if state.read().busy {
         return Ok(());
     }
+    send_pending(state).await
+}
+
+/// Live добавляет только расшифрованную реплику. Набранный вручную черновик остаётся в редакторе.
+pub async fn send_live(
+    mut state: Signal<AppState>,
+    text: String,
+) -> Result<()> {
+    anyhow::ensure!(
+        !state.read().busy && !state.read().uploading,
+        "Предыдущая задача ещё выполняется"
+    );
+    state.write().message_queue.push_back(Draft {
+        text,
+        files: Vec::new(),
+    });
+    send_pending(state).await
+}
+
+/// Одна задача обслуживает очередь, параллельный поток генерации не запускается.
+async fn send_pending(
+    mut state: Signal<AppState>,
+) -> Result<()> {
     loop {
         let next = state.write().message_queue.pop_front();
         let Some(draft) = next else { break };
@@ -478,6 +515,8 @@ async fn send_one(
     let worker_store = store.clone();
     let agent_settings = state.read().agent.clone();
     let control = services::agent::Control::default();
+    let recovery_control = control.clone();
+    let _control_lifetime = control.close_on_drop();
     state.write().agent_control = Some(control.clone());
     let recovery_draft = draft.clone();
     let prepared = services::runtime::background(async move {
@@ -523,6 +562,8 @@ async fn send_one(
             value.message_queue.push_front(recovery_draft);
         }
     }
+    let request_identity =
+        prepared.as_ref().ok().map(|(_, _, _, id)| *id);
     let result = async {
         let (config, history, workspace, request_id) = prepared?;
         // Обновляю историю, сохраняя текст следующего сообщения в редакторе.
@@ -549,24 +590,39 @@ async fn send_one(
             events,
         };
         let task = services::runtime::runtime().spawn(async move {
-            if worker_settings.enabled {
-                services::agent::run(config, messages, request_token, tx, context).await
-            } else {
-                drop(context);
-                services::generation::reply(config, messages, request_token, tx).await
-            }
+            services::agent_modes::run(config, messages, request_token, tx, context).await
         });
         let (mut text_open, mut events_open) = (true, true);
         while text_open || events_open {
             tokio::select! {
                 delta = rx.recv(), if text_open => {
                     match delta {
-                        Some(delta) => state.write().streaming.push_str(&delta),
+                        Some(delta) => {
+                            if agent_settings.enabled {state.write().streaming.push_str(&delta);}
+                        },
                         None => text_open = false,
                     }
                 }
                 event = event_rx.recv(), if events_open => {
                     match event {
+                        Some(services::agent::Event::Text(text)) => state.write().streaming.push_str(&text),
+                        Some(services::agent::Event::ResetText) => state.write().streaming.clear(),
+                        Some(services::agent::Event::NotesApplied {messages,notes}) => {
+                            let mut value=state.write();
+                            value.messages=messages;
+                            for note in notes {
+                                if let Some(index)=value.pending_notes.iter().position(|pending|pending==&note){value.pending_notes.remove(index);}
+                            }
+                        },
+                        Some(services::agent::Event::Deliberation {id,title,text,state:phase}) => {
+                            let mut value = state.write();
+                            let actions = value.action_history.entry(request_id).or_default();
+                            let action = services::task_history::Action {
+                                id,tool:"thinking".into(), arguments:serde_json::json!({"title":title}),
+                                output:serde_json::json!({"result":text}),state:phase,..Default::default()
+                            };
+                            if let Some(previous)=actions.iter_mut().find(|a|a.id==id){*previous=action;}else{actions.push(action);}
+                        }
                         Some(services::agent::Event::Progress(progress)) => {
                             state.write().agent_progress = progress;
                         }
@@ -603,14 +659,21 @@ async fn send_one(
                 }
             }
         }
-        let actions = state.peek().action_history.get(&request_id).cloned().unwrap_or_default();
-        if !actions.is_empty() {
-            let store = store.clone();
-            services::runtime::blocking(move || {
-                services::task_history::save(&store, request_id, &actions)
-            }).await?;
+        let outcome=task.await.map_err(anyhow::Error::from).and_then(|result|result);
+        {
+            let mut value=state.write();
+            for action in value.action_history.entry(request_id).or_default() {
+                if matches!(action.state.as_str(),"running"|"approval") {
+                    action.state=if token.is_cancelled(){"interrupted"}else{"failed"}.into();
+                }
+            }
         }
-        let answer = task.await??;
+        let actions=state.peek().action_history.get(&request_id).cloned().unwrap_or_default();
+        if !actions.is_empty(){
+            let store=store.clone();
+            services::runtime::blocking(move || services::task_history::save(&store,request_id,&actions)).await?;
+        }
+        let answer = outcome?;
         let elapsed = started.elapsed().as_secs_f64();
         services::runtime::background(async move {
             store
@@ -625,29 +688,38 @@ async fn send_one(
         Ok(())
     }
     .await;
+    let unconsumed = recovery_control.take_pending();
+    if !unconsumed.is_empty() {
+        let mut value = state.write();
+        if !value.draft.text.is_empty() {
+            value.draft.text.push('\n');
+        }
+        value.draft.text.push_str(&unconsumed.join("\n"));
+    }
     {
         let mut value = state.write();
         value.busy = false;
         value.cancelled = None;
         value.agent_control = None;
+        value.pending_notes.clear();
         value.agent_progress.clear();
         value.approval = None;
         value.streaming.clear();
         if agent_settings.enabled {
-            let actions = value
-                .messages
-                .iter()
-                .rev()
-                .find(|m| m.role == "user")
-                .and_then(|m| {
-                    value.action_history.get(&m.id)
-                });
+            let actions = request_identity.and_then(|id| {
+                value.action_history.get(&id)
+            });
             let tools_ok = actions.is_none_or(|actions| {
                 actions
                     .iter()
                     .all(|a| a.state == "completed")
             });
-            let count = actions.map_or(0, Vec::len);
+            let count = actions.map_or(0, |actions| {
+                actions
+                    .iter()
+                    .filter(|a| a.tool != "thinking")
+                    .count()
+            });
             value.task_completion = Some(
                 if token.is_cancelled() {
                     ("Задача остановлена".into(), false)
@@ -732,5 +804,25 @@ pub async fn export_chat(
         "Экспорт сохранён: {}",
         path.display()
     ));
+    Ok(())
+}
+
+/// Добавил второй способ отправки: уточнение действующей задачи на ближайшем безопасном шаге.
+pub fn steer(mut state: Signal<AppState>) -> Result<()> {
+    let mut value = state.write();
+    anyhow::ensure!(value.busy, "Нет выполняющейся задачи");
+    anyhow::ensure!(
+        value.draft.files.is_empty(),
+        "Вложения отправляются отдельным сообщением в очередь"
+    );
+    let control = value
+        .agent_control
+        .as_ref()
+        .context("Задача ещё подготавливается")?;
+    control.submit(&value.draft.text)?;
+    let note = value.draft.text.clone();
+    value.pending_notes.push(note);
+    value.draft.text.clear();
+    value.notice=Some("Уточнение принято. ИИ учтёт его на ближайшем безопасном шаге".into());
     Ok(())
 }

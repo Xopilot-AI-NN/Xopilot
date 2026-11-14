@@ -59,6 +59,7 @@ fn main() -> Result<()> {
                     enabled: true,
                     automatic: true,
                     max_steps: 8,
+                    ..Default::default()
                 },
                 control: Default::default(),
                 events,

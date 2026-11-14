@@ -14,7 +14,7 @@ path = "lib.rs"
 
 [features]
 default = ["desktop"]
-desktop = ["dioxus/desktop", "dep:cpal"]
+desktop = ["dioxus/desktop", "dep:cpal", "dep:tar", "dep:flate2"]
 mobile = ["dioxus/mobile"]
 
 [dependencies]
@@ -54,6 +54,8 @@ encoding_rs = "0.8"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 cpal = { version = "0.18.2", optional = true }
+tar = { version = "0.4", optional = true }
+flate2 = { version = "1", optional = true }
 
 [target.'cfg(target_os = "android")'.dependencies]
 jni = "0.22"
@@ -78,3 +80,12 @@ required-features = ["desktop"]
 name = "media_smoke"
 path = "examples/media_smoke.rs"
 required-features = ["desktop"]
+
+[[example]]
+name = "speech_smoke"
+path = "examples/speech_smoke.rs"
+required-features = ["desktop"]
+
+[[example]]
+name = "local_team_smoke"
+path = "examples/local_team_smoke.rs"

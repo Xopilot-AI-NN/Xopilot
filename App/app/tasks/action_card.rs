@@ -17,6 +17,20 @@ pub fn build_action_cards(actions: Vec<Action>) -> Element {
             role: "log",
             "aria-label": "Действия агента",
             for action in actions {
+                if action.tool == "thinking" {
+                    details {
+                        key: "{action.id}",
+                        class: "reasoning-trace",
+                        open: true,
+                        "data-state": action.state.clone(),
+                        summary {
+                            icons::build_icon {name: "psychology"}
+                            strong { {action.arguments["title"].as_str().unwrap_or("Размышление")} }
+                            span {class:"notice", if action.state=="running" {"Выполняется"} else if action.state=="completed" {"Готово"} else if action.state=="failed" {"Ошибка"} else {"Прервано"}}
+                        }
+                        p { {action.output["result"].as_str().unwrap_or_default()} }
+                    }
+                } else {
                 details {
                     key: "{action.id}",
                     class: "agent-action",
@@ -29,6 +43,9 @@ pub fn build_action_cards(actions: Vec<Action>) -> Element {
                             class: "action-heading",
                             strong {
                                 {task_history::title(&action.tool)}
+                            }
+                            if let Some(agent)=action.arguments["_agent"].as_str() {
+                                small {"{agent}"}
                             }
                             small {
                                 {
@@ -98,6 +115,7 @@ pub fn build_action_cards(actions: Vec<Action>) -> Element {
                             }
                         }
                     }
+                }
                 }
             }
         }

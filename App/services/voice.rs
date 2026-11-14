@@ -28,12 +28,19 @@ enum RecordEvent {
 #[cfg(not(all(target_os = "linux", feature = "desktop")))]
 /// Записывает до 30 секунд; второе нажатие завершает запись немедленно.
 /// Ожидание разрешения и ответ WebView имеют общий ограниченный срок.
-pub async fn record(
+pub async fn record_options(
     stop: CancellationToken,
+    automatic: bool,
 ) -> Result<Vec<u8>> {
-    let mut bridge = dioxus::document::eval(include_str!(
-        "voice_record.js"
-    ));
+    let script = include_str!("voice_record.js").replace(
+        "const automatic = false;",
+        if automatic {
+            "const automatic = true;"
+        } else {
+            "const automatic = false;"
+        },
+    );
+    let mut bridge = dioxus::document::eval(&script);
     let timeout = super::runtime::runtime().spawn(async {
         tokio::time::sleep(std::time::Duration::from_secs(
             50,
@@ -90,8 +97,9 @@ pub async fn record(
 
 /// Linux записывает PCM через ALSA без плагинов WebView.
 #[cfg(all(target_os = "linux", feature = "desktop"))]
-pub async fn record(
+pub async fn record_options(
     stop: CancellationToken,
+    automatic: bool,
 ) -> Result<Vec<u8>> {
     let mut visibility = dioxus::document::eval(
         r#"
@@ -103,7 +111,7 @@ pub async fn record(
     );
     let worker_stop = stop.clone();
     let recording = super::runtime::blocking(move || {
-        super::voice_native::record(worker_stop)
+        super::voice_native::record(worker_stop, automatic)
     });
     tokio::pin!(recording);
     let result = tokio::select! {
@@ -142,4 +150,74 @@ pub async fn transcribe(
         "Расшифровка слишком длинная"
     );
     Ok(text.trim().to_owned())
+}
+
+/// Обычная диктовка завершается кнопкой или ограничением времени.
+pub async fn record(
+    stop: CancellationToken,
+) -> Result<Vec<u8>> {
+    record_options(stop, false).await
+}
+
+/// Детектор паузы завершает реплику Live после речи, а не после щелчка микрофона.
+#[cfg(any(
+    all(target_os = "linux", feature = "desktop"),
+    test
+))]
+#[derive(Default)]
+pub(super) struct SilenceGate {
+    pub heard: bool,
+    voiced: f32,
+    silence: f32,
+    elapsed: f32,
+}
+#[cfg(any(
+    all(target_os = "linux", feature = "desktop"),
+    test
+))]
+impl SilenceGate {
+    /// Порог отсекает тихий фон, после 250 мс речи ждём 1.2 секунды тишины.
+    pub fn update(
+        &mut self,
+        rms: f32,
+        seconds: f32,
+    ) -> bool {
+        self.elapsed += seconds;
+        if rms > 0.012 {
+            self.voiced += seconds;
+            self.silence = 0.;
+            if self.voiced >= 0.25 {
+                self.heard = true;
+            }
+        } else {
+            self.silence += seconds;
+        }
+        (self.heard && self.silence >= 1.2)
+            || (!self.heard && self.elapsed >= 6.)
+    }
+}
+/// Кодирую синтезированный звук тем же способом, что диктовку, для повторяемой проверки ASR.
+pub fn encode_wav(samples: &[f32], rate: u32) -> Vec<u8> {
+    super::media_codecs::wav(samples, rate)
+}
+
+#[cfg(test)]
+mod gate_tests {
+    use super::*;
+    #[test]
+    fn stops_after_speech_and_silence() {
+        let mut g = SilenceGate::default();
+        assert!(!g.update(0., 1.));
+        assert!(!g.update(0.1, 0.3));
+        assert!(g.heard);
+        assert!(!g.update(0., 0.5));
+        assert!(g.update(0., 0.8));
+    }
+    #[test]
+    fn noise_does_not_start_turn() {
+        let mut g = SilenceGate::default();
+        assert!(!g.update(0.1, 0.01));
+        assert!(g.update(0., 6.));
+        assert!(!g.heard);
+    }
 }

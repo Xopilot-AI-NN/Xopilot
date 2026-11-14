@@ -304,21 +304,48 @@ pub fn build_personalizations(
             self::build_preference_card {
                 icon: "graphic_eq",
                 title: "Модель Live",
-                description: "Модель для распознавания речи и генерации ответа в Live.",
+                description: "Используется выбранная модель чата. Для диктовки и Live нужна поддержка аудиовложений.",
                 button {
                     class: "preference-select choice-trigger",
-                    disabled: true,
-                    "Модели Live не установлены"
+                    onclick: move |_| state::navigate(state, Screen::Model),
+                    if state.read().model.is_empty() {"Выберите аудиомодель"}else{"{state.read().model}"}
                 }
             }
             self::build_preference_card {
                 icon: "record_voice_over",
                 title: "Голос Live",
-                description: "Тембр, которым Xopilot озвучивает ответы.",
+                description: "Linux: базовый eSpeak NG. Дополнительно Piper с голосом Руслан (CC BY-NC-SA 4.0, некоммерческое использование). Android и Windows: локальный системный голос.",
                 button {
                     class: "preference-select choice-trigger",
-                    disabled: true,
-                    "Сначала установите голос"
+                    onclick: move |_| {
+                        let token=services::speech::begin();
+                        spawn(async move {
+                            let result=services::speech::speak("Привет! Это проверка голоса Xopilot.".into(),token).await;
+                            state::report(state,result);
+                        });
+                    },
+                    "Проверить голос"
+                }
+                if cfg!(all(target_os="linux",feature="desktop")) {
+                    div {
+                        class:"row",
+                        button {
+                            class:"button",disabled:state.read().live_active,
+                            onclick:move |_|{
+                                let token=services::speech::begin_download();
+                                spawn(async move {
+                                    let result=services::speech::install_piper(token.clone()).await;
+                                    if !token.is_cancelled(){state::report(state,result);}
+                                });
+                            },
+                            "Скачать и включить Piper · Руслан"
+                        }
+                        button {class:"button",disabled:state.read().live_active,
+                            onclick:move |_|state::report(state,services::speech::use_system_voice()),
+                            "Базовый голос"
+                        }
+                    }
+                    p {class:"notice","Piper: около 63 МБ для голоса, нативный движок около 26 МБ. Условия голоса: CC BY-NC-SA 4.0."}
                 }
             }
         }

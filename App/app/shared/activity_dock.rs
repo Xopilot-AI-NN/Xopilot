@@ -16,6 +16,7 @@ pub fn build_activity_dock() -> Element {
     );
     let mut imported = use_signal(model_import::progress);
     let mut compute = use_signal(services::compute::status);
+    let mut speech = use_signal(services::speech::status);
     use_future(move || async move {
         loop {
             let next = model_installer::MODELS
@@ -49,6 +50,10 @@ pub fn build_activity_dock() -> Element {
             if *imported.peek() != next {
                 imported.set(next);
             }
+            let next = services::speech::status();
+            if *speech.peek() != next {
+                speech.set(next);
+            }
             let next = services::compute::status();
             if *compute.peek() != next {
                 compute.set(next);
@@ -66,6 +71,7 @@ pub fn build_activity_dock() -> Element {
     let notice = state.read().notice.clone();
     let completed = state.read().task_completion.clone();
     let import = imported.read().clone();
+    let voice = speech.read().clone();
     rsx! {
         div {
             class: "activity-dock",
@@ -224,6 +230,20 @@ pub fn build_activity_dock() -> Element {
                         value: None,
                         label: "Подготовка модели",
                     }
+                }
+            }
+            if !voice.phase.is_empty() {
+                div {
+                    class:"activity-item speech-progress",role:"status",
+                    div {class:"row",
+                        span {"{voice.phase}"}
+                        span {class:"spacer"}
+                        button {class:"plain-icon",title:"Остановить голос",onclick:move |_|services::speech::stop(),icons::build_icon {name:"stop"}}
+                    }
+                    super::progress::build_progress_bar {
+                        value:voice.total.filter(|n|*n>0).map(|n|voice.downloaded as f64/n as f64),label:"Подготовка голоса",
+                    }
+                    if voice.downloaded>0 {small {{super::progress::byte_progress(voice.downloaded,voice.total)}}}
                 }
             }
             task_messages::build_task_messages {

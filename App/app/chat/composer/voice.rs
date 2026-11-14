@@ -44,7 +44,7 @@ pub fn build_voice_button() -> Element {
             r#type: "button",
             title: label,
             "aria-label": label,
-            disabled: state.read().busy ||
+            disabled: state.read().busy || state.read().live_active ||
                     (state.read().uploading && * phase.read() == 0),
             onclick: move |_| {
                 if let Some(token) = cancellation.read().as_ref() {
@@ -52,7 +52,7 @@ pub fn build_voice_button() -> Element {
                     return;
                 }
                 let config = match state::store(state)
-                    .and_then(|store| services::generation::selected(&store))
+                    .and_then(|store| services::generation::audio_configuration(&store))
                 {
                     Ok(config) => config,
                     Err(error) => {

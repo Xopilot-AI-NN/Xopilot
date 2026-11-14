@@ -81,9 +81,14 @@ fn embedded(text: &str) -> Result<Vec<Value>> {
             }
             _ => {
                 let fragment = &text[start..];
-                if ["\"tool\"", "\"actions\"", "\"final\""]
-                    .iter()
-                    .any(|key| fragment.contains(key))
+                if [
+                    "\"tool\"",
+                    "\"tool_name\"",
+                    "\"actions\"",
+                    "\"final\"",
+                ]
+                .iter()
+                .any(|key| fragment.contains(key))
                 {
                     bail!(
                         "Незавершённое действие: нужен целый JSON"
@@ -97,7 +102,7 @@ fn embedded(text: &str) -> Result<Vec<Value>> {
 }
 /// Узнаёт формат управления, не принимая произвольные JSON-данные пользователя за команду.
 fn is_protocol(value: &Value) -> bool {
-    ["tool", "actions", "final"]
+    ["tool", "tool_name", "actions", "final"]
         .iter()
         .any(|key| value.get(key).is_some())
 }
@@ -156,6 +161,7 @@ pub fn parse(text: &str) -> Result<Reply> {
     {
         ensure!(
             values[0].get("tool").is_none()
+                && values[0].get("tool_name").is_none()
                 && values[0].get("actions").is_none(),
             "Нельзя смешивать ответ с действием"
         );
@@ -194,6 +200,21 @@ pub fn parse(text: &str) -> Result<Reply> {
 }
 #[cfg(test)]
 mod tests {
+    /// Gemma использует tool_name: вызов остаётся тем же Call и проходит обычные разрешения.
+    #[test]
+    fn native_tool_name_is_normalized_without_ambiguous_commands()
+     {
+        let parsed=super::parse("Использую инструмент. {\"tool_name\":\"list_canvases\",\"arguments\":{}}").unwrap();
+        assert!(
+            matches!(parsed,super::Reply::Calls(calls) if calls.len()==1 && calls[0].tool=="list_canvases")
+        );
+        assert!(super::parse("{\"tool\":\"read_canvas\",\"tool_name\":\"write_project_file\",\"arguments\":{}}").is_err());
+        assert!(super::parse("{\"final\":\"Готово\",\"tool_name\":\"list_canvases\"}").is_err());
+        assert!(
+            super::parse("Ответ. {\"tool_name\":").is_err()
+        );
+    }
+
     /// Отличает обещание выполнить действие от описания отсутствующих документов.
     #[test]
     fn change_claim_requires_receipt() {

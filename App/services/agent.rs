@@ -22,6 +22,13 @@ pub struct Settings {
     pub enabled: bool,
     pub automatic: bool,
     pub max_steps: usize,
+    pub mode: super::agent_modes::Mode,
+    pub reasoning: bool,
+    pub depth: super::agent_modes::Depth,
+    #[serde(skip)]
+    pub read_only: bool,
+    #[serde(skip)]
+    pub verify_canvas_count: bool,
 }
 impl Default for Settings {
     /// Задаёт исходное состояние без запущенных действий.
@@ -30,6 +37,11 @@ impl Default for Settings {
             enabled: false,
             automatic: false,
             max_steps: 12,
+            mode: Default::default(),
+            reasoning: false,
+            depth: Default::default(),
+            read_only: false,
+            verify_canvas_count: false,
         }
     }
 }
@@ -38,6 +50,8 @@ pub fn settings(
     store: &Store,
     chat: i64,
 ) -> Result<Settings> {
+    let advanced: Settings =
+        store.read(&format!("agent_preferences:{chat}"))?;
     store.with(|db| {
         Ok(Settings {
             enabled: db
@@ -50,7 +64,7 @@ pub fn settings(
                 ))?
                 .as_deref()
                 == Some("automatic"),
-            ..Default::default()
+            ..advanced
         })
     })
 }
@@ -60,6 +74,10 @@ pub fn save_settings(
     chat: i64,
     settings: &Settings,
 ) -> Result<()> {
+    store.write(
+        &format!("agent_preferences:{chat}"),
+        settings,
+    )?;
     store.with(|db| {
         db.set_setting(
             "agent_enabled",
@@ -79,12 +97,14 @@ pub fn save_settings(
 #[derive(Clone)]
 pub struct Control {
     pause: watch::Sender<bool>,
+    inbox: Arc<Mutex<Inbox>>,
 }
 impl Default for Control {
     /// Задаёт исходное состояние без запущенных действий.
     fn default() -> Self {
         Self {
             pause: watch::channel(false).0,
+            inbox: Default::default(),
         }
     }
 }
@@ -98,7 +118,7 @@ impl Control {
         self.pause.send_replace(paused);
     }
     /// Ожидает снятия паузы, сохраняя возможность отмены.
-    async fn checkpoint(
+    pub(super) async fn checkpoint(
         &self,
         token: &CancellationToken,
     ) -> Result<()> {
@@ -132,6 +152,18 @@ impl Approval {
     }
 }
 pub enum Event {
+    Deliberation {
+        id: usize,
+        title: String,
+        text: String,
+        state: String,
+    },
+    NotesApplied {
+        messages: Vec<advanced_xopilot::db::StoredMessage>,
+        notes: Vec<String>,
+    },
+    ResetText,
+    Text(String),
     Progress(String),
     Approval(Approval),
     ToolResult {
@@ -151,6 +183,7 @@ pub enum Event {
 }
 #[derive(Clone, Deserialize, Debug)]
 pub struct Call {
+    #[serde(alias = "tool_name")]
     pub tool: String,
     #[serde(default)]
     pub arguments: Value,
@@ -235,13 +268,26 @@ pub async fn run(
         system["content"] =
             format!("{content}\n{instruction}").into();
     }
-    let logical = messages.clone();
-    messages = super::agent_session::continue_history(
-        &context.store,
-        context.chat,
-        &config,
-        &logical,
-    );
+    let _lifetime = context.control.close_on_drop();
+    let mut logical = messages.clone();
+    if !context.settings.read_only {
+        messages = super::agent_session::continue_history(
+            &context.store,
+            context.chat,
+            &config,
+            &logical,
+        );
+    }
+    if context.settings.read_only {
+        let allowed = "Research-only mode. Allowed tools: list_project_files, read_project_file, search_project, list_canvases, read_canvas, search_web, read_website, search_memory, list_recent_chats, search_chats, discover_tools. Changes and commands are unavailable. Use observations for factual claims about current device data. Reply with the tool/arguments or final JSON schema defined above.";
+        if let Some(system) = messages.first_mut() {
+            let text = system["content"]
+                .as_str()
+                .unwrap_or_default();
+            system["content"] =
+                format!("{text}\n{allowed}").into();
+        }
+    }
     let mut revisions = HashMap::new();
     let mut repeated = HashMap::<String, usize>::new();
     let mut receipts = Vec::<Value>::new();
@@ -249,7 +295,7 @@ pub async fn run(
     let mut unverified_finals = 0usize;
     // Небольшой модели повторяем текущую цель после каждого результата инструмента.
     // Так ответ на технический результат не вытесняет исходную просьбу пользователя.
-    let goal = messages
+    let mut goal = messages
         .iter()
         .rev()
         .find(|m| m["role"] == "user")
@@ -273,7 +319,16 @@ pub async fn run(
                 })
         })
         .unwrap_or_default();
-    let requested_canvas_content =
+    let mut verify_canvas_count = if context
+        .settings
+        .read_only
+    {
+        context.settings.verify_canvas_count
+    } else {
+        super::agent_intent::canvas_count_requested(&goal)
+    };
+    let mut unverified_observations = 0;
+    let mut requested_canvas_content =
         super::agent_intent::canvas_content(
             &logical, &goal,
         );
@@ -302,6 +357,33 @@ pub async fn run(
     }
     for step in 0..context.settings.max_steps.clamp(1, 30) {
         context.control.checkpoint(&token).await?;
+        if apply_notes(
+            &context,
+            &mut messages,
+            &mut logical,
+            false,
+        )
+        .await?
+        {
+            goal = logical
+                .iter()
+                .rev()
+                .find_map(|m| {
+                    (m["role"] == "user")
+                        .then(|| m["content"].as_str())
+                        .flatten()
+                })
+                .unwrap_or_default()
+                .into();
+            verify_canvas_count =
+                super::agent_intent::canvas_count_requested(
+                    &goal,
+                );
+            requested_canvas_content =
+                super::agent_intent::canvas_content(
+                    &logical, &goal,
+                );
+        }
         let _ =
             context.events.send(Event::Progress(format!(
                 "Шаг {} · обдумываю действие",
@@ -321,6 +403,34 @@ pub async fn run(
         .await;
         let _ = collector.await;
         let answer = answer?;
+        if apply_notes(
+            &context,
+            &mut messages,
+            &mut logical,
+            false,
+        )
+        .await?
+        {
+            goal = logical
+                .iter()
+                .rev()
+                .find_map(|m| {
+                    (m["role"] == "user")
+                        .then(|| m["content"].as_str())
+                        .flatten()
+                })
+                .unwrap_or_default()
+                .into();
+            verify_canvas_count =
+                super::agent_intent::canvas_count_requested(
+                    &goal,
+                );
+            requested_canvas_content =
+                super::agent_intent::canvas_content(
+                    &logical, &goal,
+                );
+            continue;
+        }
         let raw_answer = answer.clone();
         match parse(&answer) {
             Ok(Reply::Final(answer)) => {
@@ -328,6 +438,22 @@ pub async fn run(
                     !answer.trim().is_empty(),
                     "Агент вернул пустой ответ"
                 );
+                if verify_canvas_count
+                    && !receipts.iter().any(|receipt| {
+                        receipt["tool"] == "list_canvases"
+                            && receipt["output"]["ok"]
+                                == true
+                    })
+                {
+                    unverified_observations += 1;
+                    ensure!(
+                        unverified_observations <= 2,
+                        "Количество Canvas не подтверждено чтением списка"
+                    );
+                    messages.push(json!({"role":"assistant","content":raw_answer}));
+                    messages.push(json!({"role":"user","content":"Количество документов ещё не проверено. Сначала вызови инструмент: {\"tool\":\"list_canvases\",\"arguments\":{}}. Дождись результата и верни {\"final\":\"точный ответ по результату\"}. Число нельзя угадывать из формулировки задачи."}));
+                    continue;
+                }
                 // Даже корректный JSON не доказывает выполнение: сверяем заявление с квитанциями.
                 let changed = receipts.iter().any(|receipt| {
                     receipt["output"]["ok"] == true
@@ -363,15 +489,27 @@ pub async fn run(
                     let _ = updates.send(answer.clone());
                     return Ok(answer);
                 }
-                super::agent_session::remember(
-                    &context.store,
-                    context.chat,
-                    &config,
-                    &logical,
-                    &messages,
-                    &answer,
-                    &raw_answer,
-                );
+                if apply_notes(
+                    &context,
+                    &mut messages,
+                    &mut logical,
+                    true,
+                )
+                .await?
+                {
+                    continue;
+                }
+                if !context.settings.read_only {
+                    super::agent_session::remember(
+                        &context.store,
+                        context.chat,
+                        &config,
+                        &logical,
+                        &messages,
+                        &answer,
+                        &raw_answer,
+                    );
+                }
                 let _ = updates.send(answer.clone());
                 return Ok(answer);
             }
@@ -379,6 +517,16 @@ pub async fn run(
                 messages.push(json!({"role":"assistant","content":answer}));
                 let mut stuck = false;
                 for call in calls {
+                    // Новое уточнение отменяет оставшиеся ещё не начатые действия этого шага.
+                    if context
+                        .control
+                        .inbox
+                        .lock()
+                        .is_ok_and(|i| !i.notes.is_empty())
+                    {
+                        break;
+                    }
+
                     context
                         .control
                         .checkpoint(&token)
@@ -497,6 +645,7 @@ pub async fn run(
                         "Остановил повторяющиеся действия.",
                         token,
                         updates,
+                        verify_canvas_count,
                     )
                     .await;
                 }
@@ -523,9 +672,10 @@ pub async fn run(
         config,
         &goal,
         &receipts,
-        "Достигнут лимит шагов агента; выполненные изменения сохранены.",
+        "Достигнут лимит шагов агента. Ниже — фактические результаты.",
         token,
         updates,
+        verify_canvas_count,
     )
     .await
 }
@@ -537,7 +687,16 @@ async fn summarize(
     reason: &str,
     token: CancellationToken,
     updates: mpsc::UnboundedSender<String>,
+    verify_canvas_count: bool,
 ) -> Result<String> {
+    ensure!(
+        !verify_canvas_count
+            || receipts
+                .iter()
+                .any(|r| r["tool"] == "list_canvases"
+                    && r["output"]["ok"] == true),
+        "Количество Canvas не подтверждено чтением списка"
+    );
     let records = serde_json::to_string(receipts)?
         .chars()
         .take(12_000)
@@ -613,6 +772,12 @@ async fn execute(
     token: &CancellationToken,
     revisions: &mut HashMap<String, String>,
 ) -> Result<Value> {
+    if context.settings.read_only {
+        ensure!(
+            read_only_tool(&call.tool),
+            "Исследователь не может изменять данные или запускать команды"
+        );
+    }
     let arguments = &call.arguments;
     let root = PathBuf::from(&context.workspace.folder);
     let project_tool = matches!(
@@ -1024,5 +1189,269 @@ mod protocol_tests {
         );
         assert!(parse("{\"tool\":\"list_project_files\",\"arguments\":{}}\n{\"tool\":").is_err());
         assert!(parse("{\"final\":\"done\"}\n{\"tool\":\"list_project_files\"}").is_err());
+    }
+}
+
+#[derive(Default)]
+struct Inbox {
+    closed: bool,
+    notes: Vec<String>,
+}
+
+/// Закрываю приём уточнений при любом выходе, включая ошибку модели и отмену.
+pub struct ControlLifetime(Control);
+impl Drop for ControlLifetime {
+    fn drop(&mut self) {
+        if let Ok(mut inbox) = self.0.inbox.lock() {
+            inbox.closed = true;
+        }
+    }
+}
+impl Control {
+    /// Принимаю уточнение без обрыва выполняющегося инструмента.
+    pub fn submit(&self, text: &str) -> Result<()> {
+        ensure!(
+            !text.trim().is_empty(),
+            "Напишите уточнение"
+        );
+        ensure!(
+            text.chars().count() <= 8000,
+            "Уточнение длиннее 8000 символов"
+        );
+        let mut inbox =
+            self.inbox.lock().map_err(|_| {
+                anyhow::anyhow!("Ошибка очереди уточнений")
+            })?;
+        ensure!(
+            !inbox.closed,
+            "Задача уже завершилась. Отправьте сообщение обычным способом"
+        );
+        ensure!(
+            inbox.notes.len() < 20,
+            "В задаче уже 20 ожидающих уточнений"
+        );
+        inbox.notes.push(text.to_owned());
+        Ok(())
+    }
+    /// Исследователи разделяют паузу, но не забирают уточнения координатора.
+    pub(super) fn fork(&self) -> Self {
+        Self {
+            pause: self.pause.clone(),
+            inbox: Default::default(),
+        }
+    }
+    /// Возвращаю непринятые шагом сообщения для восстановления черновика.
+    pub(super) fn pending_notes(&self) -> Vec<String> {
+        self.inbox
+            .lock()
+            .map(|i| i.notes.clone())
+            .unwrap_or_default()
+    }
+    pub fn take_pending(&self) -> Vec<String> {
+        self.inbox
+            .lock()
+            .map(|mut i| std::mem::take(&mut i.notes))
+            .unwrap_or_default()
+    }
+    /// Один guard относится ко всей задаче, включая подготовку команды.
+    pub fn close_on_drop(&self) -> ControlLifetime {
+        ControlLifetime(self.clone())
+    }
+}
+
+/// Проверка находится перед выполнением, поэтому исследователь не обходит запрет через JSON.
+pub fn read_only_tool(tool: &str) -> bool {
+    matches!(
+        tool,
+        "list_project_files"
+            | "read_project_file"
+            | "search_project"
+            | "list_canvases"
+            | "read_canvas"
+            | "search_web"
+            | "read_website"
+            | "search_memory"
+            | "list_recent_chats"
+            | "search_chats"
+            | "discover_tools"
+    )
+}
+
+/// Сначала сохраняю уточнение в историю, затем добавляю его в контекст текущего шага.
+async fn apply_notes(
+    context: &ContextData,
+    messages: &mut Vec<Value>,
+    logical: &mut Vec<Value>,
+    close_if_empty: bool,
+) -> Result<bool> {
+    let notes = {
+        let mut inbox =
+            context.control.inbox.lock().map_err(|_| {
+                anyhow::anyhow!("Ошибка очереди уточнений")
+            })?;
+        if inbox.notes.is_empty() && close_if_empty {
+            inbox.closed = true;
+        }
+        std::mem::take(&mut inbox.notes)
+    };
+    if notes.is_empty() {
+        return Ok(false);
+    }
+    let store = context.store.clone();
+    let chat = context.chat;
+    let saved = notes.clone();
+    let result = super::runtime::blocking(move || {
+        for note in &saved {
+            if let Err(error)=super::user_memory::capture(&store,note) {
+                tracing::warn!("Не удалось сохранить память из уточнения: {error}");
+            }
+        }
+        store.with(|db| {
+            for note in saved {
+                db.add_message_full(
+                    chat,
+                    "user",
+                    &note,
+                    None,
+                    None,
+                    &[],
+                    None,
+                )?;
+            }
+            Ok(db.get_messages(chat)?)
+        })
+    })
+    .await;
+    let history = match result {
+        Ok(history) => history,
+        Err(error) => {
+            if let Ok(mut inbox) =
+                context.control.inbox.lock()
+            {
+                inbox.notes.splice(0..0, notes);
+            }
+            return Err(error);
+        }
+    };
+    let applied = notes.clone();
+    for note in notes {
+        let message = json!({"role":"user","content":note});
+        messages.push(message.clone());
+        logical.push(message);
+    }
+    let _ = context.events.send(Event::ResetText);
+    let _ = context.events.send(Event::NotesApplied {
+        messages: history,
+        notes: applied,
+    });
+    Ok(true)
+}
+
+/// В обычном чате также принимаю уточнение до публикации окончательного ответа.
+pub async fn chat(
+    config: Configuration,
+    mut messages: Vec<Value>,
+    token: CancellationToken,
+    updates: mpsc::UnboundedSender<String>,
+    context: ContextData,
+) -> Result<String> {
+    let _lifetime = context.control.close_on_drop();
+    let mut logical = messages.clone();
+    for _ in 0..30 {
+        context.control.checkpoint(&token).await?;
+        apply_notes(
+            &context,
+            &mut messages,
+            &mut logical,
+            false,
+        )
+        .await?;
+        // Текст и сброс проходят по одной шине событий в строгом порядке.
+        let (stream, mut fragments) =
+            mpsc::unbounded_channel::<String>();
+        let events = context.events.clone();
+        let output = updates.clone();
+        let collector = tokio::spawn(async move {
+            while let Some(text) = fragments.recv().await {
+                let _ = output.send(text.clone());
+                let _ = events.send(Event::Text(text));
+            }
+        });
+        let result = super::generation::reply(
+            config.clone(),
+            messages.clone(),
+            token.clone(),
+            stream,
+        )
+        .await;
+        let _ = collector.await;
+        let answer = result?;
+        if !apply_notes(
+            &context,
+            &mut messages,
+            &mut logical,
+            true,
+        )
+        .await?
+        {
+            return Ok(answer);
+        }
+    }
+    bail!("Достигнут предел уточнений одной задачи")
+}
+
+#[cfg(test)]
+mod research_tests {
+    use super::*;
+    /// Даже подставленный JSON не даёт исследователю право изменить файл при automatic=true.
+    #[tokio::test]
+    async fn researcher_cannot_write_even_with_automatic_permission()
+    -> Result<()> {
+        let root = tempfile::tempdir()?;
+        let path = root.path().join("keep.txt");
+        std::fs::write(&path, "old")?;
+        let store = Store::new(
+            advanced_xopilot::db::Database::open(
+                root.path().join("test.db"),
+                "key",
+            )?,
+        );
+        let chat =
+            store.with(|db| Ok(db.create_chat("Тест")?))?;
+        let context = ContextData {
+            store,
+            chat,
+            workspace: Workspace {
+                folder: root
+                    .path()
+                    .to_string_lossy()
+                    .into(),
+                ..Default::default()
+            },
+            settings: Settings {
+                read_only: true,
+                automatic: true,
+                ..Default::default()
+            },
+            control: Default::default(),
+            events: mpsc::unbounded_channel().0,
+        };
+        let call = Call {
+            tool: "write_project_file".into(),
+            arguments: json!({"path":"keep.txt","content":"new"}),
+        };
+        let error = execute(
+            &call,
+            &context,
+            &CancellationToken::new(),
+            &mut HashMap::new(),
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            error.to_string().contains("Исследователь")
+        );
+        assert_eq!(std::fs::read_to_string(path)?, "old");
+        Ok(())
     }
 }

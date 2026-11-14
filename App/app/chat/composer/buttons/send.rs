@@ -15,6 +15,13 @@ pub fn build_send_button() -> Element {
     rsx! {
         if busy && has_draft {
             brand::build_brand_button {
+                icon: "edit_note",
+                label: "Уточнить текущую задачу",
+                role: "ai",
+                disabled: state.read().draft.text.trim().is_empty() || !state.read().draft.files.is_empty(),
+                onclick: move |_| state::report(state, state::steer(state)),
+            }
+            brand::build_brand_button {
                 icon: "playlist_add",
                 label: "Отправить после завершения задачи",
                 role: "create",

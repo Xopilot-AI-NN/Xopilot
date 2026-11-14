@@ -44,6 +44,27 @@ pub fn selected(store: &Store) -> Result<Configuration> {
         backend,
     })
 }
+/// Проверяю аудиовозможности до открытия микрофона. Крупные текстовые Gemma не получают WAV.
+pub fn audio_configuration(
+    store: &Store,
+) -> Result<Configuration> {
+    let config = selected(store)?;
+    if let Configuration::Local { path, .. } = &config {
+        let name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        ensure!(
+            name.contains("e2b")
+                || name.contains("e4b")
+                || name.contains("12b"),
+            "Для диктовки и Live выберите аудиомодель Gemma E2B, E4B или 12B Unified"
+        );
+    }
+    Ok(config)
+}
+
 /// Возвращает название действительно доступной модели для строки ввода.
 pub fn label(store: &Store) -> Result<(String, bool)> {
     if api_chat::is_api_selected(store)? {

@@ -63,6 +63,32 @@ pub fn canvas_content(
     None
 }
 
+/// Подсчёт локальных Canvas требует чтения списка, ответ по памяти не является проверкой.
+pub fn canvas_count_requested(text: &str) -> bool {
+    let text = text.to_lowercase();
+    let canvas =
+        text.contains("canvas") || text.contains("канвас");
+    let count = [
+        "сколько",
+        "how many",
+        "count ",
+        "посчитай",
+        "количество",
+    ]
+    .iter()
+    .any(|word| text.contains(word));
+    let image = [
+        "на фото",
+        "на изображен",
+        "на скриншот",
+        "in the image",
+        "in this image",
+    ]
+    .iter()
+    .any(|word| text.contains(word));
+    canvas && count && !image
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -118,6 +118,9 @@ pub fn build_message(message: StoredMessage) -> Element {
             }
             div {
                 class: "message-footer",
+                if !user {
+                    crate::app::chat::composer::live::build_speech_button {text:message.content.clone()}
+                }
                 button {
                     class: "message-action",
                     title: "Копировать",
