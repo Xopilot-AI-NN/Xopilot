@@ -47,7 +47,7 @@ tempfile = "3"
 libc = "0.2"
 webpki-root-certs = "1"
 scraper = { version = "0.29", default-features = false }
-symphonia = { version = "0.5.5", features = ["all"] }
+symphonia = { version = "0.6.1", features = ["all"] }
 openh264 = "0.9.10"
 mp4 = "0.14"
 encoding_rs = "0.8"
