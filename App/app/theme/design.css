@@ -883,10 +883,10 @@ blockquote {
     display: flex;
     flex-direction: column;
     padding: 12px 10px;
-    border: 2px solid #7deed5;
-    border-radius: 0 20px 20px 0;
+    border: 1px solid var(--edge);
+    border-radius: 16px;
     background: var(--drawer);
-    box-shadow: 0 0 8px #00a89644;
+    box-shadow: 0 8px 24px #0003;
     transform: translateX(-105%);
     transition: transform 220ms cubic-bezier(.22, .61, .36, 1);
     overflow: hidden;
@@ -899,7 +899,7 @@ blockquote {
 .drawer-navigation {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 4px;
 }
 
 .drawer-item {
@@ -1922,12 +1922,6 @@ blockquote {
     width: 49px;
     height: 49px;
     border-radius: 50%;
-}
-
-.navigation-rail .rail-group:first-child .brand-button:nth-child(n+5) {
-    width: 50px;
-    height: 50px;
-    border-radius: 18px;
 }
 
 .navigation-rail .material-icons {
@@ -3113,3 +3107,43 @@ select.preference-select,
 .live-phase {max-width:140px;font-size:12px;}
 .pending-note {opacity:.7;}
 .pending-note .message-bubble {border-style:dashed;}
+
+/* Размер холста зависит от рисунка. Жест на белой области рисует, вокруг — прокручивает окно. */
+.drawing-editor {
+    display: grid;
+    gap: 12px;
+    justify-items: start;
+}
+
+.drawing-tools label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+}
+
+.drawing-tools input[type="color"] {
+    width: 34px;
+    height: 34px;
+    padding: 3px;
+    cursor: pointer;
+}
+
+.drawing-tools input[type="range"] {
+    width: 80px;
+    padding: 0;
+    accent-color: var(--accent);
+}
+
+.drawing-surface {
+    display: block;
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: min(400px, 48dvh);
+    border-radius: 10px;
+    outline: 1px solid var(--edge);
+    background: white;
+    touch-action: none;
+    cursor: crosshair;
+}

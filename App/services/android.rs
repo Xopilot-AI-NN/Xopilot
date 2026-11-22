@@ -7,7 +7,9 @@ use jni::{
     Env, JavaVM, jni_sig, jni_str,
     objects::{JByteArray, JObject, JString, JValue},
 };
-use std::path::{Path, PathBuf};
+#[cfg(not(feature = "dev-test"))]
+use std::path::Path;
+use std::path::PathBuf;
 
 /// Подключает текущий поток к Android JVM на время JNI-вызова.
 pub(crate) fn with_context<T>(
@@ -270,7 +272,11 @@ pub fn data_dir() -> Result<PathBuf> {
         let files = env
             .call_method(
                 &activity,
-                jni_str!("getFilesDir"),
+                if cfg!(feature = "dev-test") {
+                    jni_str!("getNoBackupFilesDir")
+                } else {
+                    jni_str!("getFilesDir")
+                },
                 jni_sig!("()Ljava/io/File;"),
                 &[],
             )?
@@ -288,20 +294,32 @@ pub fn data_dir() -> Result<PathBuf> {
                 "Android не предоставил filesDir",
             )?,
         );
-        // В прежних сборках private root мог лежать глубже filesDir.
-        let mut histories = Vec::new();
-        find_history(&files, 0, &mut histories)?;
-        ensure!(
-            histories.len() <= 1,
-            "Найдено несколько историй. Автоматический выбор отключён, данные не изменены"
-        );
-        Ok(histories
-            .pop()
-            .unwrap_or_else(|| files.join("Xopilot")))
+        // Dev-база вне filesDir, где релиз ищет историю старых версий.
+        #[cfg(feature = "dev-test")]
+        {
+            Ok(files
+                .join("xopilot-dev-test")
+                .join(dev_test_session(env, &activity)?))
+        }
+
+        #[cfg(not(feature = "dev-test"))]
+        {
+            // В прежних сборках private root мог лежать глубже filesDir.
+            let mut histories = Vec::new();
+            find_history(&files, 0, &mut histories)?;
+            ensure!(
+                histories.len() <= 1,
+                "Найдено несколько историй. Автоматический выбор отключён, данные не изменены"
+            );
+            Ok(histories
+                .pop()
+                .unwrap_or_else(|| files.join("Xopilot")))
+        }
     })
 }
 
 /// Ищет существующую историю в совместимых каталогах приложения.
+#[cfg(not(feature = "dev-test"))]
 fn find_history(
     dir: &Path,
     depth: usize,
@@ -330,10 +348,49 @@ fn find_history(
     Ok(())
 }
 
+/// ADB передаёт UUID прогона. При рестарте запись снова открывается по тому же UUID.
+#[cfg(feature = "dev-test")]
+fn dev_test_session(
+    env: &mut Env<'_>,
+    activity: &JObject<'_>,
+) -> Result<String> {
+    let intent = env
+        .call_method(
+            activity,
+            jni_str!("getIntent"),
+            jni_sig!("()Landroid/content/Intent;"),
+            &[],
+        )?
+        .l()?;
+    let name = env.new_string("xopilot_dev_test_run")?;
+    let extra = env
+        .call_method(
+            intent,
+            jni_str!("getStringExtra"),
+            jni_sig!(
+                "(Ljava/lang/String;)Ljava/lang/String;"
+            ),
+            &[JValue::Object(&name)],
+        )?
+        .l()?;
+    match java_string(env, extra)? {
+        Some(value) => Ok(uuid::Uuid::parse_str(&value)
+            .context("Некорректный UUID тестового прогона")?
+            .to_string()),
+        None => Ok("manual".into()),
+    }
+}
+
 /// Получает прежний ключ Android Keystore; при утрате не подменяет историю новой.
 pub fn database_key(existing: bool) -> Result<String> {
     with_context(|env, activity| {
-        let prefs_name = env.new_string("xopilot_keys")?;
+        let prefs_name = env.new_string(
+            if cfg!(feature = "dev-test") {
+                "xopilot_dev_test_keys"
+            } else {
+                "xopilot_keys"
+            },
+        )?;
         let prefs = env
             .call_method(
                 activity,
@@ -386,8 +443,13 @@ pub fn database_key(existing: bool) -> Result<String> {
             jni_sig!("(Ljava/io/InputStream;[C)V"),
             &[JValue::Object(&null), JValue::Object(&null)],
         )?;
-        let alias =
-            env.new_string("xopilot.database.v1")?;
+        let alias = env.new_string(
+            if cfg!(feature = "dev-test") {
+                "xopilot.dev_test.database.v1"
+            } else {
+                "xopilot.database.v1"
+            },
+        )?;
         let has_alias = env
             .call_method(
                 &store,

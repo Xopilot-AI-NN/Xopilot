@@ -27,7 +27,11 @@ pub fn base_data_dir() -> Result<PathBuf> {
         .context(
             "Не удалось найти каталог данных пользователя",
         )?
-        .join("Xopilot"))
+        .join(if cfg!(feature = "dev-test") {
+            "Xopilot-dev-test"
+        } else {
+            "Xopilot"
+        }))
 }
 
 /// Все данные относятся к автоматически созданному профилю устройства.

@@ -125,7 +125,6 @@ pub fn build_menu_overlay() -> Element {
             inert: if open { None } else { Some("") },
             button {
                 class: "drawer-scrim",
-                title: "Закрыть меню",
                 "aria-label": "Закрыть меню",
                 tabindex: -1,
                 onclick: move |_| state.write().sidebar = false,

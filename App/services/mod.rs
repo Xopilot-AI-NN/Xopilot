@@ -10,6 +10,9 @@ pub mod agent_session;
 pub mod android;
 #[cfg(target_os = "android")]
 pub mod android_downloads;
+#[cfg(any(target_os = "android", test))]
+#[cfg_attr(test, allow(dead_code))]
+mod android_exports;
 pub mod api_chat;
 pub mod attachments;
 pub mod canvases;

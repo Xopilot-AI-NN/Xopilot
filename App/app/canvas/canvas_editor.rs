@@ -1,5 +1,6 @@
 // Файл: App/app/canvas/canvas_editor.rs
-// Описание: Текст, код и изолированный HTML-предпросмотр.
+// Описание: Текст, код, рисунки и изолированный HTML-предпросмотр.
+use super::drawing::build_drawing;
 use crate::app::shared::icons;
 use crate::{
     app::state::{self, AppState},
@@ -24,6 +25,8 @@ pub fn build_canvas_dialog() -> Element {
     let mut dirty = use_signal(|| false);
     let mut pending = use_signal(|| None::<Document>);
     let mut deleting = use_signal(|| false);
+    let mut editor_session = use_signal(|| 0u64);
+    let mut saving = use_signal(|| false);
     use_effect(move || {
         state.write().unsaved = *dirty.read()
     });
@@ -48,11 +51,13 @@ pub fn build_canvas_dialog() -> Element {
         }
     });
     let document = current.read().clone();
+    let session = *editor_session.read();
     rsx! {
         div {
             class: "page",
             div {
                 class: "page-content",
+                inert: if *saving.read() { Some("") } else { None },
                 div {
                     class: "canvas-document-row",
                     label {
@@ -80,6 +85,7 @@ pub fn build_canvas_dialog() -> Element {
                                         pending.set(Some(selected));
                                     } else {
                                         current.set(selected);
+                                        editor_session += 1;
                                         status.set(String::new());
                                         deleting.set(false);
                                     }
@@ -100,6 +106,9 @@ pub fn build_canvas_dialog() -> Element {
                                 pending.set(Some(new));
                             } else {
                                 current.set(new);
+                                editor_session += 1;
+                                status.set(String::new());
+                                deleting.set(false);
                             }
                         },
                         icons::build_icon {
@@ -111,14 +120,17 @@ pub fn build_canvas_dialog() -> Element {
                     div {
                         class: "section row",
                         role: "alert",
-                        "Есть несохранённый текст. Переключить документ?"
+                        "Есть несохранённые изменения. Переключить документ?"
                         button {
                             class: "button danger",
                             onclick: move |_| {
                                 let next = pending.write().take();
                                 if let Some(next) = next {
                                     current.set(next);
+                                    editor_session += 1;
                                     dirty.set(false);
+                                    status.set(String::new());
+                                    deleting.set(false);
                                 }
                             },
                             "Отбросить изменения"
@@ -150,31 +162,33 @@ pub fn build_canvas_dialog() -> Element {
                             id: "canvas-kind",
                             label: "Вид Canvas",
                             value: document.kind.clone(),
-                            options: {
-                                let mut options = vec![
-                                    ("text".into(), "Текст / Markdown".into()),
-                                    ("code".into(), "Код".into()),
-                                    ("web".into(), "HTML-сайт".into()),
-                                ];
-                                if document.kind == "drawing" {
-                                    options
-                                        .push((
-                                            "drawing".into(),
-                                            "Рисунок прежней версии".into(),
-                                        ));
-                                }
-                                options
-                            },
+                            options: vec![
+                                ("text".into(), "Текст / Markdown".into()),
+                                ("code".into(), "Код".into()),
+                                ("web".into(), "HTML-сайт".into()),
+                                ("drawing".into(), "Рисунок".into()),
+                            ],
                             onchange: move |kind: String| {
+                                if current.peek().kind == kind { return; }
                                 current.write().kind = kind;
+                                editor_session += 1;
                                 dirty.set(true);
                             },
                         }
                     }
                     if document.kind == "drawing" {
-                        p {
-                            class: "notice",
-                            "Рисунок сохранён в базе. Редактор рисования ещё не перенесён."
+                        build_drawing {
+                            key: "{session}",
+                            strokes: document.extra.get("strokes").cloned(),
+                            size: document.extra.get("drawing_size").cloned(),
+                            status,
+                            onchange: move |(strokes, size)| {
+                                if *editor_session.peek() != session { return; }
+                                let mut value = current.write();
+                                value.extra.insert("strokes".into(), strokes);
+                                value.extra.insert("drawing_size".into(), size);
+                                dirty.set(true);
+                            }
                         }
                     } else {
                         textarea {
@@ -192,6 +206,8 @@ pub fn build_canvas_dialog() -> Element {
                         button {
                             class: "button primary",
                             onclick: move |_| {
+                                if *saving.peek() { return; }
+                                saving.set(true);
                                 spawn(async move {
                                     let result = async {
                                         let store = state::store(state)?;
@@ -208,6 +224,7 @@ pub fn build_canvas_dialog() -> Element {
                                         Ok(())
                                     }
                                         .await;
+                                    saving.set(false);
                                     state::report(state, result);
                                 });
                             },
@@ -220,21 +237,23 @@ pub fn build_canvas_dialog() -> Element {
                             }
                         }
                         for format in ["docx", "xlsx"] {
-                            button {
-                                class: "button",
-                                onclick: move |_| {
-                                    let document = current.read().clone();
-                                    spawn(async move {
-                                        let result = services::runtime::blocking(move || {
-                                            services::office::save(&document.title, &document.content, format)
-                                        }).await;
-                                        match result {
-                                            Ok(path) => status.set(format!("Документ сохранён: {}", path.display())),
-                                            Err(error) => state::report(state, Err(error)),
-                                        }
-                                    });
-                                },
-                                "Экспорт {format}"
+                            if document.kind != "drawing" {
+                                button {
+                                    class: "button",
+                                    onclick: move |_| {
+                                        let document = current.read().clone();
+                                        spawn(async move {
+                                            let result = services::runtime::blocking(move || {
+                                                services::office::save(&document.title, &document.content, format)
+                                            }).await;
+                                            match result {
+                                                Ok(path) => status.set(format!("Документ сохранён: {}", path.display())),
+                                                Err(error) => state::report(state, Err(error)),
+                                            }
+                                        });
+                                    },
+                                    "Экспорт {format}"
+                                }
                             }
                         }
                         if !document.id.is_empty() {

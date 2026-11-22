@@ -152,7 +152,7 @@ export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
 ./scripts/test.sh apk-check dist/android.apk
 ```
 
-Android users install the APK, and the app uses the system WebView. Updating an APK signed with the previous certificate requires the old signing key. Subsequent Rust builds are signed with one new persistent key. The separate `by.xopilot.test` package can be installed without changing the data of `by.xopilot.app`.
+Android users install the APK, and the app uses the system WebView. Updating an APK signed with the previous certificate requires the old signing key. Subsequent Rust builds are signed with one new persistent key. `./scripts/build_android.sh --dev-test` uses the same `by.xopilot.app` package and signing certificate, with separate test storage. On Linux, use `./scripts/build_desktop.sh --dev-test`. See [Testing](tests/TESTING.md).
 
 For release maintenance, keep a separate, securely stored backup of `.signing` along with its passwords. GitHub Secrets can supply the signing key to the build, but they do not allow you to download it again through the UI or API. `init_android_signing.sh` does not replace an existing key; do not generate a new signing identity for each release.
 

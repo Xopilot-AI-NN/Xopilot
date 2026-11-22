@@ -120,5 +120,37 @@ module.exports = async function offline({
     "Canvas сохранён и открыт повторно",
     "return document.querySelector('.dialog textarea').value==='Текст, сохранённый общим UI-тестом';",
   );
+  await click("Новый Canvas");
+  await input(".dialog input", "Рисунок UI-проверки");
+  await click("Вид Canvas");
+  await click("Рисунок");
+  await until("return document.querySelector('[data-export]')?.disabled === false;", "Холст не загрузился");
+  // Эмулируем последовательность касания в настоящем WebView и проверяем пиксели.
+  await evaluate(`
+    const canvas = document.querySelector('.drawing-surface');
+    const rect = canvas.getBoundingClientRect();
+    for (const [type, x] of [['pointerdown', .25], ['pointermove', .5], ['pointerup', .75]]) {
+      canvas.dispatchEvent(new PointerEvent(type, {
+        pointerId: 1, pointerType: 'touch', button: 0,
+        clientX: rect.left + rect.width * x, clientY: rect.top + rect.height / 2,
+      }));
+    }
+    return true;
+  `);
+  const hasInk = `const c=document.querySelector('.drawing-surface');
+    return c.getContext('2d').getImageData(c.width/2,c.height/2,1,1).data[0]<100;`;
+  await check("Canvas отображает штрих", hasInk);
+  await click("Отменить штрих");
+  await check("Отмена убирает штрих", `return !(() => { ${hasInk} })();`);
+  await click("Вернуть штрих");
+  await check("Повтор возвращает штрих", hasInk);
+  await click("Сохранить");
+  await until("return document.querySelector('.dialog [role=status]')?.innerText==='Canvas сохранён';", "Рисунок не сохранился");
+  await click("Новый Canvas");
+  await click("Документ");
+  await click("Рисунок UI-проверки");
+  await check("Сохранённые штрихи Canvas открываются повторно", hasInk);
+  await click("Экспорт PNG");
+  await check("Рисунок экспортируется в PNG", "return document.querySelector('.dialog [role=status]')?.innerText.endsWith('.png');");
   await close();
 };

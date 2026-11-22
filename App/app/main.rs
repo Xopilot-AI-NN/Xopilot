@@ -154,6 +154,7 @@ pub fn build_window() -> Element {
             "data-theme": theme,
             "data-platform": if cfg!(target_os = "android") { "android" } else { "desktop" },
             "data-ready": ready.to_string(),
+            "data-dev-test": cfg!(feature = "dev-test").to_string(),
             if ready && !has_store {
                 div {
                     class: "empty",

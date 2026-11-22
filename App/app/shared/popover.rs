@@ -32,7 +32,6 @@ pub fn build_popover(
     rsx! {
         button {
             class: "floating-scrim",
-            title: "Закрыть выпадающее меню",
             "aria-label": "Закрыть выпадающее меню",
             tabindex: -1,
             onclick: move |_| onclose.call(()),

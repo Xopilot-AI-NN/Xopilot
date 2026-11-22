@@ -1,6 +1,6 @@
 // Описание: Пользовательские сценарии в настоящем Linux WebKit, на отдельной базе.
 // Node нужен только разработчику. В установленное приложение мост и стенд не входят.
-// dx build --desktop -p xopilot --example interface_interaction
+// dx build --desktop -p xopilot --features dev-test
 // node scripts/check-ui.cjs
 const fs = require('node:fs');
 const path = require('node:path');
@@ -14,7 +14,7 @@ const root = fs.mkdtempSync('/tmp/xopilot-ui-check-');
 const modelDirectory=process.env.XOPILOT_TEST_MODEL?path.join(repository,'target/ui-models',path.basename(root)):path.join(root,'data/models');
 fs.chmodSync(root, 0o700);
 const socket = path.join(root, 'ui.sock');
-const binary = path.join(repository, 'target/dx/interface_interaction/debug/linux/app/interface_interaction');
+const binary = path.join(repository, 'target/dx/xopilot/debug/linux/app/xopilot');
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 let child, windowId;
 const results = [];
@@ -159,6 +159,7 @@ process.once('SIGINT',()=>{void stop().finally(()=>{server.close();process.exit(
     await input('#chat-prompt', 'Черновик первого чата');
     await click('Открыть меню');
     await check('Выдвижное меню принимает клики и получает фокус', "return !document.querySelector('.drawer-layer').inert && document.activeElement.classList.contains('drawer');");
+    await check('Затемнение меню сохраняет доступное имя без всплывающей подсказки', "const scrim=document.querySelector('.drawer-scrim');return scrim.getAttribute('aria-label')==='Закрыть меню'&&!scrim.hasAttribute('title');");
     await click('Настройки');
     for (const section of ['Профиль и аккаунт', 'Персонализация', 'Модели', 'История', 'Обновления', 'О приложении']) {
         await click(section);

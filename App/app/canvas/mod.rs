@@ -1,2 +1,3 @@
 // Описание: Объявления модулей canvas в общей структуре приложения.
 pub mod canvas_editor;
+mod drawing;

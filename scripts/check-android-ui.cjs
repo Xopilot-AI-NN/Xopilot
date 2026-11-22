@@ -1,14 +1,17 @@
 // Описание: Реальные события DOM в тестовом APK через ADB и штатный WebView DevTools.
-// Допускается только by.xopilot.test: личный APK и его SQLCipher не очищаются.
+// Тестовый режим основного пакета. Исходный APK возвращается, данные пакета не очищаются.
 const fs = require("node:fs");
 const path = require("node:path");
 const { execFileSync } = require("node:child_process");
-const app = "by.xopilot.test";
+const app = "by.xopilot.app";
+const runId = require("node:crypto").randomUUID();
 const adbPath =
   process.env.ADB ||
   (process.env.ANDROID_HOME
     ? path.join(process.env.ANDROID_HOME, "platform-tools/adb")
-    : "target/android-toolchain/sdk/platform-tools/adb");
+    : fs.existsSync("target/android-toolchain/sdk/platform-tools/adb")
+      ? "target/android-toolchain/sdk/platform-tools/adb"
+      : "adb");
 const root = path.resolve(
   "target/android-ui-" + new Date().toISOString().replaceAll(/[:.]/g, "-"),
 );
@@ -17,13 +20,59 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 let port,
   ws,
   sequence = 0;
+let previousApks = [], replaced = false;
 const pending = new Map();
 // Один явно выбранный телефон; при нескольких устройствах нужен ANDROID_SERIAL.
 function adb(...args) {
-  return execFileSync(adbPath, args, { encoding: "utf8", timeout: 30000 });
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return execFileSync(adbPath, args, { encoding: "utf8", timeout: 30000, stdio: "pipe" });
+    } catch (error) {
+      // На некоторых прошивках системные команды прерываются до подключения к Binder.
+      if (args[0] !== "shell" || attempt >= 3 || !String(error.stderr).includes("Binder driver")) throw error;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 300);
+    }
+  }
 }
+
+function androidInput(...args) {
+  adb("shell", "cmd", "input", ...args);
+}
+
+// Возвращаем исходный APK также при остановке прогона через Ctrl+C.
+function restorePrevious() {
+  if (replaced && previousApks.length) {
+    try {
+      const command = previousApks.length === 1 ? "install" : "install-multiple";
+      adb(command, "--no-incremental", "-r", ...previousApks);
+      console.log("Исходный Xopilot возвращён");
+      replaced = false;
+    } catch (error) {
+      console.error(`Не удалось вернуть исходный APK: ${error.message}. Резервные APK: ${root}`);
+      process.exitCode = 1;
+    }
+  }
+  if (!replaced) for (const file of previousApks) fs.rmSync(file, {force: true});
+}
+
+function disconnect() {
+  if (ws) ws.close();
+  if (port) {
+    try { adb("forward", "--remove", `tcp:${port}`); } catch (_) {}
+    port = undefined;
+  }
+}
+
+for (const [signal, exitCode] of [["SIGINT", 130], ["SIGTERM", 143]]) {
+  process.once(signal, () => {
+    disconnect();
+    restorePrevious();
+    process.exit(exitCode);
+  });
+}
+
 async function connect() {
-  // am start возвращается раньше появления PID при холодном запуске после pm clear.
+  // am start возвращается раньше появления PID при холодном запуске.
   let pid;
   for (let attempt = 0; attempt < 100; attempt++) {
     try { pid = adb("shell", "pidof", app).trim().split(" ")[0]; } catch (_) {}
@@ -52,7 +101,7 @@ async function connect() {
   }
   if (!target)
     throw Error(
-      "WebView DevTools недоступны. Нужен debug APK, собранный с --ui-test.",
+      "WebView DevTools недоступны. Нужен Xopilot, собранный с --dev-test.",
     );
   ws = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise((resolve, reject) => {
@@ -108,6 +157,9 @@ function launch() {
     app + "/dev.dioxus.main.MainActivity",
     "-f",
     "0x10200000",
+    "--es",
+    "xopilot_dev_test_run",
+    runId,
     "-W",
   );
 }
@@ -130,26 +182,51 @@ function screenshot(name) {
     );
   if (devices.length > 1 && !process.env.ANDROID_SERIAL)
     throw Error("Выберите телефон через ANDROID_SERIAL");
-  const apk = path.resolve(process.argv[2] || "target/android-ui-test.apk");
+  const apk = path.resolve(process.argv[2] || "target/xopilot-dev-test.apk");
   if (!fs.existsSync(apk))
-    throw Error("Сначала соберите тестовый APK: ./scripts/test.sh apk");
-  // Идентификатор читается из APK до установки, чтобы переданный production APK не затронул данные.
+    throw Error("Сначала соберите Xopilot: ./scripts/build_android.sh --dev-test");
   const sdk = process.env.ANDROID_HOME || "target/android-toolchain/sdk";
-  const versions = fs
-    .readdirSync(path.join(sdk, "build-tools"))
+  const versions = fs.readdirSync(path.join(sdk, "build-tools"))
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-  const aapt = path.join(sdk, "build-tools", versions.at(-1), "aapt");
-  const badging = execFileSync(aapt, ["dump", "badging", apk], {
-    encoding: "utf8",
-  });
-  if (!badging.includes("package: name='" + app + "'"))
-    throw Error("Отказ: допускается только изолированный by.xopilot.test");
+  const tools = path.join(sdk, "build-tools", versions.at(-1));
+  const dump = (...args) => execFileSync(path.join(tools, "aapt"), ["dump", ...args], { encoding: "utf8" });
+  const cert = file => execFileSync(path.join(tools, "apksigner"), ["verify", "--print-certs", file], { encoding: "utf8" });
+  const fingerprint = fs.readFileSync("App/android/signing-certificate.sha256", "utf8").trim();
+  const badging = dump("badging", apk);
+  const manifest = dump("xmltree", apk, "AndroidManifest.xml");
+  const versionCode = output => output.match(/^package: .*versionCode='(\d+)'/m)?.[1];
+  if (!badging.includes(`package: name='${app}'`) || !badging.includes("application-label:'Xopilot'") ||
+      !manifest.includes('="by.xopilot.DEV_TEST"') || badging.includes("application-debuggable")) {
+    throw Error("Тест принимает подписанный Xopilot, собранный с --dev-test");
+  }
+  if (!cert(apk).includes(`certificate SHA-256 digest: ${fingerprint}`))
+    throw Error("APK подписан другим сертификатом");
+
+  const installed = adb("shell", "pm", "list", "packages", app).split(/\r?\n/).includes(`package:${app}`);
+  if (installed) {
+    // Чтобы гарантировать откат, Android должен принимать обе установки с тем же versionCode.
+    const paths = adb("shell", "pm", "path", app).split(/\r?\n/)
+      .filter(line => line.startsWith("package:")).map(line => line.slice(8));
+    if (!paths.length) throw Error("Не удалось найти установленный APK Xopilot для возврата");
+    paths.sort((left, right) => Number(right.endsWith("/base.apk")) - Number(left.endsWith("/base.apk")));
+    previousApks = paths.map((remote, i) => {
+      const local = path.join(root, `previous-${i}.apk`);
+      adb("pull", remote, local);
+      return local;
+    });
+    const currentCode = versionCode(dump("badging", previousApks[0]));
+    if (!currentCode || currentCode !== versionCode(badging))
+      throw Error(`Для возврата установленной сборки используйте ANDROID_VERSION_CODE=${currentCode || "<versionCode>"}`);
+    if (!cert(previousApks[0]).includes(`certificate SHA-256 digest: ${fingerprint}`))
+      throw Error("Установленный Xopilot подписан другим сертификатом");
+  }
   adb("install", "--no-incremental", "-r", apk);
+  replaced = true;
   adb("shell", "am", "force-stop", app);
-  adb("shell", "pm", "clear", app);
   launch();
   await connect();
   const ui = require("./ui/client.cjs")(evaluate, results);
+  await ui.until("return document.querySelector('.app')?.dataset.devTest==='true';", "Запущен Xopilot без режима dev-test");
   await require("./ui/offline.cjs")(ui);
   if(process.env.XOPILOT_TEST_SPEECH === "1"){
     await ui.click("Открыть меню");await ui.click("Настройки");await ui.click("Персонализация");
@@ -163,7 +240,7 @@ function screenshot(name) {
   const pid = adb("shell", "pidof", app).trim();
   await ui.input("#chat-prompt", "Черновик перед уходом в фон");
   await ui.wait(400);
-  adb("shell", "input", "keyevent", "KEYCODE_HOME");
+  androidInput("keyevent", "KEYCODE_HOME");
   await wait(300);
   launch();
   await ui.check(
@@ -175,13 +252,13 @@ function screenshot(name) {
   results.push("Home сохраняет тот же процесс");
   await ui.click("Открыть меню");
   await ui.click("Настройки");
-  adb("shell", "input", "keyevent", "KEYCODE_BACK");
+  androidInput("keyevent", "KEYCODE_BACK");
   await wait(300);
   await ui.check(
     "Android Back закрывает окно",
     "return !document.querySelector('.dialog');",
   );
-  adb("shell", "input", "keyevent", "KEYCODE_HOME");
+  androidInput("keyevent", "KEYCODE_HOME");
   await wait(500);
   adb("shell", "am", "kill", app);
   ws.close();
@@ -201,9 +278,7 @@ function screenshot(name) {
   const r = await evaluate(
     "const r=document.querySelector('#chat-prompt').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2,dpr:devicePixelRatio,height:visualViewport.height};",
   );
-  adb(
-    "shell",
-    "input",
+  androidInput(
     "tap",
     String(Math.round(r.x * r.dpr)),
     String(Math.round(r.y * r.dpr)),
@@ -218,7 +293,7 @@ function screenshot(name) {
     "return document.querySelector('.composer').getBoundingClientRect().bottom<=visualViewport.height+1;",
   );
   screenshot("keyboard");
-  adb("shell", "input", "keyevent", "KEYCODE_BACK");
+  androidInput("keyevent", "KEYCODE_BACK");
   fs.writeFileSync(
     path.join(root, "result.json"),
     JSON.stringify(
@@ -242,14 +317,11 @@ function screenshot(name) {
     process.exitCode = 1;
   })
   .finally(() => {
-    if (ws) ws.close();
+    disconnect();
     for (const call of pending.values()) {
       clearTimeout(call.timer);
       call.reject(Error("Стенд закрыт"));
     }
     pending.clear();
-    if (port)
-      try {
-        adb("forward", "--remove", `tcp:${port}`);
-      } catch (_) {}
+    restorePrevious();
   });

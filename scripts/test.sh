@@ -11,15 +11,17 @@ case "${1:-quick}" in
     ./scripts/check.sh
     ;;
   ui)
-    dx build --desktop -p xopilot --example interface_interaction
+    ./scripts/build_desktop.sh --dev-test
     node scripts/check-ui.cjs
     ;;
   apk)
-    ./scripts/build_android_test.sh
-    node scripts/check-android-ui.cjs "${2:-target/android-ui-test.apk}"
+    if [[ $# -eq 1 ]]; then
+      ./scripts/build_android.sh --dev-test
+    fi
+    node scripts/check-android-ui.cjs "${2:-target/xopilot-dev-test.apk}"
     ;;
   apk-check)
-    node scripts/check-android-apk.cjs "${2:-target/dx/xopilot/debug/android/app/app/build/outputs/apk/debug/app-debug.apk}"
+    node scripts/check-android-apk.cjs "${2:-dist/android.apk}"
     ;;
   bridges)
     node scripts/check-mobile-bridges.cjs

@@ -1,7 +1,32 @@
 // Описание: Экспорт чата; API-ключи и настройки в файл не попадают.
 use advanced_xopilot::db::StoredMessage;
 use anyhow::Result;
+use std::io::Write;
 use std::path::PathBuf;
+
+/// Сохраняет рисунок атомарно. На Android 10+ он появляется в «Загрузках».
+pub fn save_canvas_png(bytes: &[u8]) -> Result<PathBuf> {
+    let name =
+        format!("canvas-{}.png", uuid::Uuid::new_v4());
+    #[cfg(target_os = "android")]
+    if !cfg!(feature = "dev-test")
+        && super::android_exports::publish_png(
+            &name, bytes,
+        )?
+    {
+        return Ok(
+            PathBuf::from("Download/Xopilot").join(name)
+        );
+    }
+    let root =
+        super::paths::app_data_dir()?.join("exports");
+    std::fs::create_dir_all(&root)?;
+    let path = root.join(name);
+    let mut file = tempfile::NamedTempFile::new_in(root)?;
+    file.write_all(bytes)?;
+    file.persist_noclobber(&path)?;
+    Ok(path)
+}
 
 /// Формирует переносимую Markdown-переписку с ролями и вложениями.
 pub fn markdown(

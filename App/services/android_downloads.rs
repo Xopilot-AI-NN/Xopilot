@@ -119,7 +119,11 @@ fn staging(spec: Model) -> Result<PathBuf> {
         let path = JString::cast_local(env, path)?
             .try_to_string(env)?;
         Ok(PathBuf::from(path)
-            .join("models")
+            .join(if cfg!(feature = "dev-test") {
+                "dev-test-models"
+            } else {
+                "models"
+            })
             .join(format!("{}.download", spec.filename)))
     })
 }

@@ -2,6 +2,13 @@
     all(target_os = "windows", not(debug_assertions)),
     windows_subsystem = "windows"
 )]
+
+#[cfg(all(
+    feature = "dev-test",
+    feature = "desktop",
+    target_os = "linux"
+))]
+mod dev_test;
 // Файл: App/main.rs
 // Разработчик: DenBroLiik
 // Описание: Точка входа Xopilot для Linux и Android.
@@ -33,7 +40,8 @@ fn main() {
     );
 
     #[cfg(not(target_os = "android"))]
-    dioxus::LaunchBuilder::desktop()
+    {
+        let launcher = dioxus::LaunchBuilder::desktop()
         .with_cfg(
             dioxus::desktop::Config::new()
                 .with_menu(None)
@@ -61,11 +69,30 @@ fn main() {
                         ),
                     ),
             ),
-        )
-        .launch(xopilot::app::main::build_app_ui);
+        );
+        #[cfg(all(
+            feature = "dev-test",
+            feature = "desktop",
+            target_os = "linux"
+        ))]
+        dev_test::launch(launcher);
+        #[cfg(not(all(
+            feature = "dev-test",
+            feature = "desktop",
+            target_os = "linux"
+        )))]
+        launcher.launch(xopilot::app::main::build_app_ui);
+    }
 
     #[cfg(target_os = "android")]
-    dioxus::launch(xopilot::app::main::build_app_ui);
+    dioxus::LaunchBuilder::mobile()
+        .with_cfg(
+            dioxus::mobile::Config::new()
+                .with_disable_context_menu(!cfg!(
+                    feature = "dev-test"
+                )),
+        )
+        .launch(xopilot::app::main::build_app_ui);
 
     xopilot::flow_trace::end("Завершение Xopilot");
 }
