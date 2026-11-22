@@ -1,4 +1,4 @@
-// Файл: App/services/api_chat.rs
+// Файл: App/services/chat/api_chat.rs
 // Описание: Потоковый совместимый API; поддерживает также локальный llama-server/Ollama.
 use super::{
     attachments::build_attachment_message_parts, db::Store,

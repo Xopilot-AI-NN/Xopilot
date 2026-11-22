@@ -1,4 +1,4 @@
-// Файл: App/services/mobile_documents.rs
+// Файл: App/services/platform/mobile_documents.rs
 // Описание: Ограниченный протокол передачи файлов Android WebView → Rust.
 // Dioxus Desktop 0.7.10 возвращает пустой список из своего диалога на Android,
 // поэтому используем системный chooser WebView и передаём данные небольшими чанками.

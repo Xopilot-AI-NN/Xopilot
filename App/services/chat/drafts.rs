@@ -1,4 +1,4 @@
-// Файл: App/services/drafts.rs
+// Файл: App/services/chat/drafts.rs
 // Описание: Черновики и вложения хранятся вместе с историей.
 use super::db::{read_json, write_json};
 use advanced_xopilot::db::Database;

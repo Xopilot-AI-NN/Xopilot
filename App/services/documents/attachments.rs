@@ -1,4 +1,4 @@
-// Файл: App/services/attachments.rs
+// Файл: App/services/documents/attachments.rs
 // Разработчик: DenBroLiik
 // Описание: Чтение изображений, текста, PDF и DOCX в Rust.
 use anyhow::{Context, Result, ensure};

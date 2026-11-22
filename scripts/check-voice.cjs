@@ -9,7 +9,7 @@ const script = new AsyncFunction(
   "window",
   "document",
   "btoa",
-  fs.readFileSync("App/services/voice_record.js", "utf8"),
+  fs.readFileSync("App/services/voice/voice_record.js", "utf8"),
 );
 
 async function scenario(mode) {
@@ -78,7 +78,7 @@ async function scenario(mode) {
     },
   };
   if (mode === "cancel") end("stop");
-  const execute=mode==="automatic" ? new AsyncFunction("dioxus","navigator","window","document","btoa",fs.readFileSync("App/services/voice_record.js","utf8").replace("const automatic = false;","const automatic = true;")) : script;
+  const execute=mode==="automatic" ? new AsyncFunction("dioxus","navigator","window","document","btoa",fs.readFileSync("App/services/voice/voice_record.js","utf8").replace("const automatic = false;","const automatic = true;")) : script;
   await execute(bridge, navigator, window, document, (binary) =>
     Buffer.from(binary, "binary").toString("base64"),
   );

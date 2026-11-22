@@ -132,7 +132,7 @@ async fn prepare(
     std::fs::create_dir_all(&root)?;
     std::fs::write(
         root.join("NOTICE.md"),
-        include_str!("../assets/voice/PIPER_NOTICE.md"),
+        include_str!("../../assets/voice/PIPER_NOTICE.md"),
     )?;
     let lease = std::fs::OpenOptions::new()
         .read(true)

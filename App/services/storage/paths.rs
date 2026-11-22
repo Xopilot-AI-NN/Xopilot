@@ -1,4 +1,4 @@
-// Файл: App/services/paths.rs
+// Файл: App/services/storage/paths.rs
 // Описание: Доступные для записи каталоги, совместимые с прежней установкой.
 #[cfg(not(target_os = "android"))]
 use anyhow::Context;

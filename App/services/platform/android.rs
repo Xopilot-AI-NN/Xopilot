@@ -1,4 +1,4 @@
-// Файл: App/services/android.rs
+// Файл: App/services/platform/android.rs
 // Описание: Android Context и Keystore через JNI, без Flutter-моста.
 // Alias и SharedPreferences совпадают с прежним приложением.
 use anyhow::{Context, Result, bail, ensure};

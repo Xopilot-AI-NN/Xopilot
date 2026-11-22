@@ -1,4 +1,4 @@
-// Файл: App/services/project_inspection.rs
+// Файл: App/services/workspaces/project_inspection.rs
 // Описание: Чтение и поиск внутри выбранной папки; Git только для просмотра.
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};

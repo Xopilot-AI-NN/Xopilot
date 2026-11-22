@@ -1,4 +1,4 @@
-// Файл: App/services/db.rs
+// Файл: App/services/storage/db.rs
 // Описание: Единая точка доступа к SQLCipher; блокирующие вызовы идут в worker.
 use advanced_xopilot::db::Database;
 use anyhow::{Context, Result, anyhow};

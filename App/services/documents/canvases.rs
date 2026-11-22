@@ -1,4 +1,4 @@
-// Файл: App/services/canvases.rs
+// Файл: App/services/documents/canvases.rs
 // Описание: Canvas в зашифрованном хранилище; сохраняем неизвестные поля документов.
 use super::db::{Store, read_json, write_json};
 use anyhow::{Result, ensure};

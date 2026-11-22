@@ -1,4 +1,4 @@
-// Файл: App/services/chat_store.rs
+// Файл: App/services/chat/chat_store.rs
 // Описание: Навигация и сообщения; прежние таблицы и идентификаторы чатов.
 use super::{
     db::Store,

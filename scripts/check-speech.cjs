@@ -9,7 +9,7 @@ async function scenario(mode){
   cancel(){cancelled++;if(mode==='cancel')current?.onerror();}
  };
  let stop;const command=new Promise(resolve=>{stop=resolve;});
- const script=new AsyncFunction('dioxus','window','document','SpeechSynthesisUtterance',fs.readFileSync('App/services/speech_play.js','utf8').replace('__XOPILOT_TEXT__',JSON.stringify(['Проверка','Готово'])));
+ const script=new AsyncFunction('dioxus','window','document','SpeechSynthesisUtterance',fs.readFileSync('App/services/voice/speech_play.js','utf8').replace('__XOPILOT_TEXT__',JSON.stringify(['Проверка','Готово'])));
  await script({recv:()=>command,send:e=>events.push(e)},{speechSynthesis:mode==='missing'?null:synthesis},{addEventListener(){},removeEventListener(){}},class{constructor(text){this.text=text;}});
  return{events,spoken,cancelled};
 }

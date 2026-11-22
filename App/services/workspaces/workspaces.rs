@@ -1,4 +1,4 @@
-// Файл: App/services/workspaces.rs
+// Файл: App/services/workspaces/workspaces.rs
 // Описание: Пространства с инструкциями, папкой и привязкой чатов.
 use super::db::{Store, read_json, write_json};
 use anyhow::{Result, ensure};
